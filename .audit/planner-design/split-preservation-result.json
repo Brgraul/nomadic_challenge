@@ -1,0 +1,215 @@
+{
+  "original_sections_preserved": 42,
+  "sections": [
+    {
+      "section": "Premises",
+      "chapter": "docs/planner/overview.md",
+      "body_sha256": "edf9aea45d552ecd48ecca5ed18904b6775c19a2b212cfc942f1a71259340cef"
+    },
+    {
+      "section": "Architecture",
+      "chapter": "docs/planner/overview.md",
+      "body_sha256": "0a2bfd4ff49541eb92dd2ca46493a61659915300bab05e036e82253f097b6c0e"
+    },
+    {
+      "section": "Agentic workflow",
+      "chapter": "docs/planner/workflow.md",
+      "body_sha256": "04491873115e919424a6455895796aaac961c4a5db52255cc1434ae7f8584c92"
+    },
+    {
+      "section": "Events and invalidation",
+      "chapter": "docs/planner/workflow.md",
+      "body_sha256": "eddfc1ec336cc73431f4830d35304c13193e63aabc223698956972f4a157c8fa"
+    },
+    {
+      "section": "Failure policy",
+      "chapter": "docs/planner/workflow.md",
+      "body_sha256": "454e48ebc31f09870b64f9836698f0a7a31436a10f25d0130172f53111e02ead"
+    },
+    {
+      "section": "Simulation and decision transaction",
+      "chapter": "docs/planner/workflow.md",
+      "body_sha256": "e9fe240b477cb939bc36ab49a147f5e81fe9fe0913886ef758a318e67410d309"
+    },
+    {
+      "section": "Agent tools",
+      "chapter": "docs/planner/workflow.md",
+      "body_sha256": "a75ea244c9774baf6eb4ae3d75b62b6440b5d44f296134c010c00dccae880006"
+    },
+    {
+      "section": "Validation contract",
+      "chapter": "docs/planner/validation.md",
+      "body_sha256": "80adc350accbec638b4f0b496a65499aa165c4b5d409924f9e7707ad62de01b3"
+    },
+    {
+      "section": "Completion and operator actions",
+      "chapter": "docs/planner/validation.md",
+      "body_sha256": "fcc090b5a17e6cd23186ce1d756e9ced0740045788b1fb49e2eabe02a5bfbbf6"
+    },
+    {
+      "section": "Hypotheses and physical predictions",
+      "chapter": "docs/planner/hypotheses.md",
+      "body_sha256": "d377dc530d31529e5121f3d87032c6dad00b43c9c1e7706cf5dcb548519208d1"
+    },
+    {
+      "section": "Explained hypothesis revisions",
+      "chapter": "docs/planner/hypotheses.md",
+      "body_sha256": "413a79f5081c1509776f9193a7d9e523ec4922fb6cd336324912d788204c6bb4"
+    },
+    {
+      "section": "Example request",
+      "chapter": "docs/planner/hypotheses.md",
+      "body_sha256": "dbee35ff8cfa209551d4fd1f3301ae1df41a074a3d81f56b8b6e58bca818028b"
+    },
+    {
+      "section": "Replanning rules",
+      "chapter": "docs/planner/tasks-and-routes.md",
+      "body_sha256": "12178b1e742b6b368491d1416a29749c3eb95c857f3651221fc919060a655adb"
+    },
+    {
+      "section": "Task and observation lifecycle",
+      "chapter": "docs/planner/tasks-and-routes.md",
+      "body_sha256": "1bea31e0277e0caab84d4e6bf331accf22dc2496277362e95f9c30158c0afb3e"
+    },
+    {
+      "section": "Route acceptance invariants",
+      "chapter": "docs/planner/tasks-and-routes.md",
+      "body_sha256": "d1163ae4a719b2018f8ff683631a974c45cffd0a2a8cbefb55d010dece616e1f"
+    },
+    {
+      "section": "Data shape",
+      "chapter": "docs/planner/domain-types.md",
+      "body_sha256": "0c06345f058e278622db099e9bbc6f7e3b90bce2f278d3beaf06f8e52db7c33e"
+    },
+    {
+      "section": "World and ground truth",
+      "chapter": "docs/planner/domain-types.md",
+      "body_sha256": "d727e414006138d856be111df3d8723839c2c700ae9122db2e5cc9648afb84da"
+    },
+    {
+      "section": "Positions on the line",
+      "chapter": "docs/planner/geometry-and-sensing.md",
+      "body_sha256": "5d4da90dc37394b596a42b99cbaf3a48d3a56a2eb6cefdd2312aaabef17bb298"
+    },
+    {
+      "section": "Local coverage and negative evidence",
+      "chapter": "docs/planner/geometry-and-sensing.md",
+      "body_sha256": "f815073802599f2b30f51450d5a9f90b57a749ec9789605bf1c852561b725452"
+    },
+    {
+      "section": "Sensing",
+      "chapter": "docs/planner/geometry-and-sensing.md",
+      "body_sha256": "4dae4f651bdbb279748e1db72fc1948888771e244e6a09d54200d71b9518391f"
+    },
+    {
+      "section": "Electrical observation abstraction",
+      "chapter": "docs/planner/geometry-and-sensing.md",
+      "body_sha256": "8eaf4115dfc3760c5ec1aa07f4eef6a40f35654d41a3553b20c69facc23dd4f9"
+    },
+    {
+      "section": "Noise and detection conditions",
+      "chapter": "docs/planner/geometry-and-sensing.md",
+      "body_sha256": "a559b87a6579f0d436e72e408398008273dc0f90a7041c957cb8d7f122d192e0"
+    },
+    {
+      "section": "State model",
+      "chapter": "docs/planner/drone-state.md",
+      "body_sha256": "8d07ac0ee1a68a9d392d6aa22e70eca496074c27d910fd4f9350efad6269f24e"
+    },
+    {
+      "section": "Drone state machine",
+      "chapter": "docs/planner/drone-state.md",
+      "body_sha256": "0ecb722ef58b042bd689f0c049ace0c4e6d4b7bdf1d310b5398688702c300a76"
+    },
+    {
+      "section": "Energization, chargeability and inspection state",
+      "chapter": "docs/planner/drone-state.md",
+      "body_sha256": "c73bb1bff6ded1f63d32b86930104fb33244540b9b600145031c4dea8477d789"
+    },
+    {
+      "section": "Time and simultaneous transitions",
+      "chapter": "docs/planner/drone-state.md",
+      "body_sha256": "de9696682d306554ac2ee1b71f38e6af10449205a0843f4174df6de5060660f4"
+    },
+    {
+      "section": "Power flow ground truth and scenarios",
+      "chapter": "docs/planner/electrical-model.md",
+      "body_sha256": "bed5ad7feb0edf24b6443d8490aed258f9f42933e9920af14a61947a2b595446"
+    },
+    {
+      "section": "Local incident fixtures",
+      "chapter": "docs/planner/electrical-model.md",
+      "body_sha256": "953b426c05b885f52db85c5ea17d3e1400e08a1b8aadff92ba5b5c5e560a7ac2"
+    },
+    {
+      "section": "Explicit electrical reduction",
+      "chapter": "docs/planner/electrical-model.md",
+      "body_sha256": "9ad87bde201361dabdf26f6ad284ed7fdbe60abd5b9f35318ff361181bad8059"
+    },
+    {
+      "section": "Minimum sampling",
+      "chapter": "docs/planner/electrical-model.md",
+      "body_sha256": "5ac22dfd2c42c68bd44c4b528cf996aecb24f271d4ce36d549501fc57460aac2"
+    },
+    {
+      "section": "State estimation",
+      "chapter": "docs/planner/estimation.md",
+      "body_sha256": "2ac704cc4c6df48aceacf9108d923ea1b9877bb973b3a7df14f3497f258f936b"
+    },
+    {
+      "section": "Conditional uncertainty and model discrepancy",
+      "chapter": "docs/planner/estimation.md",
+      "body_sha256": "68815234c4acdcd63c86cb5ba3df798944c45b78b3ea88dbe01fd574a928fe24"
+    },
+    {
+      "section": "Bad-data interpretation",
+      "chapter": "docs/planner/estimation.md",
+      "body_sha256": "37e8e6607997d3cb66cadbda370fb3c8fb0998c380d68d29f1ef4dc6048bce78"
+    },
+    {
+      "section": "Optimization model and objective",
+      "chapter": "docs/planner/optimization.md",
+      "body_sha256": "97d8ada68b0c07afb841ddb2a67e4b1f1ff9d66a37e5f05633672a71edfdda5c"
+    },
+    {
+      "section": "Benefit ownership",
+      "chapter": "docs/planner/optimization.md",
+      "body_sha256": "fc9d3faf571310bd6bc31ff332ec669e840302a32a5b45eb138689d001bb5a13"
+    },
+    {
+      "section": "Reward order",
+      "chapter": "docs/planner/optimization.md",
+      "body_sha256": "133b24fed83302d16ad565dd2b1eb6a244af930a44403f74eb149d7a424f0e9f"
+    },
+    {
+      "section": "Routing constraints",
+      "chapter": "docs/planner/optimization.md",
+      "body_sha256": "bd11c1ff48c8ef2b626073d8bc26b995a4fe23cab30914a1c8d42a7a161e4d32"
+    },
+    {
+      "section": "Solver guarantees and search budget",
+      "chapter": "docs/planner/optimization.md",
+      "body_sha256": "d033683781c70bdadc026b11b9b6bc4f1dc393518ccccc16fc685fa32463cb05"
+    },
+    {
+      "section": "Example sortie",
+      "chapter": "docs/planner/optimization.md",
+      "body_sha256": "7fc114c7c7a9c9c24a4ec5d3465cdb7e395c10e0e2c5409757225a20ab9b65a3"
+    },
+    {
+      "section": "Evaluation",
+      "chapter": "docs/planner/evaluation.md",
+      "body_sha256": "00f8bdd69ae9fb77e4d3e16e3b90a3a9330d07b951b31aa273b6ae38ec64f52b"
+    },
+    {
+      "section": "Implementation scope and acceptance scenarios",
+      "chapter": "docs/planner/implementation.md",
+      "body_sha256": "935fcb27b6b1df54b41ed81efcfc8ffd4f168156914c61ac14f0d7259fe37195"
+    },
+    {
+      "section": "Deferred extensions",
+      "chapter": "docs/planner/implementation.md",
+      "body_sha256": "ad97ac76f774793b206ffa71dbbfb8dcaf792f50f395d68a6953c4c4c1d99029"
+    }
+  ]
+}

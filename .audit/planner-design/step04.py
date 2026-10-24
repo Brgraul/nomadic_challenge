@@ -1,0 +1,24 @@
+from edit import insert_before,record,swap
+insert_before('### Time', '''### Energization, chargeability and inspection state
+
+Replace the combined `LineStatus` enum with independent public records. `CircuitKnowledge` is keyed by the explicit circuit ID and stores energization (`UNKNOWN`, `LIVE`, `DE_ENERGIZED` or `CONFLICTED`), evidence IDs, observation time and operating epoch. A segment's displayed status is derived from its circuits; one live circuit does not establish that every circuit on a shared tower is live.
+
+`FaultAssessment` links hypotheses and local `SpanRef`s to their evidence and qualitative assessment. `InspectionCoverage` records which intervals each sensor actually inspected, under what operating conditions and in which epoch. Clearing a local suspicion changes neither energization nor chargeability.
+
+`Chargeability` is separate from voltage presence. It is `CONFIRMED`, `UNKNOWN`, `UNAVAILABLE` or `CONFLICTED` for an exact landing circuit, with evidence and expiry. The synthetic sensor model defines sufficient charging power as a live circuit with current at least `I_CHARGE_MIN_A = 5 A`; this threshold is an exercise assumption, not a claim about real charging hardware. A measured voltage and current interval must support those conditions, or an observed successful charging handshake can confirm them directly. Hidden physics applies the same declared capability rule to actual charging. Initial perches have an explicit successful-handshake observation and full batteries, not an unexplained blanket assumption about all lines.
+
+Observation ingestion is deterministic and precedes the manager. A high-quality voltage result incompatible with `LIVE` immediately removes that circuit from eligible perches. Simultaneous or unresolved contradictory sources yield `CONFLICTED`, not last-writer-wins. A newer direct measurement supersedes an older report about the current state, but retains the discrepancy and triggers a model or epoch review. Zero current alone never proves de-energization. The manager may interpret causes but cannot overwrite direct observations with a bare status label.
+
+For this static-within-epoch exercise, operational evidence is fresh until a known switching or model-change event invalidates it, or until a configurable 30-minute evidence lifetime expires. `EvidenceExpired` is a scheduled event, even when no drone reading occurs. A planned landing must occur before its supporting chargeability evidence expires. A new voltage or current measurement does not extend unrelated evidence. Successful charge telemetry renews only the observed circuit's chargeability while the drone remains perched.
+
+Default landing policy requires a fresh `CONFIRMED` chargeable circuit, no known landing hazard, and no contradiction among retained plausible operating models. `UNKNOWN`, expired or conflicted candidates may appear in previews as investigation options but are not executable recharge endpoints. A scenario may explicitly enable uncertain endpoints with a documented risk penalty and operator-visible rationale; this is a separate policy setting and cannot override known unavailability or a known landing hazard. Route feasibility always states which policy was applied.
+''')
+swap('''Observations update belief directly. A `VOLTAGE_PRESENCE` reading, or landing on a line, sets that line to `LIVE` or `DE_ENERGIZED` if its belief is still `UNKNOWN`. Everything else is the manager's call through `set_line_status`.''','''Observations update circuit knowledge, chargeability and local coverage through the ingestion rules below. The manager proposes evidence-linked fault assessments and model changes, rather than replacing operational observations with a combined line-status label.''')
+swap('''    belief: dict[str, LineStatus]''','''    circuit_knowledge: dict[str, CircuitKnowledge]
+    chargeability: dict[str, Chargeability]
+    fault_assessments: dict[str, FaultAssessment]
+    coverage: tuple[InspectionCoverage, ...]''')
+swap('''    def is_live(self, segment_id: str) -> bool: ...''','''    def is_live(self, circuit_id: str) -> bool: ...
+    def is_chargeable(self, landing: LandingSite) -> bool: ...''')
+swap('''The revision retains the broad untested alternatives but marks only the measured local scope as supported. If the hypothesis schema uses one assessment per claim, split the local claim from the broad untested alternatives with explained revisions for both.''','''H1 narrows to the measured local vegetation claim and becomes `SUPPORTED`. A separately created H1-alt retains the original report-area alternatives as `UNTESTED`, including LINE_064. Both changes have explained revisions; the local finding is not generalized to the broad alternatives.''')
+record(4,10,'Separate circuit energization, charging capability, fault assessment and inspection coverage','docs/planner-design.md#energization-chargeability-and-inspection-state')
