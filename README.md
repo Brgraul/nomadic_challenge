@@ -12,7 +12,12 @@ AI-orchestrated outage diagnosis for storm-hit power grids.
 [![Challenge](https://img.shields.io/badge/challenge-Nomadic%20Drones-0B1220)](https://www.nomadicdrone.com/)
 ![No API key needed](https://img.shields.io/badge/demo-no%20API%20key%20needed-brightgreen)
 
-[<img src="https://cdn.prod.website-files.com/68f4effcfd823557785829b4/68f4effcfd82355778582a4f_nomadic-logo-white.svg" alt="Nomadic Drones" width="226">](https://www.nomadicdrone.com/)
+<a href="https://www.nomadicdrone.com/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/nomadic-logo-white.svg">
+    <img src="docs/images/nomadic-logo-dark.svg" alt="Nomadic Drones" width="226">
+  </picture>
+</a>
 
 <img src="docs/images/frontend-prototype.png" alt="Storm Line Investigator: the investigation is confirmed as a tree contact on LINE_064 with 0.98 confidence, and a repair crew is recommended" width="900">
 
