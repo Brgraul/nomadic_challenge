@@ -17,6 +17,7 @@ from grid_ops.scenario import (
     ScenarioInfeasible,
     ScenarioMode,
 )
+from grid_ops.truth.episode import build_episode as build_episode
 from grid_ops.truth.local import build_local_field
 from grid_ops.truth.state import Limits, TruthState
 

@@ -94,3 +94,24 @@ def build_local_field(geometry: Geometry, network, config: ScenarioConfig) -> Lo
     # Dense canopy hides part of LINE_064 from the sensor: occluded, not inspected.
     field_.occluded.append(Interval("LINE_064", 7_800_000, 8_800_000))
     return field_
+
+
+@dataclass(frozen=True)
+class SceneOccluder:
+    lower_lonlat: tuple[float, float]
+    upper_lonlat: tuple[float, float]
+    bottom_m: float
+    top_m: float
+
+
+@dataclass(frozen=True)
+class SceneHazard:
+    interval: Interval
+    clearance_m: float
+
+
+@dataclass(frozen=True)
+class LidarScene:
+    hazards: tuple[SceneHazard, ...] = ()
+    occluders: tuple[SceneOccluder, ...] = ()
+    conductor_height_m: float = 20.0

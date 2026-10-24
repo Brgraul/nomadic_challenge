@@ -407,3 +407,12 @@ def test_hidden_values_stay_out_of_public_world(network):
     ):
         assert secret not in blob
     assert "LINE_058" not in " ".join(e.text for e in sim.snapshot.log)
+
+
+def test_public_fixture_seed_is_policy_only():
+    from dataclasses import asdict
+
+    from grid_ops.scenario import PublicFixture
+
+    fixture = asdict(PublicFixture(policy_seed=73))
+    assert fixture == {"fixture_id": "bavaria-public", "version": "1", "policy_seed": 73}

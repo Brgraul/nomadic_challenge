@@ -139,3 +139,21 @@ def test_import_boundary():
             assert not hidden, f"{path.name} imports {module}"
     assert not any(m.startswith("grid_ops.truth") for m in _imports(SRC / "app.py"))
     assert not any(m.startswith("grid_ops.evaluation") for m in _imports(SRC / "sim.py"))
+
+
+def test_three_method_public_context_has_no_private_episode_handle():
+    import dataclasses
+
+    from grid_ops.sensing import PublicEpisodeView
+
+    context = PublicEpisodeView("opaque-run-id", "analytic", "1", 0)
+    fields = dataclasses.asdict(context)
+    assert set(fields) == {
+        "run_id",
+        "fixture_id",
+        "fixture_version",
+        "policy_seed",
+        "capabilities",
+        "assumptions",
+    }
+    assert not any("seed" in name for name in fields if name != "policy_seed")

@@ -170,3 +170,12 @@ def public_brief(network: Network, config: ScenarioConfig) -> tuple[str, ...]:
         "3 h charge on a live circuit carrying at least 5 A, scenario deadline T+04:00."
     )
     return tuple(lines)
+
+
+@dataclass(frozen=True)
+class PublicFixture:
+    """Reproducible public inputs, independent of privileged episode and sensor noise seeds."""
+
+    fixture_id: str = "bavaria-public"
+    version: str = "1"
+    policy_seed: int = 0
