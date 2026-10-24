@@ -1,0 +1,121 @@
+[
+  {
+    "segment_id": "LINE_026",
+    "voltage_kv": 110,
+    "length_km": 4.2,
+    "line_is_live": true,
+    "in_storm_footprint": true,
+    "notes": "LINE_026 appears in two reports (vegetation contact + protection trip). Best false-positive candidate.",
+    "reports": [
+      {
+        "id": "SYN_REPORT_02",
+        "type": "vegetation_and_access_report",
+        "confidence": "medium",
+        "description": "Fallen branch across rural access track; trees brushing an overhead route in the broad area. No photo, no line ID confirmed."
+      },
+      {
+        "id": "SYN_REPORT_03",
+        "type": "protection_event_summary",
+        "confidence": "high",
+        "description": "One automatic protection event in a broad southwest sector. LINE_024 precautionarily switched off; reason for protection event unclear."
+      }
+    ],
+    "sensor_readings": {
+      "line_live": true,
+      "vibration_anomaly": true,
+      "sag_angle_anomaly": false,
+      "pd_detected": null,
+      "baseline_comparison": "Vibration frequency 18% above pre-storm baseline on this span; sag within normal range."
+    },
+    "vegetation": {
+      "forest_cover_nearby": true,
+      "estimated_tree_height_m": 22,
+      "estimated_line_clearance_m": 8,
+      "wind_alignment": "upwind",
+      "tree_species_fragility": "high"
+    }
+  },
+  {
+    "segment_id": "LINE_024",
+    "voltage_kv": 110,
+    "length_km": 3.1,
+    "line_is_live": false,
+    "in_storm_footprint": true,
+    "notes": "LINE_024 was precautionarily switched to de-energized. Status is known; reason for the protection event is not confirmed.",
+    "reports": [
+      {
+        "id": "SYN_REPORT_03",
+        "type": "protection_event_summary",
+        "confidence": "high",
+        "description": "One automatic protection event in southwest sector. LINE_024 de-energized precautionarily."
+      }
+    ],
+    "sensor_readings": {
+      "line_live": false,
+      "vibration_anomaly": null,
+      "sag_angle_anomaly": null,
+      "pd_detected": null,
+      "baseline_comparison": "No sensor data — line is de-energized and drone cannot charge here."
+    },
+    "vegetation": {
+      "forest_cover_nearby": true,
+      "estimated_tree_height_m": 18,
+      "estimated_line_clearance_m": 10,
+      "wind_alignment": "perpendicular",
+      "tree_species_fragility": "medium"
+    }
+  },
+  {
+    "segment_id": "LINE_004",
+    "voltage_kv": 380,
+    "length_km": 16.4,
+    "line_is_live": true,
+    "in_storm_footprint": true,
+    "notes": "Long 380kV line; broad storm exposure but no direct reports. Sensor readings normal.",
+    "reports": [],
+    "sensor_readings": {
+      "line_live": true,
+      "vibration_anomaly": false,
+      "sag_angle_anomaly": false,
+      "pd_detected": false,
+      "baseline_comparison": "All readings within 3% of pre-storm baseline."
+    },
+    "vegetation": {
+      "forest_cover_nearby": false,
+      "estimated_tree_height_m": null,
+      "estimated_line_clearance_m": null,
+      "wind_alignment": "unknown",
+      "tree_species_fragility": "unknown"
+    }
+  },
+  {
+    "segment_id": "LINE_002",
+    "voltage_kv": 110,
+    "length_km": 3.8,
+    "line_is_live": true,
+    "in_storm_footprint": true,
+    "notes": "Southeast area near flash report. Generator test at nearby industrial site may explain the orange flash.",
+    "reports": [
+      {
+        "id": "SYN_REPORT_04",
+        "type": "visual_flash_report",
+        "confidence": "low",
+        "description": "Resident reports brief orange flash near private industrial site during a gust. Site attendant mentions backup-generator test around same time; log not yet verified."
+      }
+    ],
+    "sensor_readings": {
+      "line_live": true,
+      "vibration_anomaly": false,
+      "sag_angle_anomaly": false,
+      "pd_detected": null,
+      "baseline_comparison": "Vibration within 5% of baseline. No sag anomaly."
+    },
+    "vegetation": {
+      "forest_cover_nearby": false,
+      "estimated_tree_height_m": 10,
+      "estimated_line_clearance_m": 15,
+      "wind_alignment": "downwind",
+      "tree_species_fragility": "low"
+    }
+  }
+]
