@@ -1,0 +1,1966 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.493719579869857,
+          48.24746207124238
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_01",
+        "node_type": "abstract_substation",
+        "name": "UW Balzhausen",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_024",
+          "LINE_040",
+          "LINE_041",
+          "LINE_064"
+        ],
+        "lat": 48.24746207124238,
+        "lon": 10.493719579869857,
+        "latitude": 48.24746207124238,
+        "longitude": 10.493719579869857,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251630,
+        "source_substation_id": 87350976,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.69937632567656,
+          48.09893374117932
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_02",
+        "node_type": "abstract_substation",
+        "name": "Umspannwerk Gennach",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_027"
+        ],
+        "lat": 48.09893374117932,
+        "lon": 10.69937632567656,
+        "latitude": 48.09893374117932,
+        "longitude": 10.69937632567656,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251714,
+        "source_substation_id": 134401659,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.861456609608574,
+          48.11384007587358
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_03",
+        "node_type": "abstract_substation",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_033"
+        ],
+        "lat": 48.11384007587358,
+        "lon": 10.861456609608574,
+        "latitude": 48.11384007587358,
+        "longitude": 10.861456609608574,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251768,
+        "source_substation_id": 89589704,
+        "component_id": "COMPONENT_07"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.867777660517536,
+          48.14862019635886
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_04",
+        "node_type": "abstract_substation",
+        "name": "Umspannwerk",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_034"
+        ],
+        "lat": 48.14862019635886,
+        "lon": 10.867777660517536,
+        "latitude": 48.14862019635886,
+        "longitude": 10.867777660517536,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251776,
+        "source_substation_id": 89589709,
+        "component_id": "COMPONENT_02"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.599034312736272,
+          48.21069271558643
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_05",
+        "node_type": "abstract_substation",
+        "name": "Umspannwerk Walkertshofen",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_025",
+          "LINE_058"
+        ],
+        "lat": 48.21069271558643,
+        "lon": 10.599034312736272,
+        "latitude": 48.21069271558643,
+        "longitude": 10.599034312736272,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251845,
+        "source_substation_id": 83198329,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.841115476244365,
+          48.18479887929815
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_06",
+        "node_type": "abstract_substation",
+        "name": "Umspannwerk Lagerlechfeld",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_002"
+        ],
+        "lat": 48.18479887929815,
+        "lon": 10.841115476244365,
+        "latitude": 48.18479887929815,
+        "longitude": 10.841115476244365,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251880,
+        "source_substation_id": 87355423,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.840259167672176,
+          48.237798155978474
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_07",
+        "node_type": "abstract_substation",
+        "name": "Umspannwerk Oberottmarshausen",
+        "voltage_kv": 380.0,
+        "voltages_kv": [
+          110.0,
+          380.0
+        ],
+        "connected_segments": [
+          "LINE_001",
+          "LINE_014",
+          "LINE_020",
+          "LINE_023",
+          "LINE_024",
+          "LINE_044",
+          "LINE_045",
+          "LINE_046",
+          "LINE_047",
+          "LINE_048",
+          "LINE_049",
+          "LINE_050",
+          "LINE_055",
+          "LINE_056"
+        ],
+        "lat": 48.237798155978474,
+        "lon": 10.840259167672176,
+        "latitude": 48.237798155978474,
+        "longitude": 10.840259167672176,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251887,
+        "source_substation_id": 30613895,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.806848434623053,
+          48.26367900031684
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_08",
+        "node_type": "abstract_substation",
+        "name": "Umspannwerk Bobingen",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_056",
+          "LINE_060",
+          "LINE_061"
+        ],
+        "lat": 48.26367900031684,
+        "lon": 10.806848434623053,
+        "latitude": 48.26367900031684,
+        "longitude": 10.806848434623053,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251901,
+        "source_substation_id": 87400685,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.725818319130767,
+          48.33314766899523
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_09",
+        "node_type": "abstract_substation",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_031"
+        ],
+        "lat": 48.33314766899523,
+        "lon": 10.725818319130767,
+        "latitude": 48.33314766899523,
+        "longitude": 10.725818319130767,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251902,
+        "source_substation_id": 88325575,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.879276353488937,
+          48.32627245482668
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_10",
+        "node_type": "abstract_substation",
+        "name": "Übernahmestelle Göggingen;Umspannwerk Göggingen",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_005",
+          "LINE_006"
+        ],
+        "lat": 48.32627245482668,
+        "lon": 10.879276353488937,
+        "latitude": 48.32627245482668,
+        "longitude": 10.879276353488937,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251975,
+        "source_substation_id": 24894800,
+        "component_id": "COMPONENT_03"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.603201739636857,
+          48.348517774392064
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_11",
+        "node_type": "abstract_substation",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_053"
+        ],
+        "lat": 48.348517774392064,
+        "lon": 10.603201739636857,
+        "latitude": 48.348517774392064,
+        "longitude": 10.603201739636857,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 251983,
+        "source_substation_id": 94826451,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.847185418706765,
+          48.345102903220166
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_12",
+        "node_type": "abstract_substation",
+        "name": "Umspannwerk Leitershofen",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_028",
+          "LINE_054"
+        ],
+        "lat": 48.345102903220166,
+        "lon": 10.847185418706765,
+        "latitude": 48.345102903220166,
+        "longitude": 10.847185418706765,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 252013,
+        "source_substation_id": 75783389,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.839949205120238,
+          48.37735990321215
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_13",
+        "node_type": "abstract_substation",
+        "name": "Umspannwerk Stadtbergen",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_007",
+          "LINE_013"
+        ],
+        "lat": 48.37735990321215,
+        "lon": 10.839949205120238,
+        "latitude": 48.37735990321215,
+        "longitude": 10.839949205120238,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 252031,
+        "source_substation_id": 51245080,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.661231831206088,
+          48.11055747113374
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_14",
+        "node_type": "abstract_substation",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_057"
+        ],
+        "lat": 48.11055747113374,
+        "lon": 10.661231831206088,
+        "latitude": 48.11055747113374,
+        "longitude": 10.661231831206088,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 504836,
+        "source_substation_id": 309588216,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.733080761364189,
+          48.19211013381741
+        ]
+      },
+      "properties": {
+        "node_id": "SUBSTATION_15",
+        "node_type": "abstract_substation",
+        "name": "Umspannwerk Schwabmünchen",
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_026",
+          "LINE_051",
+          "LINE_052"
+        ],
+        "lat": 48.19211013381741,
+        "lon": 10.733080761364189,
+        "latitude": 48.19211013381741,
+        "longitude": 10.733080761364189,
+        "is_boundary": false,
+        "source_data_quality": "Endpoint lies within a mapped >=50 kV substation polygon; abstract spatial association only, not verified electrical/bus connectivity.",
+        "notes": "Node point is polygon representative point; each segment retains its actual clipped endpoint in connection-coordinate properties.",
+        "source_substation_fid": 574780,
+        "source_substation_id": 44418507,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.45,
+          48.20947511930388
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_001",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_042"
+        ],
+        "lat": 48.20947511930388,
+        "lon": 10.45,
+        "latitude": 48.20947511930388,
+        "longitude": 10.45,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.45,
+          48.25799825451803
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_002",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_029"
+        ],
+        "lat": 48.25799825451803,
+        "lon": 10.45,
+        "latitude": 48.25799825451803,
+        "longitude": 10.45,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.45,
+          48.37654087027996
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_003",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_009"
+        ],
+        "lat": 48.37654087027996,
+        "lon": 10.45,
+        "latitude": 48.37654087027996,
+        "longitude": 10.45,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_04"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.466551333513136,
+          48.38
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_004",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_009"
+        ],
+        "lat": 48.38,
+        "lon": 10.466551333513136,
+        "latitude": 48.38,
+        "longitude": 10.466551333513136,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_04"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.478849530398067,
+          48.25450898869744
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_005",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_035",
+          "LINE_041",
+          "LINE_042"
+        ],
+        "lat": 48.25450898869744,
+        "lon": 10.478849530398067,
+        "latitude": 48.25450898869744,
+        "longitude": 10.478849530398067,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.492001993762784,
+          48.24766323691852
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_006",
+        "node_type": "intermediate",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_029",
+          "LINE_040"
+        ],
+        "lat": 48.24766323691852,
+        "lon": 10.492001993762784,
+        "latitude": 48.24766323691852,
+        "longitude": 10.492001993762784,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.534307276709054,
+          48.38
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_007",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_010"
+        ],
+        "lat": 48.38,
+        "lon": 10.534307276709054,
+        "latitude": 48.38,
+        "longitude": 10.534307276709054,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_05"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.5483038007525,
+          48.38
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_008",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_010"
+        ],
+        "lat": 48.38,
+        "lon": 10.5483038007525,
+        "latitude": 48.38,
+        "longitude": 10.5483038007525,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_05"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.599216845092911,
+          48.21015564514061
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_009",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_025",
+          "LINE_026",
+          "LINE_058",
+          "LINE_064"
+        ],
+        "lat": 48.21015564514061,
+        "lon": 10.599216845092911,
+        "latitude": 48.21015564514061,
+        "longitude": 10.599216845092911,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.605083842038256,
+          48.345378290648945
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_010",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_035",
+          "LINE_053",
+          "LINE_062"
+        ],
+        "lat": 48.345378290648945,
+        "lon": 10.605083842038256,
+        "latitude": 48.345378290648945,
+        "longitude": 10.605083842038256,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.633822831364581,
+          48.09
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_011",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_063"
+        ],
+        "lat": 48.09,
+        "lon": 10.633822831364581,
+        "latitude": 48.09,
+        "longitude": 10.633822831364581,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.639020072512011,
+          48.36875315548596
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_012",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_031",
+          "LINE_032",
+          "LINE_062"
+        ],
+        "lat": 48.36875315548596,
+        "lon": 10.639020072512011,
+        "latitude": 48.36875315548596,
+        "longitude": 10.639020072512011,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.648197921210881,
+          48.1124279347364
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_013",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_015",
+          "LINE_057",
+          "LINE_063"
+        ],
+        "lat": 48.1124279347364,
+        "lon": 10.648197921210881,
+        "latitude": 48.1124279347364,
+        "longitude": 10.648197921210881,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.655019750093606,
+          48.38
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_014",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_032"
+        ],
+        "lat": 48.38,
+        "lon": 10.655019750093606,
+        "latitude": 48.38,
+        "longitude": 10.655019750093606,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.734486345439988,
+          48.19214553361069
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_015",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_030",
+          "LINE_051",
+          "LINE_052"
+        ],
+        "lat": 48.19214553361069,
+        "lon": 10.734486345439988,
+        "latitude": 48.19214553361069,
+        "longitude": 10.734486345439988,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.737361422047544,
+          48.19278456990868
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_016",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_015",
+          "LINE_030",
+          "LINE_036"
+        ],
+        "lat": 48.19278456990868,
+        "lon": 10.737361422047544,
+        "latitude": 48.19278456990868,
+        "longitude": 10.737361422047544,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.755704758226484,
+          48.09
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_017",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 380.0,
+        "voltages_kv": [
+          380.0
+        ],
+        "connected_segments": [
+          "LINE_016"
+        ],
+        "lat": 48.09,
+        "lon": 10.755704758226484,
+        "latitude": 48.09,
+        "longitude": 10.755704758226484,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.758577880035109,
+          48.38
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_018",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_011"
+        ],
+        "lat": 48.38,
+        "lon": 10.758577880035109,
+        "latitude": 48.38,
+        "longitude": 10.758577880035109,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_06"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.760276371857486,
+          48.10422163243437
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_019",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": null,
+        "voltages_kv": [
+          110.0,
+          380.0
+        ],
+        "connected_segments": [
+          "LINE_004",
+          "LINE_016",
+          "LINE_027"
+        ],
+        "lat": 48.10422163243437,
+        "lon": 10.760276371857486,
+        "latitude": 48.10422163243437,
+        "longitude": 10.760276371857486,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.777822420761643,
+          48.38
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_020",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_011"
+        ],
+        "lat": 48.38,
+        "lon": 10.777822420761643,
+        "latitude": 48.38,
+        "longitude": 10.777822420761643,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_06"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.807097180070542,
+          48.26404281682409
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_021",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_003",
+          "LINE_060",
+          "LINE_061"
+        ],
+        "lat": 48.26404281682409,
+        "lon": 10.807097180070542,
+        "latitude": 48.26404281682409,
+        "longitude": 10.807097180070542,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.826850643641507,
+          48.21623059710368
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_022",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_002",
+          "LINE_019",
+          "LINE_036"
+        ],
+        "lat": 48.21623059710368,
+        "lon": 10.826850643641507,
+        "latitude": 48.21623059710368,
+        "longitude": 10.826850643641507,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.829295560978183,
+          48.32107303455959
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_023",
+        "node_type": "intermediate",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_003",
+          "LINE_039"
+        ],
+        "lat": 48.32107303455959,
+        "lon": 10.829295560978183,
+        "latitude": 48.32107303455959,
+        "longitude": 10.829295560978183,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.833505954908636,
+          48.38
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_024",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_008"
+        ],
+        "lat": 48.38,
+        "lon": 10.833505954908636,
+        "latitude": 48.38,
+        "longitude": 10.833505954908636,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.834715551027273,
+          48.3791079910285
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_025",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_007",
+          "LINE_008",
+          "LINE_028"
+        ],
+        "lat": 48.3791079910285,
+        "lon": 10.834715551027273,
+        "latitude": 48.3791079910285,
+        "longitude": 10.834715551027273,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.8355602792291,
+          48.23829159861831
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_026",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": null,
+        "voltages_kv": [
+          110.0,
+          380.0
+        ],
+        "connected_segments": [
+          "LINE_004",
+          "LINE_014",
+          "LINE_043"
+        ],
+        "lat": 48.23829159861831,
+        "lon": 10.8355602792291,
+        "latitude": 48.23829159861831,
+        "longitude": 10.8355602792291,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.838529987523458,
+          48.235660016297935
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_027",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 380.0,
+        "voltages_kv": [
+          380.0
+        ],
+        "connected_segments": [
+          "LINE_001",
+          "LINE_018",
+          "LINE_020"
+        ],
+        "lat": 48.235660016297935,
+        "lon": 10.838529987523458,
+        "latitude": 48.235660016297935,
+        "longitude": 10.838529987523458,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.839599350730339,
+          48.23883809870522
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_028",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_023",
+          "LINE_043",
+          "LINE_044"
+        ],
+        "lat": 48.23883809870522,
+        "lon": 10.839599350730339,
+        "latitude": 48.23883809870522,
+        "longitude": 10.839599350730339,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.840031354019915,
+          48.239565731719686
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_029",
+        "node_type": "intermediate",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_054",
+          "LINE_055"
+        ],
+        "lat": 48.239565731719686,
+        "lon": 10.840031354019915,
+        "latitude": 48.239565731719686,
+        "longitude": 10.840031354019915,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.840293120856018,
+          48.233559092267505
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_030",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": null,
+        "voltages_kv": [
+          110.0,
+          380.0
+        ],
+        "connected_segments": [
+          "LINE_017",
+          "LINE_018",
+          "LINE_021"
+        ],
+        "lat": 48.233559092267505,
+        "lon": 10.840293120856018,
+        "latitude": 48.233559092267505,
+        "longitude": 10.840293120856018,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.843430467213865,
+          48.23734695813063
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_031",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_017",
+          "LINE_045",
+          "LINE_047"
+        ],
+        "lat": 48.23734695813063,
+        "lon": 10.843430467213865,
+        "latitude": 48.23734695813063,
+        "longitude": 10.843430467213865,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.843690353583057,
+          48.38
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_032",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_012"
+        ],
+        "lat": 48.38,
+        "lon": 10.843690353583057,
+        "latitude": 48.38,
+        "longitude": 10.843690353583057,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.844024995605965,
+          48.377939721364186
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_033",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_012",
+          "LINE_013",
+          "LINE_039"
+        ],
+        "lat": 48.377939721364186,
+        "lon": 10.844024995605965,
+        "latitude": 48.377939721364186,
+        "longitude": 10.844024995605965,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.844059864323158,
+          48.237697321683285
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_034",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_019",
+          "LINE_048",
+          "LINE_050"
+        ],
+        "lat": 48.237697321683285,
+        "lon": 10.844059864323158,
+        "latitude": 48.237697321683285,
+        "longitude": 10.844059864323158,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.844627654444139,
+          48.238353289425646
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_035",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_022",
+          "LINE_046",
+          "LINE_049"
+        ],
+        "lat": 48.238353289425646,
+        "lon": 10.844627654444139,
+        "latitude": 48.238353289425646,
+        "longitude": 10.844627654444139,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.858285000000002,
+          48.11406569999999
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_036",
+        "node_type": "terminal",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_033"
+        ],
+        "lat": 48.11406569999999,
+        "lon": 10.858285000000002,
+        "latitude": 48.11406569999999,
+        "longitude": 10.858285000000002,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_07"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.858618056669116,
+          48.114085875184145
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_037",
+        "node_type": "intermediate",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_037",
+          "LINE_038"
+        ],
+        "lat": 48.114085875184145,
+        "lon": 10.858618056669116,
+        "latitude": 48.114085875184145,
+        "longitude": 10.858618056669116,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_02"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.863278675766956,
+          48.09
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_038",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_038"
+        ],
+        "lat": 48.09,
+        "lon": 10.863278675766956,
+        "latitude": 48.09,
+        "longitude": 10.863278675766956,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_02"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.876565555382314,
+          48.14454059835578
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_039",
+        "node_type": "junction",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_034",
+          "LINE_037",
+          "LINE_059"
+        ],
+        "lat": 48.14454059835578,
+        "lon": 10.876565555382314,
+        "latitude": 48.14454059835578,
+        "longitude": 10.876565555382314,
+        "is_boundary": false,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_02"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.88,
+          48.14770302478377
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_040",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_059"
+        ],
+        "lat": 48.14770302478377,
+        "lon": 10.88,
+        "latitude": 48.14770302478377,
+        "longitude": 10.88,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_02"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.88,
+          48.233889870822914
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_041",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 380.0,
+        "voltages_kv": [
+          380.0
+        ],
+        "connected_segments": [
+          "LINE_021"
+        ],
+        "lat": 48.233889870822914,
+        "lon": 10.88,
+        "latitude": 48.233889870822914,
+        "longitude": 10.88,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.88,
+          48.283304694049534
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_042",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_022"
+        ],
+        "lat": 48.283304694049534,
+        "lon": 10.88,
+        "latitude": 48.283304694049534,
+        "longitude": 10.88,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_01"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.88,
+          48.32562456639447
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_043",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_006"
+        ],
+        "lat": 48.32562456639447,
+        "lon": 10.88,
+        "latitude": 48.32562456639447,
+        "longitude": 10.88,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_03"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          10.88,
+          48.32804659916841
+        ]
+      },
+      "properties": {
+        "node_id": "NODE_044",
+        "node_type": "boundary_endpoint",
+        "name": null,
+        "voltage_kv": 110.0,
+        "voltages_kv": [
+          110.0
+        ],
+        "connected_segments": [
+          "LINE_005"
+        ],
+        "lat": 48.32804659916841,
+        "lon": 10.88,
+        "latitude": 48.32804659916841,
+        "longitude": 10.88,
+        "is_boundary": true,
+        "source_data_quality": "Source-line endpoint coordinate; joined only to exactly coincident selected endpoints. No line-crossing joins are inferred.",
+        "notes": "Study-window clipping boundary; endpoint marks the clip, not a physical asset.",
+        "source_substation_fid": null,
+        "source_substation_id": null,
+        "component_id": "COMPONENT_03"
+      }
+    }
+  ]
+}

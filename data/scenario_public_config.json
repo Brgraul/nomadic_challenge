@@ -1,0 +1,90 @@
+{
+  "scenario_id": "SYN_BAVARIA_WIND_01",
+  "title": "Windstorm Grid Investigation (Synthetic Exercise)",
+  "label": "SYNTHETIC — exercise only; not an operational event",
+  "crs": "OGC:CRS84",
+  "scenario_window_hours": 4,
+  "study_bounds_west_south_east_north": [10.45, 48.09, 10.88, 48.38],
+  "public_context": {
+    "storm_footprint": {
+      "context_id": "SYN_CONTEXT_STORM",
+      "kind": "synthetic_storm_footprint",
+      "label": "SYNTHETIC storm footprint estimate",
+      "description": "Illustrative fictional windstorm footprint for the exercise; not observed weather data.",
+      "confidence": "medium",
+      "coordinates": [
+        [10.47, 48.12],
+        [10.62, 48.10],
+        [10.84, 48.12],
+        [10.87, 48.29],
+        [10.80, 48.36],
+        [10.59, 48.37],
+        [10.47, 48.29],
+        [10.47, 48.12]
+      ]
+    },
+    "reports": [
+      {
+        "information_id": "SYN_REPORT_01",
+        "information_type": "weather_alert",
+        "location_or_asset": "Broad study area; approximate storm footprint in scenario_context.geojson",
+        "description": "SYNTHETIC exercise weather desk estimates strong, gusty winds across much of the study area. The estimate is broad and does not identify damaged infrastructure.",
+        "timestamp_relative_to_storm": "T+00:12",
+        "confidence": "high for the exercise forecast; low for any asset-level implication",
+        "source": "Synthetic exercise weather desk",
+        "location_area_coordinates": [[10.45, 48.09], [10.88, 48.09], [10.88, 48.38], [10.45, 48.38], [10.45, 48.09]]
+      },
+      {
+        "information_id": "SYN_REPORT_02",
+        "information_type": "vegetation_and_access_report",
+        "location_or_asset": "Broad west-central rural witness area; multiple mapped lines are within the area polygon in scenario_context.geojson",
+        "description": "SYNTHETIC caller reports a fallen branch across a rural access track and says nearby trees are brushing an overhead route somewhere in a broad area. No photograph, line identifier, or confirmed contact with a conductor is available; the report could refer to non-grid vegetation or any of several nearby corridors.",
+        "timestamp_relative_to_storm": "T+00:31",
+        "confidence": "low to medium",
+        "source": "Synthetic municipal hotline caller",
+        "location_area_coordinates": [[10.56, 48.18], [10.68, 48.18], [10.68, 48.24], [10.56, 48.24], [10.56, 48.18]]
+      },
+      {
+        "information_id": "SYN_REPORT_03",
+        "information_type": "protection_event_summary",
+        "location_or_asset": "Broad southwest service sector; see approximate area polygon in scenario_context.geojson",
+        "description": "SYNTHETIC dispatch summary records one automatic protection event and attempted reclose somewhere in a broad service sector. A separate status check confirms LINE_024 was precautionarily switched to de-energized; its status is known, but the reason for the protection event and any relationship to that switching action are not. Telemetry is delayed, and this report does not establish customer or asset connectivity.",
+        "timestamp_relative_to_storm": "T+00:44",
+        "confidence": "high that an exercise event was logged; low for its location and interpretation",
+        "source": "Synthetic dispatch console summary",
+        "location_area_coordinates": [[10.60, 48.15], [10.75, 48.15], [10.75, 48.23], [10.60, 48.23], [10.60, 48.15]],
+        "asset_reference": "LINE_024"
+      },
+      {
+        "information_id": "SYN_REPORT_04",
+        "information_type": "visual_flash_report",
+        "location_or_asset": "Southeast industrial witness area; multiple mapped lines are nearby in scenario_context.geojson",
+        "description": "SYNTHETIC resident reports a brief orange flash near a private industrial site during a gust. A site attendant mentions a backup-generator test around the same time, but the log has not yet been checked. The distant view cannot distinguish that activity from lightning, a vehicle, or a grid event.",
+        "timestamp_relative_to_storm": "T+01:03",
+        "confidence": "low to medium",
+        "source": "Synthetic resident call and site-attendant comment",
+        "location_area_coordinates": [[10.85, 48.13], [10.88, 48.13], [10.88, 48.18], [10.85, 48.18], [10.85, 48.13]]
+      },
+      {
+        "information_id": "SYN_REPORT_05",
+        "information_type": "sound_and_warmth_report",
+        "location_or_asset": "Broad east-central field area; multiple mapped lines are inside the approximate polygon in scenario_context.geojson",
+        "description": "SYNTHETIC field observer reports intermittent ticking and a handheld thermal contrast somewhere in a broad east-central area containing multiple overhead corridors. Wind, sun-warmed surfaces, load, distance, and viewing angle were not controlled; no calibrated reading or asset match exists.",
+        "timestamp_relative_to_storm": "T+01:27",
+        "confidence": "low to medium",
+        "source": "Synthetic field observer note",
+        "location_area_coordinates": [[10.75, 48.18], [10.84, 48.18], [10.84, 48.24], [10.75, 48.24], [10.75, 48.18]]
+      },
+      {
+        "information_id": "SYN_REPORT_06",
+        "information_type": "conductor_motion_report",
+        "location_or_asset": "Broad northeast witness area; several mapped spans are inside the approximate polygon in scenario_context.geojson",
+        "description": "SYNTHETIC observer says a span somewhere in a broad northeast area appeared to move more than nearby spans during a gust. Several mapped lines cross the area. No baseline video, measured clearance, support inspection, or confirmed conductor identity is available.",
+        "timestamp_relative_to_storm": "T+01:51",
+        "confidence": "low",
+        "source": "Synthetic roadside observer note",
+        "location_area_coordinates": [[10.79, 48.29], [10.87, 48.29], [10.87, 48.36], [10.79, 48.36], [10.79, 48.29]]
+      }
+    ]
+  }
+}

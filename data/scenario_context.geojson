@@ -1,0 +1,289 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.47,
+              48.12
+            ],
+            [
+              10.62,
+              48.1
+            ],
+            [
+              10.84,
+              48.12
+            ],
+            [
+              10.87,
+              48.29
+            ],
+            [
+              10.8,
+              48.36
+            ],
+            [
+              10.59,
+              48.37
+            ],
+            [
+              10.47,
+              48.29
+            ],
+            [
+              10.47,
+              48.12
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "context_id": "SYN_CONTEXT_STORM",
+        "context_kind": "synthetic_storm_footprint",
+        "label": "SYNTHETIC storm footprint estimate",
+        "description": "Illustrative fictional windstorm footprint for the exercise; not observed weather data.",
+        "confidence": "medium",
+        "synthetic": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.45,
+              48.09
+            ],
+            [
+              10.88,
+              48.09
+            ],
+            [
+              10.88,
+              48.38
+            ],
+            [
+              10.45,
+              48.38
+            ],
+            [
+              10.45,
+              48.09
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "context_id": "SYN_REPORT_01",
+        "context_kind": "synthetic_report_area",
+        "information_id": "SYN_REPORT_01",
+        "information_type": "weather_alert",
+        "label": "SYN_REPORT_01",
+        "source": "Synthetic exercise weather desk",
+        "synthetic": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.56,
+              48.18
+            ],
+            [
+              10.68,
+              48.18
+            ],
+            [
+              10.68,
+              48.24
+            ],
+            [
+              10.56,
+              48.24
+            ],
+            [
+              10.56,
+              48.18
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "context_id": "SYN_REPORT_02",
+        "context_kind": "synthetic_report_area",
+        "information_id": "SYN_REPORT_02",
+        "information_type": "vegetation_and_access_report",
+        "label": "SYN_REPORT_02",
+        "source": "Synthetic municipal hotline caller",
+        "synthetic": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.6,
+              48.15
+            ],
+            [
+              10.75,
+              48.15
+            ],
+            [
+              10.75,
+              48.23
+            ],
+            [
+              10.6,
+              48.23
+            ],
+            [
+              10.6,
+              48.15
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "context_id": "SYN_REPORT_03",
+        "context_kind": "synthetic_report_area",
+        "information_id": "SYN_REPORT_03",
+        "information_type": "protection_event_summary",
+        "label": "SYN_REPORT_03",
+        "source": "Synthetic dispatch console summary",
+        "synthetic": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.85,
+              48.13
+            ],
+            [
+              10.88,
+              48.13
+            ],
+            [
+              10.88,
+              48.18
+            ],
+            [
+              10.85,
+              48.18
+            ],
+            [
+              10.85,
+              48.13
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "context_id": "SYN_REPORT_04",
+        "context_kind": "synthetic_report_area",
+        "information_id": "SYN_REPORT_04",
+        "information_type": "visual_flash_report",
+        "label": "SYN_REPORT_04",
+        "source": "Synthetic resident call and site-attendant comment",
+        "synthetic": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.75,
+              48.18
+            ],
+            [
+              10.84,
+              48.18
+            ],
+            [
+              10.84,
+              48.24
+            ],
+            [
+              10.75,
+              48.24
+            ],
+            [
+              10.75,
+              48.18
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "context_id": "SYN_REPORT_05",
+        "context_kind": "synthetic_report_area",
+        "information_id": "SYN_REPORT_05",
+        "information_type": "sound_and_warmth_report",
+        "label": "SYN_REPORT_05",
+        "source": "Synthetic field observer note",
+        "synthetic": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.79,
+              48.29
+            ],
+            [
+              10.87,
+              48.29
+            ],
+            [
+              10.87,
+              48.36
+            ],
+            [
+              10.79,
+              48.36
+            ],
+            [
+              10.79,
+              48.29
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "context_id": "SYN_REPORT_06",
+        "context_kind": "synthetic_report_area",
+        "information_id": "SYN_REPORT_06",
+        "information_type": "conductor_motion_report",
+        "label": "SYN_REPORT_06",
+        "source": "Synthetic roadside observer note",
+        "synthetic": true
+      }
+    }
+  ]
+}
