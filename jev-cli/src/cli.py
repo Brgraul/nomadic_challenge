@@ -1,14 +1,10 @@
 """
-jev-eval  —  Nomadic crew-dispatch evaluator
+jev-eval  —  Nomadic crew-dispatch evaluator (vegetation focus)
 
 Usage:
   python -m src.cli --file hypotheses.json
   python -m src.cli --inline '{"segment_id": "LINE_026", ...}'
   echo '<json>' | python -m src.cli
-
-Output:
-  Ranked table of segments with decision + evidence scores.
-  Exit code 0 always; individual errors printed per segment.
 """
 
 import argparse
@@ -18,22 +14,13 @@ from dataclasses import asdict
 
 from .evaluate import evaluate
 from .types import (
-    Decision,
-    Report,
-    SegmentHypothesis,
-    SensorReadings,
-    VegetationContext,
+    Decision, ImpactContext, Report, SegmentHypothesis, SensorReadings, VegetationRisk,
 )
 
 
 def _parse_hypothesis(raw: dict) -> SegmentHypothesis:
     reports = [
-        Report(
-            id=r["id"],
-            type=r["type"],
-            description=r["description"],
-            confidence=r["confidence"],
-        )
+        Report(id=r["id"], type=r["type"], description=r["description"], confidence=r["confidence"])
         for r in raw.get("reports", [])
     ]
 
@@ -46,13 +33,26 @@ def _parse_hypothesis(raw: dict) -> SegmentHypothesis:
         baseline_comparison=sr.get("baseline_comparison"),
     )
 
-    vc = raw.get("vegetation", {})
-    vegetation = VegetationContext(
-        forest_cover_nearby=vc.get("forest_cover_nearby", False),
-        estimated_tree_height_m=vc.get("estimated_tree_height_m"),
-        estimated_line_clearance_m=vc.get("estimated_line_clearance_m"),
-        wind_alignment=vc.get("wind_alignment", "unknown"),
-        tree_species_fragility=vc.get("tree_species_fragility", "unknown"),
+    vr = raw.get("vegetation", {})
+    vegetation = VegetationRisk(
+        forest_overlap_pct=vr.get("forest_overlap_pct", 0.0),
+        nearest_forest_m=vr.get("nearest_forest_m"),
+        max_canopy_height_m=vr.get("max_canopy_height_m"),
+        mean_canopy_height_m=vr.get("mean_canopy_height_m"),
+        estimated_clearance_m=vr.get("estimated_clearance_m"),
+        dominant_species=vr.get("dominant_species", "unknown"),
+        wind_exposure_score=vr.get("wind_exposure_score", 0.0),
+    )
+
+    ic = raw.get("impact", {})
+    impact = ImpactContext(
+        downstream_households=ic.get("downstream_households", 0),
+        downstream_population=ic.get("downstream_population", 0),
+        downstream_power_plants_mw=ic.get("downstream_power_plants_mw", 0.0),
+        downstream_renewable_plants=ic.get("downstream_renewable_plants", 0),
+        downstream_hospitals=ic.get("downstream_hospitals", 0),
+        downstream_water_works=ic.get("downstream_water_works", 0),
+        downstream_care_homes=ic.get("downstream_care_homes", 0),
     )
 
     return SegmentHypothesis(
@@ -64,36 +64,36 @@ def _parse_hypothesis(raw: dict) -> SegmentHypothesis:
         reports=reports,
         sensor_readings=sensor,
         vegetation=vegetation,
+        impact=impact,
         notes=raw.get("notes"),
     )
 
 
-DECISION_COLORS = {
-    Decision.DISPATCH_CREW: "\033[91m",   # red
-    Decision.MEASURE_MORE:  "\033[93m",   # yellow
-    Decision.DEPRIORITIZE:  "\033[92m",   # green
+COLORS = {
+    Decision.DISPATCH_CREW: "\033[91m",
+    Decision.MEASURE_MORE:  "\033[93m",
+    Decision.DEPRIORITIZE:  "\033[92m",
 }
 RESET = "\033[0m"
 
 
 def _print_table(results):
-    # Sort by combined_probability descending
-    results.sort(key=lambda r: r.combined_probability, reverse=True)
-
-    header = f"{'Segment':<14} {'P(crew)':<9} {'Evidence':<10} {'Veg':>5} {'Sensor':>7} {'Report':>7} {'Innocent':>9}  Decision"
+    results.sort(key=lambda r: r.dispatch_priority, reverse=True)
+    header = (
+        f"{'Segment':<14} {'P(tree)':<9} {'P(impact)':<11} {'Priority':<10} "
+        f"{'Report':>7} {'Innocent':>9}  Decision"
+    )
     print()
     print(header)
     print("-" * len(header))
-
     for r in results:
-        color = DECISION_COLORS.get(r.decision, "")
+        color = COLORS.get(r.decision, "")
         e = r.evidence
         print(
             f"{r.segment_id:<14} "
-            f"{r.combined_probability:<9.3f} "
-            f"{r.evidence_count:<10} "
-            f"{e.vegetation_risk:>5.2f} "
-            f"{e.sensor_anomaly:>7.2f} "
+            f"{r.vegetation_contact_probability:<9.2f} "
+            f"{r.impact_probability:<11.2f} "
+            f"{r.dispatch_priority:<10.3f} "
             f"{e.report_credibility:>7.2f} "
             f"{e.innocent_explanation:>9.2f}  "
             f"{color}{r.decision.value}{RESET}"
@@ -103,14 +103,12 @@ def _print_table(results):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate grid segment hypotheses for crew dispatch using Jev."
+        description="Evaluate grid segments for vegetation-caused faults and crew dispatch."
     )
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--file", "-f", help="Path to JSON file (array or single object).")
-    group.add_argument("--inline", "-i", help="Inline JSON string (array or single object).")
-    parser.add_argument(
-        "--json-out", action="store_true", help="Print full JSON results to stdout."
-    )
+    group.add_argument("--file", "-f", help="JSON file (array or single object).")
+    group.add_argument("--inline", "-i", help="Inline JSON string.")
+    parser.add_argument("--json-out", action="store_true", help="Print full JSON results.")
     args = parser.parse_args()
 
     if args.file:
@@ -129,10 +127,10 @@ def main():
 
     hypotheses = [_parse_hypothesis(h) for h in raw]
 
-    print(f"Evaluating {len(hypotheses)} segment(s) with Jev…")
+    print(f"Evaluating {len(hypotheses)} segment(s)…")
     results = []
     for h in hypotheses:
-        print(f"  [{h.segment_id}] calling Jev…", end=" ", flush=True)
+        print(f"  [{h.segment_id}] calling Gemini…", end=" ", flush=True)
         try:
             result = evaluate(h)
             results.append(result)

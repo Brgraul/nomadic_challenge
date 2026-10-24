@@ -2,18 +2,40 @@ from .types import SegmentHypothesis
 
 
 def build_prompt(h: SegmentHypothesis) -> str:
-    """Build the Gemini prompt for a single segment hypothesis."""
-
-    report_text = (
-        "No reports reference this segment."
-        if not h.reports
-        else "\n".join(
-            f"  [{r.id}] type={r.type}, confidence={r.confidence}: {r.description}"
-            for r in h.reports
-        )
-    )
-
+    v = h.vegetation
+    imp = h.impact
     s = h.sensor_readings
+
+    # --- Vegetation block ---
+    veg_lines = [
+        f"Forest overlap within 50m buffer: {v.forest_overlap_pct:.0f}%",
+    ]
+    if v.nearest_forest_m is not None:
+        veg_lines.append(f"Distance to nearest forest: {v.nearest_forest_m:.0f}m")
+    if v.max_canopy_height_m is not None:
+        veg_lines.append(f"Max canopy height within 50m: {v.max_canopy_height_m:.1f}m")
+    if v.mean_canopy_height_m is not None:
+        veg_lines.append(f"Mean canopy height: {v.mean_canopy_height_m:.1f}m")
+    if v.estimated_clearance_m is not None:
+        veg_lines.append(f"Estimated electrical clearance: {v.estimated_clearance_m:.1f}m")
+        if v.max_canopy_height_m is not None:
+            gap = v.estimated_clearance_m - v.max_canopy_height_m
+            veg_lines.append(f"Tree-to-wire gap: {gap:.1f}m ({'NEGATIVE — contact possible' if gap < 0 else 'positive — clearance maintained under calm conditions'})")
+    veg_lines.append(f"Dominant species: {v.dominant_species} ({'high fragility — shallow roots' if v.dominant_species == 'coniferous' else 'lower fragility' if v.dominant_species == 'deciduous' else 'mixed fragility'})")
+    veg_lines.append(f"Wind exposure score: {v.wind_exposure_score:.2f} (0=sheltered, 1=fully upwind of assumed SW storm wind)")
+    veg_text = "\n".join(f"  {l}" for l in veg_lines)
+
+    # --- Impact block ---
+    critical = imp.downstream_hospitals + imp.downstream_water_works + imp.downstream_care_homes
+    imp_lines = [
+        f"Downstream households: {imp.downstream_households:,}",
+        f"Downstream population: {imp.downstream_population:,}",
+        f"Downstream power plants: {imp.downstream_renewable_plants} units, {imp.downstream_power_plants_mw:.1f} MW",
+        f"Critical infrastructure: {critical} (hospitals={imp.downstream_hospitals}, water={imp.downstream_water_works}, care homes={imp.downstream_care_homes})",
+    ]
+    imp_text = "\n".join(f"  {l}" for l in imp_lines)
+
+    # --- Sensor block ---
     sensor_parts = []
     if s.line_live is not None:
         sensor_parts.append(f"line_live={s.line_live}")
@@ -22,28 +44,32 @@ def build_prompt(h: SegmentHypothesis) -> str:
     if s.sag_angle_anomaly is not None:
         sensor_parts.append(f"sag_angle_anomaly={s.sag_angle_anomaly}")
     if s.pd_detected is not None:
-        sensor_parts.append(f"pd_detected={s.pd_detected}")
+        sensor_parts.append(f"partial_discharge={s.pd_detected}")
     if s.baseline_comparison:
         sensor_parts.append(f"baseline: {s.baseline_comparison}")
-    sensor_text = ", ".join(sensor_parts) if sensor_parts else "No sensor data available."
+    sensor_text = ", ".join(sensor_parts) if sensor_parts else "No sensor data yet."
 
-    v = h.vegetation
-    veg_parts = [f"forest_cover_nearby={v.forest_cover_nearby}"]
-    if v.estimated_tree_height_m is not None:
-        veg_parts.append(f"tree_height={v.estimated_tree_height_m}m")
-    if v.estimated_line_clearance_m is not None:
-        veg_parts.append(f"line_clearance={v.estimated_line_clearance_m}m")
-    veg_parts.append(f"wind_alignment={v.wind_alignment}")
-    veg_parts.append(f"tree_fragility={v.tree_species_fragility}")
-    veg_text = ", ".join(veg_parts)
+    # --- Reports block ---
+    report_text = (
+        "No reports reference this segment."
+        if not h.reports
+        else "\n".join(
+            f"  [{r.id}] {r.type}, confidence={r.confidence}: {r.description}"
+            for r in h.reports
+        )
+    )
 
-    return f"""You are evaluating whether an operator crew should be dispatched to inspect a power grid segment after a windstorm.
+    return f"""You are evaluating a power grid segment for vegetation-caused faults after a windstorm.
+The focus hypothesis is: a tree has contacted or is about to contact the conductor on this segment.
 
 SEGMENT: {h.segment_id}
 Voltage: {h.voltage_kv} kV | Length: {h.length_km:.1f} km | Live: {h.line_is_live} | In storm footprint: {h.in_storm_footprint}
 
-VEGETATION:
+VEGETATION RISK (from OSM forests, canopy height map, DLR species map):
 {veg_text}
+
+DOWNSTREAM IMPACT (from Zensus 2022, Marktstammdatenregister, OSM critical infra):
+{imp_text}
 
 SENSOR READINGS:
 {sensor_text}
@@ -55,22 +81,25 @@ NOTES: {h.notes or 'None.'}
 
 ---
 
-Rate each of the following as a probability from 0.0 to 1.0:
+Return four probabilities from 0.0 to 1.0:
 
-1. vegetation_risk: Could a tree physically contact the conductor on {h.segment_id}?
-   - High (→1.0) if: forest nearby, trees taller than clearance, upwind, fragile species (spruce).
-   - Low (→0.0) if: no forest, trees clearly too short, downwind, stable bare deciduous trees.
+1. vegetation_contact_probability
+   Probability that a tree is currently touching or is imminently about to contact the conductor.
+   High (→1.0): forest overlaps buffer, canopy height exceeds or approaches clearance, coniferous species, high wind exposure, vibration/sag anomaly detected.
+   Low (→0.0): no forest nearby, trees clearly shorter than clearance, deciduous/bare species, sheltered from wind, sensors all normal.
 
-2. sensor_anomaly: Do sensor readings show an anomaly inconsistent with normal post-storm conditions?
-   - High (→1.0) if: vibration, sag, or partial discharge deviates significantly from pre-storm baseline.
-   - Low (→0.0) if: all readings normal or no sensor data (treat missing data as uncertainty ~0.5).
+2. impact_probability
+   Probability that failure of this segment causes significant customer or infrastructure impact.
+   High (→1.0): thousands of households downstream, critical infrastructure (hospital, water works), large renewable plant.
+   Low (→0.0): few or no households downstream, no critical infra, negligible power plant capacity.
 
-3. report_credibility: Do the incoming reports specifically and credibly implicate {h.segment_id}?
-   - High (→1.0) if: medium/high-confidence report covers a narrow area containing this segment.
-   - Low (→0.0) if: reports are too broad, low confidence, zero reports, or already explained by another cause.
+3. report_credibility
+   Probability that incoming reports credibly and specifically point to this segment as the fault location.
+   High (→1.0): medium/high-confidence report covers a narrow area containing this segment.
+   Low (→0.0): no reports, reports too broad, low confidence, or already explained by another cause.
 
-4. innocent_explanation: Is there a full benign explanation for all observations?
-   - High (→1.0) if: all observations explained by planned switching (e.g. LINE_024), confirmed generator test, or expected weather with no damage.
-   - Low (→0.0) if: at least one anomaly remains unexplained after ruling out known benign causes.
-
-Return a JSON object with these four float fields only."""
+4. innocent_explanation
+   Probability that a benign explanation fully accounts for all observations on this segment.
+   High (→1.0): all anomalies explained by planned switching, confirmed generator test, or expected weather with no damage.
+   Low (→0.0): at least one anomaly remains unexplained after ruling out known benign causes.
+"""
