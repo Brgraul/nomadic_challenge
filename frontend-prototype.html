@@ -1,0 +1,685 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Storm Line Investigator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: operator view. Map on the left; on the right, the root-cause decision first, then hypotheses, evidence, impact. System internals live in a drawer. Single dark look by choice. */
+:root{
+  color-scheme: dark;
+  --bg:#0c141d; --panel:#121d29; --panel-2:#172435; --rule:#22344a;
+  --fg:#dbe5ee; --dim:#8a9db0; --faint:#52667b;
+  --live:#58b4d1; --accent:#8fd0ff; --alarm:#ff5148; --warn:#f3b23f; --ok:#6fcf8f; --people:#e7a1c6;
+  --display:"Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body:"Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--body);font-size:14px;line-height:1.45;padding-left:max(14px, env(safe-area-inset-left, 0px));padding-right:max(14px, env(safe-area-inset-right, 0px));padding-block:12px 0}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance}
+.app{max-width:1900px;margin:0 auto;display:grid;gap:12px}
+.mono{font-family:var(--mono)}
+
+header.top{display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;justify-content:space-between}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;min-width:0}
+.brand h1{font-size:20px;font-weight:750;font-stretch:78%;letter-spacing:.01em;text-transform:uppercase}
+.syn{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--warn);text-transform:uppercase}
+.hright{display:flex;align-items:center;gap:14px}
+.clock{font-family:var(--mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.clock small{font-size:10px;color:var(--dim);font-weight:400;margin-right:6px;letter-spacing:.06em;text-transform:uppercase}
+button,select{font-family:var(--body);font-size:13px;color:var(--fg);background:var(--panel-2);border:1px solid var(--rule);border-radius:4px;padding:6px 11px;cursor:pointer}
+button:hover,select:hover{border-color:var(--accent)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.main{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:6px;min-width:0;display:flex;flex-direction:column}
+.ph{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:9px 14px 0}
+.ph h2{font-size:11.5px;font-weight:700;font-stretch:80%;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.ph .meta{font-family:var(--mono);font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pbody{padding:7px 14px 10px}
+.side{display:flex;flex-direction:column;gap:10px;min-width:0}
+
+/* status strip */
+.status{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.phase{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:3px;border:1px solid var(--rule);color:var(--dim);white-space:nowrap}
+.phase.reported,.phase.alarm{color:#ffd9d6;border-color:var(--alarm);background:color-mix(in srgb,var(--alarm) 16%,transparent);animation:blink 1s steps(2) infinite}
+.phase.investigating{color:#d3ecff;border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.phase.validated{color:#ffe9c2;border-color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+.phase.confirmed{color:#d6f5df;border-color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+@keyframes blink{50%{opacity:.55}}
+.stxt{flex:1 1 320px;min-width:0}
+.stxt b{font-family:var(--display);font-stretch:88%;font-size:16px;font-weight:700}
+.stxt span{display:block;font-size:12.5px;color:var(--dim)}
+.stxt span em{font-style:normal;color:var(--accent)}
+
+/* map */
+.mapbox{position:relative;width:100%;aspect-ratio:1000/1012;background:#0e1925;border-radius:0 0 6px 6px;overflow:hidden}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block}
+.layers{position:absolute;top:10px;right:10px;display:flex;gap:4px;background:color-mix(in srgb,var(--bg) 85%,transparent);border:1px solid var(--rule);border-radius:5px;padding:3px}
+.layers button{font-size:11.5px;padding:3px 9px;border:0;background:transparent;color:var(--dim)}
+.layers button[aria-pressed="true"]{background:var(--panel-2);color:var(--fg)}
+.legend{position:absolute;left:10px;bottom:10px;display:flex;flex-wrap:wrap;gap:4px 12px;max-width:calc(100% - 20px);background:color-mix(in srgb,var(--bg) 85%,transparent);border:1px solid var(--rule);border-radius:5px;padding:5px 9px;font-size:11px;color:var(--dim)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:16px;height:3px;border-radius:2px;display:inline-block}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+/* root cause card */
+.rc{border-width:1px;transition:border-color .4s,background .4s}
+.rc.confirmed{border-color:var(--ok)}
+.rc.validated{border-color:color-mix(in srgb,var(--warn) 70%,var(--rule))}
+.rc .lead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.rc .cause{font-family:var(--display);font-stretch:84%;font-weight:750;font-size:23px;line-height:1.15}
+.rc .cause small{display:block;font-family:var(--body);font-stretch:100%;font-weight:400;font-size:12.5px;color:var(--dim);margin-top:3px}
+.rc .conf{font-family:var(--mono);font-size:32px;font-weight:600;line-height:1;text-align:right;font-variant-numeric:tabular-nums}
+.rc .conf small{display:block;font-family:var(--body);font-size:10.5px;color:var(--dim);font-weight:400;margin-top:4px}
+.loc{margin-top:8px;font-size:12.5px;color:var(--dim)}
+.loc b{color:var(--fg);font-family:var(--mono);font-weight:500}
+.crew{margin-top:8px;border:1px solid var(--rule);border-radius:5px;padding:9px 11px;display:grid;gap:6px}
+.crew .verdict{font-family:var(--display);font-stretch:84%;font-weight:750;font-size:17px;text-transform:uppercase;letter-spacing:.02em}
+.crew.go{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,transparent)} .crew.go .verdict{color:var(--ok)}
+.crew.hold{border-color:color-mix(in srgb,var(--warn) 60%,var(--rule))} .crew.hold .verdict{color:var(--warn)}
+.crew.idle .verdict{color:var(--dim)}
+.checks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.ck{font-size:11.5px;color:var(--dim);border-top:2px solid var(--rule);padding-top:4px}
+.ck b{display:block;font-family:var(--mono);font-size:12.5px;color:var(--fg);font-weight:500}
+.ck.y{border-color:var(--ok)} .ck.n{border-color:var(--warn)}
+.ruled{margin-top:8px;font-size:12px;color:var(--dim)}
+.ruled b{color:var(--fg);font-weight:600}
+
+/* hypotheses */
+.hyp{display:grid;gap:7px}
+.hrow{display:grid;grid-template-columns:minmax(0,1fr) 120px 40px;gap:10px;align-items:center;font-size:13px}
+.hrow .hn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hrow .hn em{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--faint);margin-right:6px}
+.hrow .hv{font-family:var(--mono);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.bar{position:relative;height:8px;background:var(--panel-2);border-radius:4px;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;border-radius:4px;transition:width 1s cubic-bezier(.3,.7,.2,1),background .4s}
+.bar .th{position:absolute;top:-2px;bottom:-2px;left:80%;width:1px;background:color-mix(in srgb,var(--fg) 45%,transparent)}
+
+/* evidence */
+.evid{flex:none}
+.evid .pbody{display:grid;gap:8px}
+.visual{border:1px solid var(--rule);border-radius:5px;background:var(--panel-2);padding:6px 8px;overflow:hidden}
+.visual .vt{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--dim)}
+.visual .vt b{color:var(--fg);font-weight:600}
+.visual svg{display:block;width:auto;max-width:100%;height:auto;max-height:19vh;margin:0 auto}
+.evlist{display:grid;gap:3px;font-size:12px;color:var(--dim)}
+.evlist div::before{content:"+ ";color:var(--ok);font-family:var(--mono)}
+.evlist div.neg::before{content:"− ";color:var(--alarm)}
+.reps{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:10px;border:1px solid var(--rule);color:var(--dim);white-space:nowrap}
+.chip.yes{color:#ff9a92;border-color:color-mix(in srgb,var(--alarm) 60%,transparent)}
+.chip.no{color:var(--faint);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--faint) 70%,transparent)}
+.chip.chk{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 50%,transparent)}
+.chip.unv{color:var(--people);border-color:color-mix(in srgb,var(--people) 50%,transparent)}
+.empty{color:var(--faint);font-size:12.5px;padding:8px 0}
+
+/* impact */
+.impov{position:absolute;top:10px;left:10px;width:min(300px,calc(100% - 200px));background:color-mix(in srgb,var(--bg) 88%,transparent);border:1px solid var(--rule);border-radius:5px;padding:7px 10px}
+.impov .ih{font-size:10.5px;font-weight:700;font-stretch:80%;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+.imp{display:grid;gap:6px}
+.imp .n{font-family:var(--mono);font-size:22px;font-weight:600;line-height:1}
+.imp .n small{display:block;font-family:var(--body);font-size:11px;color:var(--dim);font-weight:400;margin-top:4px}
+.vrows{display:grid;gap:4px}
+.vrow{display:grid;grid-template-columns:minmax(0,1fr) 70px 34px;gap:8px;align-items:center;font-size:12px}
+.vrow span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vb{height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden}.vb i{display:block;height:100%;transition:width 1s,background .4s}
+.vrow span:last-child{font-family:var(--mono);font-size:11px;text-align:right;color:var(--dim)}
+.note{font-size:10.5px;color:var(--faint);margin-top:6px}
+
+/* transport */
+.transport{border-top:1px solid var(--rule);margin-left:calc(-1 * max(14px, env(safe-area-inset-left, 0px)));margin-right:calc(-1 * max(14px, env(safe-area-inset-right, 0px)));padding:8px max(14px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));background:color-mix(in srgb,var(--bg) 92%,transparent);position:sticky;bottom:0;z-index:5;backdrop-filter:blur(4px)}
+.tin{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+button.primary{background:color-mix(in srgb,var(--accent) 22%,var(--panel-2));border-color:var(--accent);min-width:78px;font-weight:600}
+.scrub{flex:1 1 240px;display:grid;gap:2px;min-width:0}
+input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+.ticks{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9.5px;color:var(--faint)}
+.ticks span.on{color:var(--accent)}
+.whatif{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);cursor:pointer}
+.whatif input{accent-color:var(--warn);width:15px;height:15px}
+.whatif.on{color:#ffe0a3}
+
+/* system drawer */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);background:var(--panel);border-left:1px solid var(--rule);z-index:20;display:flex;flex-direction:column;padding:calc(12px + env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) 14px;gap:10px;box-shadow:-20px 0 40px rgba(0,0,0,.4)}
+.drawer .dh{display:flex;justify-content:space-between;align-items:center}
+.drawer h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);font-stretch:80%}
+#pipe{display:block;width:100%;height:auto}
+.log{overflow:auto;flex:1 1 0;min-height:0;font-size:12px;border-top:1px solid var(--rule);padding-top:6px}
+.log div{display:grid;grid-template-columns:54px minmax(0,1fr);gap:6px;padding:3px 0;color:var(--dim)}
+.log div b{font-family:var(--mono);font-weight:500;color:var(--faint);font-size:10.5px}
+.log div.new{color:var(--fg)} .log div.new b{color:var(--accent)}
+.fleet{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.dchip{border:1px solid var(--rule);border-radius:4px;padding:4px 7px;font-size:11px;min-width:0}
+.dchip b{font-family:var(--mono)} .dchip div{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pn rect{fill:var(--panel-2);stroke:var(--rule);stroke-width:1.2;transition:fill .25s,stroke .25s}
+.pn text{fill:var(--dim)}
+.pn .t1{font-family:var(--display);font-weight:700;font-stretch:82%;font-size:13px}
+.pn .t2{font-family:var(--mono);font-size:9px}
+.pn .key{font-family:var(--mono);font-size:9.5px;font-weight:600}
+.pn.visited rect{stroke:color-mix(in srgb,var(--accent) 45%,var(--rule))}
+.pn.active rect{fill:color-mix(in srgb,var(--accent) 22%,var(--panel-2));stroke:var(--accent)}
+.pn.active text,.pn.pass text,.pn.commit text,.pn.reject text{fill:#fff}
+.pn.pass rect,.pn.commit rect{stroke:var(--ok);fill:color-mix(in srgb,var(--ok) 18%,var(--panel-2))}
+.pn.reject rect{stroke:var(--alarm);fill:color-mix(in srgb,var(--alarm) 22%,var(--panel-2))}
+.pe{fill:none;stroke:var(--faint);stroke-width:1.4}
+.pe.lit{stroke:var(--accent);stroke-dasharray:5 4;animation:flow .6s linear infinite}
+.pe.done{stroke:color-mix(in srgb,var(--accent) 45%,var(--faint))}
+@keyframes flow{to{stroke-dashoffset:-9}}
+.plab{font-family:var(--mono);font-size:8.6px;fill:var(--faint)}
+.packet{fill:#fff}
+
+/* map svg */
+.seg{fill:none;stroke-linecap:round;stroke-linejoin:round;transition:stroke .4s,opacity .4s}
+.seg.live{stroke:#3f7f96}
+.seg.dead{stroke:#55647a;stroke-dasharray:6 6}
+.seg.unknown{stroke:var(--warn);stroke-dasharray:2 5}
+.seg.suspect{stroke:var(--alarm);animation:pulse 1.1s ease-in-out infinite}
+.seg.cleared{stroke:#7d8a98;stroke-dasharray:10 5}
+.seg.validated{stroke:#ff7a6e;stroke-dasharray:3 4}
+.seg.fault{stroke:var(--alarm)}
+.seg.hot{stroke-width:5.5}
+@keyframes pulse{0%,100%{stroke-width:5;filter:drop-shadow(0 0 2px var(--alarm))}50%{stroke-width:9;filter:drop-shadow(0 0 12px var(--alarm))}}
+.hit{fill:none;stroke:transparent;stroke-width:14;cursor:crosshair;pointer-events:stroke}
+.fade{transition:opacity .8s}
+.lbl{font-family:var(--mono);font-size:13px;fill:#9fb3c6;paint-order:stroke;stroke:#0e1925;stroke-width:4px}
+.lbl.big{font-size:16px;font-weight:600;fill:#e6eef5}
+.lbl.red{fill:#ff8f88}
+.sub{fill:#0e1925;stroke:#9fb3c6;stroke-width:1.4}
+.ping{fill:none;stroke:var(--alarm);stroke-width:3;opacity:0}
+.ping.go{animation:ping 1.6s ease-out infinite}
+@keyframes ping{0%{r:8;opacity:.95}100%{r:70;opacity:0}}
+.house{transition:fill .9s,opacity .8s;stroke:#0e1925;stroke-width:1.5}
+.drone .glow{transform-box:fill-box;transform-origin:center}
+.drone.busy .glow{animation:breathe 1.4s ease-in-out infinite}
+@keyframes breathe{50%{opacity:.55;transform:scale(1.25)}}
+.scan{opacity:0}.scan.go{animation:scan 1.5s ease-out infinite}
+@keyframes scan{0%{r:18;opacity:.9}100%{r:62;opacity:0}}
+.inner{transition:transform .5s,opacity .5s}
+.tip{position:absolute;pointer-events:none;background:var(--panel-2);border:1px solid var(--rule);border-radius:4px;padding:6px 9px;font-size:11px;font-family:var(--mono);color:var(--fg);white-space:nowrap;z-index:30}
+@media (prefers-reduced-motion: reduce){.seg.suspect,.ping.go,.pe.lit,.phase,.drone .glow,.scan.go{animation:none!important}}
+
+@media (min-width:1100px) and (min-height:660px){
+  html,body{height:100%;overflow:hidden}
+  .app{height:100%;grid-template-rows:auto minmax(0,1fr) auto}
+  .main{grid-template-columns:minmax(0,1fr) minmax(380px,460px);min-height:0}
+  .mapp{min-height:0}
+  .mapbox{flex:1 1 0;min-height:0;aspect-ratio:auto}
+  .side{min-height:0;overflow:auto}
+  .transport{position:static;backdrop-filter:none}
+}
+@media (max-width:1099px),(max-height:659px){.impov{position:static;width:auto;border-width:1px 0 0;border-radius:0}}
+@media (max-width:560px){.checks{grid-template-columns:minmax(0,1fr)}.hrow{grid-template-columns:minmax(0,1fr) 80px 40px}.rc .cause{font-size:20px}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand"><h1>Storm Line Investigator</h1><span class="syn">Synthetic exercise · hypothetical data</span></div>
+    <div class="hright"><div class="clock"><small>Scenario</small><span id="clock">T+00:25</span></div><button id="sysBtn" aria-expanded="false" aria-controls="drawer">System view</button></div>
+  </header>
+
+  <div class="main">
+    <section class="panel mapp">
+      <div class="status"><span class="phase" id="phase">Monitoring</span><div class="stxt"><b id="sTitle"></b><span id="sNext"></span></div></div>
+      <div class="mapbox"><svg id="map" viewBox="0 0 1000 1012" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Grid map with fault location, drones and affected villages"></svg>
+        <div class="impov"><div class="ih">Impact · assumed supply mapping</div><div id="impact"></div></div>
+        <div class="layers" role="group" aria-label="Map layers"><button id="lyHouses" aria-pressed="true">Households</button><button id="lyCanopy" aria-pressed="false">Canopy</button></div>
+        <div class="legend">
+          <span><i class="sw" style="background:#3f7f96"></i>Live</span>
+          <span><i class="sw" style="background:repeating-linear-gradient(90deg,#55647a 0 5px,transparent 5px 9px)"></i>Off</span>
+          <span><i class="sw" style="background:var(--alarm)"></i>Suspect / fault</span>
+          <span><i class="dot" style="background:#5fd4ff"></i>Drone flying</span>
+          <span><i class="dot" style="background:#ffb02e"></i>Drone measuring</span>
+          <span><i class="dot" style="background:linear-gradient(90deg,#f3b23f,#ff5148)"></i>Village likely out</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="side">
+      <section class="panel rc" id="rcPanel">
+        <div class="ph"><h2>Root cause</h2><span class="meta" id="rcMeta"></span></div>
+        <div class="pbody" id="rc"></div>
+      </section>
+      <section class="panel">
+        <div class="ph"><h2>Candidate causes</h2><span class="meta">tick = 0.80 crew threshold</span></div>
+        <div class="pbody" id="hyp"></div>
+      </section>
+      <section class="panel evid">
+        <div class="ph"><h2>Evidence</h2><span class="meta" id="evMeta"></span></div>
+        <div class="pbody" id="evid"></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="transport">
+    <div class="tin">
+      <button id="restart" title="Restart" aria-label="Restart">⏮</button>
+      <button id="prev" title="Previous step" aria-label="Previous step">◀</button>
+      <button id="play" class="primary">Pause</button>
+      <button id="next" title="Next step" aria-label="Next step">▶</button>
+      <div class="scrub"><input type="range" id="slider" min="0" max="10" value="0" aria-label="Demo step"><div class="ticks" id="ticks"></div></div>
+      <select id="speed" aria-label="Playback speed"><option value="0.6">0.6×</option><option value="1" selected>1×</option><option value="1.6">1.6×</option></select>
+      <label class="whatif" id="whatifL"><input type="checkbox" id="whatif"> What if LINE_026 had shown a reflection?</label>
+    </div>
+  </div>
+</div>
+
+<aside class="drawer" id="drawer" hidden aria-label="System view">
+  <div class="dh"><h2>System view · decision loop</h2><button id="sysClose">Close</button></div>
+  <svg id="pipe" viewBox="0 0 400 428" role="img" aria-label="Decision loop flowchart"></svg>
+  <h2 style="margin-top:4px">Fleet</h2>
+  <div class="fleet" id="fleet"></div>
+  <div class="log" id="log"></div>
+</aside>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const G = {"segs":[{"id":"LINE_001","f":"SUBSTATION_07","t":"NODE_027","kv":380.0,"km":0.15,"c":[[10.838,48.237],[10.8385,48.2357]]},{"id":"LINE_002","f":"SUBSTATION_06","t":"NODE_022","kv":110.0,"km":3.77,"c":[[10.8414,48.1848],[10.8437,48.1893],[10.8422,48.1918],[10.8406,48.1942],[10.8392,48.1966],[10.8377,48.199],[10.8361,48.2014],[10.8347,48.2037],[10.8331,48.2062],[10.8316,48.2086],[10.8304,48.2106],[10.8293,48.2123],[10.8281,48.2142],[10.8269,48.2162]]},{"id":"LINE_003","f":"NODE_021","t":"NODE_023","kv":110.0,"km":6.81,"c":[[10.8071,48.264],[10.8035,48.2658],[10.8046,48.2675],[10.8058,48.2689],[10.8079,48.2713],[10.8094,48.273],[10.8112,48.2751],[10.812,48.2774],[10.8127,48.2793],[10.8135,48.2814],[10.8144,48.2841],[10.8154,48.2867],[10.8163,48.2892],[10.8173,48.292],[10.8182,48.2942],[10.8193,48.2971],[10.82,48.299],[10.8208,48.3014],[10.8217,48.3038],[10.8225,48.3058],[10.8234,48.3085],[10.8244,48.311],[10.8253,48.3136],[10.8263,48.3162],[10.8271,48.3184],[10.8284,48.32],[10.8293,48.3211]]},{"id":"LINE_004","f":"NODE_026","t":"NODE_019","kv":380.0,"km":16.43,"c":[[10.8356,48.2383],[10.8329,48.2377],[10.8288,48.2371],[10.8237,48.2362],[10.8216,48.2336],[10.8191,48.2305],[10.8166,48.2273],[10.814,48.2241],[10.8114,48.2208],[10.8089,48.2176],[10.807,48.2151],[10.8048,48.2124],[10.8019,48.2087],[10.7993,48.2054],[10.7973,48.2028],[10.795,48.1999],[10.7942,48.1976],[10.7932,48.1948],[10.7919,48.1915],[10.7909,48.1887],[10.7894,48.1845],[10.788,48.1807],[10.7868,48.1773],[10.7854,48.1735],[10.7841,48.17],[10.7829,48.1666],[10.7816,48.163],[10.7803,48.1593],[10.7789,48.1556],[10.7778,48.1525],[10.7765,48.149],[10.7752,48.1453],[10.7738,48.1416],[10.7723,48.1375],[10.7709,48.1337],[10.7699,48.1308],[10.7685,48.1272],[10.7675,48.1239],[10.7663,48.1206],[10.7653,48.1181],[10.764,48.1148],[10.7629,48.1116],[10.7617,48.1081],[10.7603,48.1042]]},{"id":"LINE_005","f":"SUBSTATION_10","t":"NODE_044","kv":110.0,"km":0.2,"c":[[10.8789,48.3264],[10.88,48.328]]},{"id":"LINE_006","f":"SUBSTATION_10","t":"NODE_043","kv":110.0,"km":0.12,"c":[[10.8789,48.3264],[10.8796,48.3259],[10.88,48.3256]]},{"id":"LINE_007","f":"SUBSTATION_13","t":"NODE_025","kv":110.0,"km":0.41,"c":[[10.8397,48.3774],[10.8372,48.3782],[10.8347,48.3791]]},{"id":"LINE_008","f":"NODE_025","t":"NODE_024","kv":110.0,"km":0.13,"c":[[10.8347,48.3791],[10.8335,48.38]]},{"id":"LINE_009","f":"NODE_004","t":"NODE_003","kv":110.0,"km":1.3,"c":[[10.4665,48.38],[10.4638,48.3793],[10.4605,48.3785],[10.4575,48.3774],[10.4547,48.3771],[10.4523,48.3768],[10.45,48.3765]]},{"id":"LINE_010","f":"NODE_008","t":"NODE_007","kv":110.0,"km":1.04,"c":[[10.5483,48.38],[10.5481,48.38],[10.547,48.3799],[10.5441,48.3798],[10.5414,48.3797],[10.5361,48.3797],[10.5343,48.38]]},{"id":"LINE_011","f":"NODE_020","t":"NODE_018","kv":110.0,"km":1.49,"c":[[10.7778,48.38],[10.7746,48.3797],[10.7698,48.379],[10.7665,48.3787],[10.7632,48.3783],[10.7603,48.3794],[10.7586,48.38]]},{"id":"LINE_012","f":"NODE_033","t":"NODE_032","kv":110.0,"km":0.23,"c":[[10.844,48.3779],[10.8439,48.3786],[10.8437,48.3798],[10.8437,48.38]]},{"id":"LINE_013","f":"SUBSTATION_13","t":"NODE_033","kv":110.0,"km":0.29,"c":[[10.8403,48.3771],[10.8418,48.3774],[10.8425,48.3776],[10.844,48.3779]]},{"id":"LINE_014","f":"SUBSTATION_07","t":"NODE_026","kv":380.0,"km":0.35,"c":[[10.8384,48.2381],[10.8392,48.2385],[10.8356,48.2383]]},{"id":"LINE_015","f":"NODE_013","t":"NODE_016","kv":110.0,"km":11.13,"c":[[10.6482,48.1124],[10.6513,48.1153],[10.6537,48.1176],[10.6562,48.12],[10.6586,48.1222],[10.6616,48.125],[10.6643,48.1275],[10.6666,48.1297],[10.6694,48.1324],[10.6726,48.1354],[10.6756,48.1381],[10.6787,48.141],[10.6815,48.1437],[10.6837,48.1457],[10.6865,48.1483],[10.6893,48.1508],[10.692,48.1532],[10.6957,48.1566],[10.6986,48.1592],[10.7015,48.1619],[10.7044,48.1644],[10.7069,48.1669],[10.7095,48.169],[10.7118,48.1711],[10.7143,48.1734],[10.717,48.1758],[10.7197,48.1783],[10.7222,48.1803],[10.7257,48.1832],[10.7287,48.1856],[10.7319,48.1883],[10.7351,48.1909],[10.7374,48.1928]]},{"id":"LINE_016","f":"NODE_019","t":"NODE_017","kv":380.0,"km":1.63,"c":[[10.7603,48.1042],[10.7589,48.1005],[10.7576,48.0969],[10.7565,48.0938],[10.7554,48.0908],[10.7557,48.09]]},{"id":"LINE_017","f":"NODE_030","t":"NODE_031","kv":110.0,"km":0.48,"c":[[10.8403,48.2336],[10.8424,48.2359],[10.8434,48.2373]]},{"id":"LINE_018","f":"NODE_027","t":"NODE_030","kv":380.0,"km":0.27,"c":[[10.8385,48.2357],[10.8403,48.2336]]},{"id":"LINE_019","f":"NODE_022","t":"NODE_034","kv":110.0,"km":2.71,"c":[[10.8269,48.2162],[10.8285,48.2183],[10.8303,48.2205],[10.8322,48.2229],[10.8342,48.2254],[10.8359,48.2276],[10.8379,48.23],[10.8397,48.2321],[10.8411,48.234],[10.8426,48.2359],[10.8441,48.2377]]},{"id":"LINE_020","f":"NODE_027","t":"SUBSTATION_07","kv":380.0,"km":0.13,"c":[[10.8385,48.2357],[10.8388,48.2368]]},{"id":"LINE_021","f":"NODE_030","t":"NODE_041","kv":380.0,"km":3.05,"c":[[10.8403,48.2336],[10.8442,48.2324],[10.8476,48.2315],[10.851,48.2306],[10.8559,48.2311],[10.8605,48.2316],[10.8652,48.2322],[10.8698,48.2327],[10.8744,48.2332],[10.8789,48.2338],[10.88,48.2339]]},{"id":"LINE_022","f":"NODE_042","t":"NODE_035","kv":110.0,"km":5.87,"c":[[10.88,48.2833],[10.876,48.2832],[10.8754,48.2799],[10.8743,48.2767],[10.8731,48.2735],[10.8721,48.2707],[10.8711,48.268],[10.8692,48.2658],[10.867,48.2634],[10.8646,48.2607],[10.8624,48.2582],[10.8603,48.2559],[10.8584,48.2538],[10.8562,48.2513],[10.854,48.2488],[10.8521,48.2466],[10.8502,48.2445],[10.848,48.2421],[10.8464,48.2403],[10.8446,48.2383]]},{"id":"LINE_023","f":"SUBSTATION_07","t":"NODE_028","kv":110.0,"km":0.23,"c":[[10.8425,48.2383],[10.8424,48.2383],[10.8423,48.2383],[10.842,48.2384],[10.8412,48.2386],[10.8407,48.2387],[10.8405,48.2388],[10.8402,48.2389],[10.8396,48.2388]]},{"id":"LINE_024","f":"SUBSTATION_07","t":"SUBSTATION_01","kv":110.0,"km":26.84,"c":[[10.8423,48.2391],[10.8399,48.2393],[10.8368,48.2388],[10.8328,48.2383],[10.8295,48.2379],[10.8253,48.2373],[10.8219,48.2369],[10.819,48.2365],[10.8147,48.236],[10.8112,48.2355],[10.8075,48.235],[10.8036,48.2345],[10.8001,48.2359],[10.7968,48.2371],[10.7906,48.2396],[10.7873,48.2408],[10.7845,48.2419],[10.7811,48.2433],[10.7774,48.2447],[10.7737,48.2461],[10.7706,48.2473],[10.7672,48.2486],[10.7637,48.25],[10.7598,48.2516],[10.7573,48.2525],[10.7532,48.2527],[10.7489,48.2529],[10.7451,48.2531],[10.7408,48.2533],[10.7371,48.2535],[10.7334,48.2537],[10.7292,48.2538],[10.7248,48.2541],[10.7204,48.2543],[10.7158,48.2545],[10.7103,48.2548],[10.7069,48.2547],[10.7029,48.2546],[10.699,48.2546],[10.6943,48.2545],[10.6889,48.2544],[10.6857,48.2544],[10.6808,48.2543],[10.6768,48.2543],[10.6732,48.2542],[10.6682,48.2541],[10.6642,48.2541],[10.6603,48.254],[10.6557,48.2539],[10.6516,48.2538],[10.6463,48.2538],[10.6416,48.2537],[10.6366,48.2536],[10.6316,48.2535],[10.6266,48.2535],[10.6223,48.2534],[10.6185,48.2533],[10.6142,48.2532],[10.6111,48.2532],[10.6061,48.2516],[10.6026,48.2504],[10.5972,48.2486],[10.5941,48.2477],[10.5907,48.2465],[10.5874,48.2455],[10.5833,48.2441],[10.5807,48.2433],[10.5777,48.2423],[10.5747,48.2414],[10.571,48.2416],[10.5677,48.2418],[10.5649,48.2419],[10.5614,48.2421],[10.5582,48.2423],[10.5548,48.2424],[10.5513,48.2426],[10.5476,48.2428],[10.5442,48.243],[10.5395,48.2433],[10.5358,48.2435],[10.5318,48.2437],[10.5278,48.2439],[10.5226,48.2446],[10.5173,48.2453],[10.5132,48.2458],[10.5093,48.2463],[10.5055,48.2469],[10.5013,48.2474],[10.4963,48.2481],[10.4939,48.2479]]},{"id":"LINE_025","f":"NODE_009","t":"SUBSTATION_05","kv":110.0,"km":0.06,"c":[[10.5992,48.2102],[10.5992,48.2107]]},{"id":"LINE_026","f":"NODE_009","t":"SUBSTATION_15","kv":110.0,"km":10.84,"c":[[10.5992,48.2102],[10.6022,48.2102],[10.6052,48.2102],[10.6079,48.2102],[10.611,48.2103],[10.6146,48.2103],[10.6178,48.2103],[10.6208,48.2103],[10.6243,48.2104],[10.628,48.2104],[10.6315,48.2104],[10.6334,48.2105],[10.6362,48.2105],[10.6398,48.2105],[10.6428,48.2114],[10.645,48.212],[10.648,48.2129],[10.651,48.2138],[10.654,48.2147],[10.6569,48.2148],[10.6602,48.2148],[10.6636,48.2149],[10.6664,48.215],[10.6695,48.2151],[10.6713,48.2139],[10.6734,48.2125],[10.6758,48.2109],[10.6783,48.2092],[10.6806,48.2077],[10.6827,48.2063],[10.6848,48.2049],[10.6878,48.2038],[10.6906,48.2027],[10.6931,48.2017],[10.6932,48.2017],[10.6952,48.2009],[10.6983,48.1997],[10.7012,48.1987],[10.7041,48.1975],[10.707,48.1964],[10.7094,48.1955],[10.7124,48.1944],[10.715,48.1933],[10.7187,48.1931],[10.7223,48.1929],[10.7255,48.1927],[10.729,48.1924],[10.732,48.1922],[10.7328,48.1923]]},{"id":"LINE_027","f":"NODE_019","t":"SUBSTATION_02","kv":110.0,"km":4.83,"c":[[10.7603,48.1042],[10.7558,48.1043],[10.7522,48.1045],[10.7484,48.1046],[10.7434,48.1047],[10.7379,48.1049],[10.7335,48.105],[10.7294,48.1051],[10.724,48.1053],[10.7193,48.1054],[10.7152,48.1056],[10.71,48.1042],[10.7049,48.1029],[10.7007,48.1018],[10.6993,48.0991]]},{"id":"LINE_028","f":"SUBSTATION_12","t":"NODE_025","kv":110.0,"km":4.06,"c":[[10.847,48.345],[10.8477,48.3485],[10.8483,48.3513],[10.8469,48.3525],[10.8464,48.353],[10.8447,48.3546],[10.843,48.3562],[10.8424,48.3568],[10.8399,48.359],[10.8375,48.3614],[10.8371,48.3636],[10.8369,48.3656],[10.8362,48.3694],[10.8357,48.3732],[10.8352,48.376],[10.8347,48.3791]]},{"id":"LINE_029","f":"NODE_006","t":"NODE_002","kv":110.0,"km":3.43,"c":[[10.492,48.2477],[10.4888,48.2494],[10.4854,48.2513],[10.4817,48.2533],[10.4788,48.2549],[10.475,48.2553],[10.4714,48.2557],[10.4675,48.2561],[10.464,48.2565],[10.4601,48.2569],[10.4561,48.2573],[10.4521,48.2578],[10.45,48.258]]},{"id":"LINE_030","f":"NODE_015","t":"NODE_016","kv":110.0,"km":0.23,"c":[[10.7345,48.1921],[10.7374,48.1928]]},{"id":"LINE_031","f":"SUBSTATION_09","t":"NODE_012","kv":110.0,"km":7.81,"c":[[10.7254,48.3333],[10.7207,48.3335],[10.718,48.3358],[10.7154,48.3379],[10.7127,48.3402],[10.7095,48.343],[10.7067,48.3453],[10.7046,48.347],[10.7016,48.3495],[10.6999,48.351],[10.6969,48.3523],[10.6931,48.354],[10.6892,48.3557],[10.6851,48.3558],[10.6811,48.3559],[10.6777,48.3571],[10.6729,48.3586],[10.6682,48.3601],[10.6643,48.3614],[10.6593,48.3628],[10.6551,48.3641],[10.651,48.3653],[10.6462,48.3667],[10.6425,48.3678],[10.639,48.3687]]},{"id":"LINE_032","f":"NODE_012","t":"NODE_014","kv":110.0,"km":1.72,"c":[[10.639,48.3687],[10.6419,48.3707],[10.6443,48.3724],[10.6469,48.3743],[10.6495,48.3761],[10.6518,48.3776],[10.6544,48.3794],[10.655,48.38]]},{"id":"LINE_033","f":"NODE_036","t":"SUBSTATION_03","kv":110.0,"km":0.25,"c":[[10.8583,48.1141],[10.8586,48.1141],[10.8604,48.1142],[10.8608,48.114],[10.8613,48.1138],[10.8614,48.1137]]},{"id":"LINE_034","f":"SUBSTATION_04","t":"NODE_039","kv":110.0,"km":0.8,"c":[[10.8678,48.1487],[10.8679,48.1487],[10.8682,48.1486],[10.871,48.1473],[10.8737,48.1459],[10.8766,48.1445]]},{"id":"LINE_035","f":"NODE_010","t":"NODE_005","kv":110.0,"km":14.08,"c":[[10.6051,48.3454],[10.6019,48.3431],[10.5989,48.3411],[10.5976,48.3402],[10.5963,48.3394],[10.595,48.3387],[10.593,48.3377],[10.5904,48.3364],[10.5877,48.3351],[10.5852,48.3338],[10.5824,48.3323],[10.5802,48.3313],[10.5776,48.3299],[10.575,48.3286],[10.5721,48.3271],[10.57,48.3252],[10.5678,48.3229],[10.5655,48.3207],[10.563,48.3183],[10.5607,48.3161],[10.5581,48.3137],[10.5561,48.3118],[10.5541,48.3098],[10.5522,48.3079],[10.5488,48.3064],[10.5461,48.3052],[10.5431,48.3039],[10.5402,48.3026],[10.5374,48.3014],[10.5345,48.3001],[10.5316,48.2988],[10.5288,48.2977],[10.5251,48.296],[10.5214,48.2944],[10.5188,48.2933],[10.5178,48.2914],[10.5164,48.2888],[10.5154,48.287],[10.5144,48.285],[10.5134,48.2831],[10.512,48.2806],[10.5105,48.2777],[10.5073,48.2755],[10.5048,48.2738],[10.5021,48.2719],[10.5,48.2704],[10.4969,48.2683],[10.4939,48.2662],[10.4916,48.2646],[10.489,48.2627],[10.4869,48.2613],[10.4844,48.2596],[10.4828,48.2582],[10.4809,48.2563],[10.4788,48.2545]]},{"id":"LINE_036","f":"NODE_016","t":"NODE_022","kv":110.0,"km":7.16,"c":[[10.7374,48.1928],[10.7415,48.1937],[10.7453,48.1945],[10.7492,48.1954],[10.753,48.1962],[10.7568,48.197],[10.7602,48.1978],[10.7634,48.1985],[10.7668,48.1992],[10.7707,48.2001],[10.7746,48.2009],[10.7783,48.2017],[10.7817,48.2025],[10.785,48.2032],[10.7878,48.2038],[10.7904,48.2044],[10.7938,48.2054],[10.7973,48.2066],[10.8007,48.2078],[10.8044,48.2089],[10.8078,48.2101],[10.8112,48.2112],[10.8147,48.2123],[10.818,48.2134],[10.8208,48.2143],[10.8243,48.2154],[10.8269,48.2162]]},{"id":"LINE_037","f":"NODE_037","t":"NODE_039","kv":110.0,"km":3.82,"c":[[10.8586,48.1141],[10.8582,48.1162],[10.8578,48.1182],[10.8575,48.12],[10.8579,48.1222],[10.8581,48.1232],[10.8583,48.1243],[10.8588,48.1264],[10.8592,48.1286],[10.8607,48.1301],[10.8626,48.1318],[10.8646,48.1337],[10.8668,48.1357],[10.8686,48.1373],[10.8704,48.1389],[10.8723,48.1406],[10.8743,48.1425],[10.8766,48.1445]]},{"id":"LINE_038","f":"NODE_038","t":"NODE_037","kv":110.0,"km":2.7,"c":[[10.8633,48.09],[10.8629,48.0917],[10.8628,48.0926],[10.8628,48.0927],[10.8627,48.093],[10.8627,48.0931],[10.8625,48.0941],[10.8621,48.0963],[10.8616,48.0986],[10.8613,48.1006],[10.8608,48.1029],[10.8604,48.1051],[10.8599,48.1075],[10.8594,48.11],[10.859,48.1119],[10.8586,48.1141]]},{"id":"LINE_039","f":"NODE_023","t":"NODE_033","kv":110.0,"km":6.69,"c":[[10.8293,48.3211],[10.8305,48.3225],[10.8322,48.3245],[10.834,48.3267],[10.8356,48.3286],[10.8367,48.3307],[10.838,48.3332],[10.8393,48.3359],[10.8407,48.3383],[10.8421,48.341],[10.8434,48.3436],[10.8448,48.3462],[10.8454,48.3475],[10.846,48.3485],[10.8467,48.3508],[10.8476,48.3534],[10.8485,48.356],[10.8492,48.3582],[10.85,48.3607],[10.8505,48.3621],[10.8508,48.3632],[10.8496,48.3657],[10.8486,48.3679],[10.8474,48.3705],[10.8465,48.3724],[10.8454,48.3749],[10.8451,48.3757],[10.8447,48.3765],[10.844,48.3779]]},{"id":"LINE_040","f":"SUBSTATION_01","t":"NODE_006","kv":110.0,"km":0.1,"c":[[10.4933,48.2476],[10.492,48.2477]]},{"id":"LINE_041","f":"SUBSTATION_01","t":"NODE_005","kv":110.0,"km":1.36,"c":[[10.4933,48.2471],[10.4922,48.2472],[10.4885,48.2492],[10.4847,48.2513],[10.4813,48.2532],[10.4788,48.2545]]},{"id":"LINE_042","f":"NODE_005","t":"NODE_001","kv":110.0,"km":5.49,"c":[[10.4788,48.2545],[10.4769,48.2527],[10.4748,48.2507],[10.4729,48.2489],[10.4703,48.2465],[10.4681,48.2443],[10.4671,48.2424],[10.466,48.2403],[10.4647,48.2379],[10.4636,48.2356],[10.4624,48.2333],[10.4611,48.2309],[10.4597,48.2283],[10.4584,48.2257],[10.4571,48.2231],[10.4557,48.2205],[10.4547,48.2184],[10.4536,48.2164],[10.4521,48.2136],[10.4508,48.211],[10.45,48.2095]]},{"id":"LINE_043","f":"NODE_028","t":"NODE_026","kv":110.0,"km":0.31,"c":[[10.8396,48.2388],[10.8356,48.2383]]},{"id":"LINE_044","f":"SUBSTATION_07","t":"NODE_028","kv":110.0,"km":0.2,"c":[[10.8423,48.2391],[10.8396,48.2388]]},{"id":"LINE_045","f":"NODE_031","t":"SUBSTATION_07","kv":110.0,"km":0.12,"c":[[10.8434,48.2373],[10.8424,48.2376],[10.8421,48.2376],[10.842,48.2377],[10.8419,48.2377]]},{"id":"LINE_046","f":"NODE_035","t":"SUBSTATION_07","kv":110.0,"km":0.13,"c":[[10.8446,48.2383],[10.8429,48.2387]]},{"id":"LINE_047","f":"NODE_031","t":"SUBSTATION_07","kv":110.0,"km":0.12,"c":[[10.8434,48.2373],[10.8425,48.2376],[10.8422,48.2377],[10.8421,48.2377],[10.8419,48.2378]]},{"id":"LINE_048","f":"NODE_034","t":"SUBSTATION_07","kv":110.0,"km":0.15,"c":[[10.8441,48.2377],[10.8426,48.2381],[10.8424,48.2382],[10.8423,48.2382],[10.8422,48.2383]]},{"id":"LINE_049","f":"NODE_035","t":"SUBSTATION_07","kv":110.0,"km":0.14,"c":[[10.8446,48.2383],[10.8431,48.239]]},{"id":"LINE_050","f":"NODE_034","t":"SUBSTATION_07","kv":110.0,"km":0.15,"c":[[10.8441,48.2377],[10.8425,48.238],[10.8423,48.238],[10.8422,48.2381],[10.8421,48.2381]]},{"id":"LINE_051","f":"SUBSTATION_15","t":"NODE_015","kv":110.0,"km":0.1,"c":[[10.7332,48.192],[10.7345,48.1921]]},{"id":"LINE_052","f":"SUBSTATION_15","t":"NODE_015","kv":110.0,"km":0.1,"c":[[10.7332,48.192],[10.7345,48.1921]]},{"id":"LINE_053","f":"SUBSTATION_11","t":"NODE_010","kv":110.0,"km":0.36,"c":[[10.6032,48.3484],[10.6051,48.3454]]},{"id":"LINE_054","f":"NODE_029","t":"SUBSTATION_12","kv":110.0,"km":13.26,"c":[[10.84,48.2396],[10.8386,48.2407],[10.8406,48.2439],[10.8424,48.2468],[10.8445,48.25],[10.8465,48.2531],[10.8484,48.2562],[10.8505,48.2595],[10.8522,48.2622],[10.8538,48.2646],[10.8553,48.267],[10.857,48.27],[10.8584,48.2726],[10.86,48.2753],[10.8619,48.2786],[10.8635,48.2815],[10.8654,48.2847],[10.867,48.2875],[10.8688,48.2908],[10.8703,48.2936],[10.8666,48.2958],[10.8625,48.2982],[10.8584,48.3007],[10.8547,48.3028],[10.851,48.3053],[10.8482,48.307],[10.844,48.3093],[10.8402,48.3115],[10.841,48.3152],[10.8416,48.3186],[10.8422,48.3218],[10.8431,48.3257],[10.8435,48.3284],[10.8442,48.3316],[10.8449,48.335],[10.8456,48.3384],[10.8463,48.3417],[10.847,48.345]]},{"id":"LINE_055","f":"NODE_029","t":"SUBSTATION_07","kv":110.0,"km":0.18,"c":[[10.84,48.2396],[10.8424,48.2393]]},{"id":"LINE_056","f":"SUBSTATION_07","t":"SUBSTATION_08","kv":110.0,"km":4.28,"c":[[10.8425,48.2395],[10.8405,48.2403],[10.8371,48.2418],[10.8337,48.2433],[10.8303,48.2449],[10.827,48.2464],[10.8234,48.248],[10.8209,48.2492],[10.8179,48.2506],[10.8148,48.252],[10.8123,48.2537],[10.8099,48.2552],[10.8072,48.2569],[10.8052,48.2582],[10.8024,48.26],[10.8045,48.2614],[10.8067,48.2628],[10.8068,48.2635]]},{"id":"LINE_057","f":"NODE_013","t":"SUBSTATION_14","kv":110.0,"km":0.99,"c":[[10.6482,48.1124],[10.6509,48.112],[10.6543,48.1115],[10.6577,48.111],[10.6611,48.1105]]},{"id":"LINE_058","f":"SUBSTATION_05","t":"NODE_009","kv":110.0,"km":0.06,"c":[[10.599,48.2107],[10.5992,48.2102]]},{"id":"LINE_059","f":"NODE_039","t":"NODE_040","kv":110.0,"km":0.43,"c":[[10.8766,48.1445],[10.8786,48.1464],[10.88,48.1477]]},{"id":"LINE_060","f":"SUBSTATION_08","t":"NODE_021","kv":110.0,"km":0.07,"c":[[10.8068,48.2635],[10.8071,48.264]]},{"id":"LINE_061","f":"SUBSTATION_08","t":"NODE_021","kv":110.0,"km":0.04,"c":[[10.8066,48.2638],[10.8067,48.2638],[10.8069,48.264],[10.8071,48.264]]},{"id":"LINE_062","f":"NODE_012","t":"NODE_010","kv":110.0,"km":3.62,"c":[[10.639,48.3687],[10.6365,48.3671],[10.6339,48.3652],[10.6311,48.3633],[10.6285,48.3616],[10.6258,48.3597],[10.6232,48.3578],[10.6205,48.356],[10.6178,48.3541],[10.6152,48.3523],[10.6125,48.3505],[10.6101,48.3488],[10.6073,48.3469],[10.6051,48.3454]]},{"id":"LINE_063","f":"NODE_011","t":"NODE_013","kv":110.0,"km":2.78,"c":[[10.6338,48.09],[10.6341,48.0907],[10.6354,48.0937],[10.6366,48.0968],[10.6377,48.0993],[10.6388,48.102],[10.6401,48.1051],[10.6411,48.1075],[10.6449,48.1101],[10.6482,48.1124]]},{"id":"LINE_064","f":"SUBSTATION_01","t":"NODE_009","kv":110.0,"km":10.07,"c":[[10.494,48.2473],[10.4955,48.2474],[10.4986,48.2467],[10.5015,48.2461],[10.5043,48.2454],[10.5071,48.2448],[10.5103,48.2441],[10.5137,48.2434],[10.5163,48.2428],[10.519,48.2422],[10.5207,48.2403],[10.5222,48.2386],[10.5239,48.2368],[10.5257,48.2348],[10.5274,48.2329],[10.5291,48.2309],[10.5309,48.2289],[10.532,48.2276],[10.5336,48.2259],[10.5353,48.224],[10.537,48.2221],[10.5383,48.2206],[10.5401,48.2186],[10.5419,48.2165],[10.5437,48.2145],[10.5456,48.2124],[10.5472,48.2106],[10.5486,48.2091],[10.5521,48.2088],[10.5552,48.2085],[10.5584,48.2082],[10.5611,48.208],[10.5637,48.2078],[10.5672,48.2075],[10.5699,48.2072],[10.5736,48.2069],[10.5772,48.2066],[10.58,48.207],[10.5835,48.2076],[10.587,48.2082],[10.5905,48.2088],[10.5937,48.2093],[10.5963,48.2097],[10.5992,48.2102]]}],"nodes":[{"id":"SUBSTATION_01","type":"abstract_substation","x":10.49372,"y":48.24746},{"id":"SUBSTATION_02","type":"abstract_substation","x":10.69938,"y":48.09893},{"id":"SUBSTATION_03","type":"abstract_substation","x":10.86146,"y":48.11384},{"id":"SUBSTATION_04","type":"abstract_substation","x":10.86778,"y":48.14862},{"id":"SUBSTATION_05","type":"abstract_substation","x":10.59903,"y":48.21069},{"id":"SUBSTATION_06","type":"abstract_substation","x":10.84112,"y":48.1848},{"id":"SUBSTATION_07","type":"abstract_substation","x":10.84026,"y":48.2378},{"id":"SUBSTATION_08","type":"abstract_substation","x":10.80685,"y":48.26368},{"id":"SUBSTATION_09","type":"abstract_substation","x":10.72582,"y":48.33315},{"id":"SUBSTATION_10","type":"abstract_substation","x":10.87928,"y":48.32627},{"id":"SUBSTATION_11","type":"abstract_substation","x":10.6032,"y":48.34852},{"id":"SUBSTATION_12","type":"abstract_substation","x":10.84719,"y":48.3451},{"id":"SUBSTATION_13","type":"abstract_substation","x":10.83995,"y":48.37736},{"id":"SUBSTATION_14","type":"abstract_substation","x":10.66123,"y":48.11056},{"id":"SUBSTATION_15","type":"abstract_substation","x":10.73308,"y":48.19211},{"id":"NODE_001","type":"boundary_endpoint","x":10.45,"y":48.20948},{"id":"NODE_002","type":"boundary_endpoint","x":10.45,"y":48.258},{"id":"NODE_003","type":"boundary_endpoint","x":10.45,"y":48.37654},{"id":"NODE_004","type":"boundary_endpoint","x":10.46655,"y":48.38},{"id":"NODE_005","type":"junction","x":10.47885,"y":48.25451},{"id":"NODE_006","type":"intermediate","x":10.492,"y":48.24766},{"id":"NODE_007","type":"boundary_endpoint","x":10.53431,"y":48.38},{"id":"NODE_008","type":"boundary_endpoint","x":10.5483,"y":48.38},{"id":"NODE_009","type":"junction","x":10.59922,"y":48.21016},{"id":"NODE_010","type":"junction","x":10.60508,"y":48.34538},{"id":"NODE_011","type":"boundary_endpoint","x":10.63382,"y":48.09},{"id":"NODE_012","type":"junction","x":10.63902,"y":48.36875},{"id":"NODE_013","type":"junction","x":10.6482,"y":48.11243},{"id":"NODE_014","type":"boundary_endpoint","x":10.65502,"y":48.38},{"id":"NODE_015","type":"junction","x":10.73449,"y":48.19215},{"id":"NODE_016","type":"junction","x":10.73736,"y":48.19278},{"id":"NODE_017","type":"boundary_endpoint","x":10.7557,"y":48.09},{"id":"NODE_018","type":"boundary_endpoint","x":10.75858,"y":48.38},{"id":"NODE_019","type":"junction","x":10.76028,"y":48.10422},{"id":"NODE_020","type":"boundary_endpoint","x":10.77782,"y":48.38},{"id":"NODE_021","type":"junction","x":10.8071,"y":48.26404},{"id":"NODE_022","type":"junction","x":10.82685,"y":48.21623},{"id":"NODE_023","type":"intermediate","x":10.8293,"y":48.32107},{"id":"NODE_024","type":"boundary_endpoint","x":10.83351,"y":48.38},{"id":"NODE_025","type":"junction","x":10.83472,"y":48.37911},{"id":"NODE_026","type":"junction","x":10.83556,"y":48.23829},{"id":"NODE_027","type":"junction","x":10.83853,"y":48.23566},{"id":"NODE_028","type":"junction","x":10.8396,"y":48.23884},{"id":"NODE_029","type":"intermediate","x":10.84003,"y":48.23957},{"id":"NODE_030","type":"junction","x":10.84029,"y":48.23356},{"id":"NODE_031","type":"junction","x":10.84343,"y":48.23735},{"id":"NODE_032","type":"boundary_endpoint","x":10.84369,"y":48.38},{"id":"NODE_033","type":"junction","x":10.84402,"y":48.37794},{"id":"NODE_034","type":"junction","x":10.84406,"y":48.2377},{"id":"NODE_035","type":"junction","x":10.84463,"y":48.23835},{"id":"NODE_036","type":"terminal","x":10.85829,"y":48.11407},{"id":"NODE_037","type":"intermediate","x":10.85862,"y":48.11409},{"id":"NODE_038","type":"boundary_endpoint","x":10.86328,"y":48.09},{"id":"NODE_039","type":"junction","x":10.87657,"y":48.14454},{"id":"NODE_040","type":"boundary_endpoint","x":10.88,"y":48.1477},{"id":"NODE_041","type":"boundary_endpoint","x":10.88,"y":48.23389},{"id":"NODE_042","type":"boundary_endpoint","x":10.88,"y":48.2833},{"id":"NODE_043","type":"boundary_endpoint","x":10.88,"y":48.32562},{"id":"NODE_044","type":"boundary_endpoint","x":10.88,"y":48.32805}]};
+const NS='http://www.w3.org/2000/svg';
+const W=1000,H=1012,LON0=10.45,LON1=10.88,LAT0=48.09,LAT1=48.38;
+const px=lon=>(lon-LON0)/(LON1-LON0)*W, py=lat=>(LAT1-lat)/(LAT1-LAT0)*H;
+const unx=x=>LON0+x/W*(LON1-LON0), uny=y=>LAT1-y/H*(LAT1-LAT0);
+const $=id=>document.getElementById(id);
+const fmt=(v,d=2)=>v.toFixed(d);
+const nf=v=>Math.round(v).toLocaleString('en-US');
+
+/* geometry */
+const SEG={},NODE={};
+G.segs.forEach(s=>{s.p=s.c.map(([x,y])=>[px(x),py(y)]);let L=[0];for(let i=1;i<s.p.length;i++)L.push(L[i-1]+Math.hypot(s.p[i][0]-s.p[i-1][0],s.p[i][1]-s.p[i-1][1]));s.L=L;s.len=L[L.length-1];SEG[s.id]=s});
+G.nodes.forEach(n=>{n.px=[px(n.x),py(n.y)];NODE[n.id]=n});
+function along(id,f){const s=SEG[id],d=Math.max(0,Math.min(1,f))*s.len;for(let i=1;i<s.p.length;i++){if(s.L[i]>=d){const t=(d-s.L[i-1])/((s.L[i]-s.L[i-1])||1);return[s.p[i-1][0]+t*(s.p[i][0]-s.p[i-1][0]),s.p[i-1][1]+t*(s.p[i][1]-s.p[i-1][1])]}}return s.p[s.p.length-1].slice()}
+function sub(id,f0,f1){const pts=[];for(let k=0;k<=24;k++)pts.push(along(id,f0+(f1-f0)*k/24));return 'M'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' L')}
+function P(s){if(!s)return null;if(Array.isArray(s)&&typeof s[0]==='string')return along(s[0],s[1]);if(s.ll)return[px(s.ll[0]),py(s.ll[1])];if(s.off){const p=P(s.off[0]);return[p[0]+s.off[1],p[1]+s.off[2]]}if(s.mix){const a=P(s.mix[0]),b=P(s.mix[1]),t=s.mix[2];return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]}return s}
+function km(a,b){const R=6371,la1=uny(a[1])*Math.PI/180,la2=uny(b[1])*Math.PI/180,dl=(unx(b[0])-unx(a[0]))*Math.PI/180,dp=la2-la1;const h=Math.sin(dp/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dl/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+const PXKM=W/km([0,500],[W,500]);
+const ll=p=>`${fmt(uny(p[1]),4)}° N, ${fmt(unx(p[0]),4)}° E`;
+const fromTo=(id,k)=>1-k/SEG[id].km;
+
+/* simulated canopy */
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const R0=rng(20261024),BLOBS=[];
+BLOBS.push({c:along('LINE_026',0.6),r:46,a:.97},{c:along('LINE_026',0.5),r:30,a:.7},{c:along('LINE_064',0.68),r:44,a:.94},{c:along('LINE_064',0.55),r:36,a:.75});
+for(let i=0;i<70;i++)BLOBS.push({c:[R0()*380,80+R0()*880],r:24+R0()*46,a:.45+R0()*.45});
+for(let i=0;i<30;i++)BLOBS.push({c:[380+R0()*400,40+R0()*560],r:16+R0()*30,a:.3+R0()*.4});
+for(let i=0;i<26;i++){const y=i*40+R0()*20;BLOBS.push({c:[955+R0()*30,y],r:18+R0()*14,a:.55+R0()*.3})}
+function canopy(x,y){let q=1;for(const b of BLOBS){const d2=((x-b.c[0])**2+(y-b.c[1])**2)/(b.r*b.r);if(d2<6)q*=1-b.a*Math.exp(-d2)}let v=1-q;const fld=Math.exp(-((((x-830)/90))**2+(((y-560)/260))**2));v*=1-.85*fld;return Math.max(0,Math.min(1,v))}
+
+/* villages (approximate positions; household counts and supply links assumed) */
+const VIL=[
+ ['Walkertshofen',10.594,48.226,420,[.9,.9,.6]],['Mickhausen',10.640,48.240,560,[.35,.85,.3]],['Balzhausen',10.497,48.240,650,[.15,.8,.25]],
+ ['Scherstetten',10.640,48.183,400,[.85,.35,.3]],['Mittelneufnach',10.600,48.170,380,[.6,.55,.3]],['Langenneufnach',10.611,48.263,650,[.1,.6,.2]],
+ ['Ziemetshausen',10.535,48.291,1400,[.02,.25,.06]],['Thannhausen',10.470,48.285,2700,[.02,.2,.05]],['Fischach',10.654,48.290,2000,[.03,.12,.06]],
+ ['Schwabmünchen',10.756,48.179,6200,[.25,.04,.2]],['Langerringen',10.755,48.146,1700,[.15,.03,.15]],['Großaitingen',10.779,48.229,2100,[.06,.03,.1]],
+ ['Untermeitingen',10.805,48.161,2700,[.03,.02,.05]],['Klosterlechfeld',10.829,48.157,1300,[.02,.02,.05]],['Wehringen',10.800,48.250,1300,[.03,.02,.06]],
+ ['Bobingen',10.836,48.273,7800,[.02,.02,.04]],['Gessertshausen',10.730,48.330,1700,[.02,.03,.04]]
+].map(([n,lon,lat,hh,p])=>({n,lon,lat,hh,p,xy:[px(lon),py(lat)]}));
+
+/* evidence model */
+const HYP=[{k:'H1',n:'Tree contact on LINE_026',short:'LINE_026'},{k:'H2',n:'Tree contact on LINE_064',short:'LINE_064'},{k:'H3',n:'Not vegetation (trip / clash)',short:'non-vegetation'}];
+const BASE=[.34,.33,.33];
+const EV={
+  P1:{t:'Two reports overlap LINE_026',type:'report',lr:[2.0,1.2,0.9]},
+  P2:{t:'Dense canopy + peak gusts on the corridor',type:'prior',lr:[1.4,1.2,0.9]},
+  E1:{t:'TDR from S15 end: clean',type:'electrical',lr:[0.25,1,1.1]},
+  E1c:{t:'TDR from NODE_009 end: clean',type:'electrical',lr:[0.45,1,1.1]},
+  ER5:{t:'IR on LINE_019: no hotspot (R05 closed)',type:'thermal',lr:[1,1,0.85]},
+  ER6:{t:'LiDAR on LINE_003: clearance normal (R06 closed)',type:'scan',lr:[1,1,0.9]},
+  E1b:{t:'Caller\'s track runs beside LINE_064',type:'report',lr:[0.8,1.6,1]},
+  E2:{t:'TDR reflection 3.4 km from NODE_009',type:'electrical',lr:[1,2.2,0.6]},
+  E2c:{t:'TDR from the other end points to the same spot',type:'electrical',lr:[1,1.3,0.8]},
+  E3:{t:'Second TDR: 3.21 km ±80 m',type:'electrical',lr:[1,1.2,0.9]},
+  E4:{t:'Photo: branch resting on the conductor',type:'visual',lr:[0.7,1.8,0.6]},
+  E5:{t:'LiDAR: vegetation 0.0 m from conductor',type:'geometry',lr:[0.9,1.2,0.8]},
+  E1x:{t:'TDR reflection 4.3 km from S15',type:'electrical',lr:[2.2,0.8,0.6]},
+  E1cx:{t:'TDR from the other end points to the same spot',type:'electrical',lr:[1.3,0.9,0.8]},
+  E3x:{t:'Second TDR: 4.32 km ±80 m',type:'electrical',lr:[1.2,1,0.9]},
+  E4x:{t:'Photo: branch resting on the conductor',type:'visual',lr:[1.8,0.7,0.6]},
+  E5x:{t:'LiDAR: vegetation inside conductor envelope',type:'geometry',lr:[1.2,0.9,0.8]},
+};
+const SENSOR_TYPES=['electrical','visual','geometry'],TYPELAB={electrical:'TDR',visual:'photo',geometry:'LiDAR'};
+function posterior(evs){let v=BASE.slice();for(const e of evs){const l=EV[e].lr;v=v.map((x,i)=>x*l[i])}const s=v.reduce((a,b)=>a+b,0);return v.map(x=>x/s)}
+function typesFor(evs,h){return[...new Set(evs.filter(e=>SENSOR_TYPES.includes(EV[e].type)&&EV[e].lr[h]>=1.15).map(e=>EV[e].type))]}
+const hhGiven=h=>VIL.reduce((a,v)=>a+v.hh*v.p[h],0);
+const evDispatch=(p,h)=>hhGiven(h)*(2.5*p-3*(1-p));
+
+/* drones & places */
+const DR=['D1','D2','D3','D4','D5','D6'];
+const HOME={D1:['LINE_015',0.86],D2:['LINE_036',0.45],D3:['LINE_015',0.45],D4:['LINE_002',0.42],D5:['LINE_003',0.55],D6:['LINE_029',0.5]};
+const MP26=['LINE_026',0.99], MP64=['LINE_064',0.985], MP26b=['LINE_026',0.05], MP64w=['LINE_064',0.02], R05P=['LINE_019',0.5], R06P=['LINE_003',0.85];
+const C64=['LINE_064',fromTo('LINE_064',3.21)], N64=['LINE_064',fromTo('LINE_064',2.9)], I64={off:[C64,-34,-30]}, I64b={off:[C64,36,32]};
+const C26=['LINE_026',fromTo('LINE_026',4.32)], N26=['LINE_026',fromTo('LINE_026',4.0)], I26={off:[C26,-34,-30]}, I26b={off:[C26,36,32]};
+const CH_PLAN=['LINE_041',0.5], CH_ALT=['LINE_042',0.55];
+const mix=(a,b,t)=>({mix:[a,b,t]});
+const standby=b=>Object.fromEntries(DR.map((d,i)=>[d,{at:HOME[d],st:'charging',bat:b[i],task:'standby'}]));
+const REP={R01:{},R02:{alarm:1},R03:{alarm:1},R04:{},R05:{},R06:{}};
+const CHIP={noIR:['no','closed'],noLid:['no','closed'],unv:['unv','unverified'],chk:['chk','checking'],no26:['no','not on LINE_026'],yes64:['yes','✓ LINE_064'],yes26:['yes','✓ LINE_026'],prior:['no','weather prior'],expl:['no','explained'],cause:['chk','cause open'],cause64:['yes','fits LINE_064'],cause26:['yes','fits LINE_026'],low:['unv','queued']};
+
+const S=[
+{t:'T+00:25',title:'Standby',cap:'Six drones are perched on live lines across the map, charging. No reports yet. LINE_024 is switched off as a precaution.',
+ banner:['','Monitoring · 63/64 lines nominal · fleet on standby'],lines:{LINE_024:'dead'},drones:standby([92,88,95,90,97,85]),
+ reps:{R01:'prior'},log:[['T+00:12','R01 weather desk: gusty winds across the study area','report'],['T+00:25','Fleet on standby · 6 drones perched','fleet']]},
+{t:'T+00:44',title:'People report a problem',cap:'A hotline caller reports trees brushing a line. Minutes later dispatch logs a protection trip with a failed reclose. Both report areas cover LINE_026, so it lights up red as the first suspect. Nothing is verified yet.',
+ banner:['alarm','2 reports · LINE_026 suspected · unverified'],lines:{LINE_026:'suspect'},active:['E'],ping:['R02','R03'],layers:{reports:1},
+ reps:{R02:'unv',R03:'unv'},log:[['T+00:31','R02 hotline: branch on track, trees brushing a line','people'],['T+00:44','R03 dispatch: protection trip, reclose failed','alarm']]},
+{t:'T+00:45',title:'Reports become claims, claims become hypotheses',cap:'The LLM turns each report into a structured claim with a reliability weight. The sim adds corridor canopy, storm gusts and meter dropouts that put LINE_064 in doubt. The manager forms three hypotheses (H1 {H1}, H2 {H2}, H3 {H3}) and the household layer shows who is likely without power.',
+ banner:['alarm','LINE_026 suspected · H1 {H1} · validation needed'],flow:['E>S','S>M'],layers:{forest:1,storm:1,houses:1},lines:{LINE_064:'unknown'},ev:['P1','P2'],console:{kind:'llm'},snap:'v1',
+ reps:{R04:'expl',R05:'unv',R06:'unv',R03:'cause'},log:[['T+00:45','LLM: 6 reports → claims · R04 matched to generator-test log','llm'],['T+00:45','Canopy API (simulated): 64 corridors · 30 m buffer','data'],['T+00:45','Meter dropouts near Walkertshofen → LINE_064 state unknown','data'],['T+00:45','Manager: H1 {H1} · H2 {H2} · H3 {H3}','mgr']]},
+{t:'T+00:46',title:'The fleet spreads out to validate',cap:'Every open report gets a drone. D1 and D3 take both ends of LINE_026 for TDR. D4 checks the warm-spot report with IR on live LINE_019, and D5 checks the moving-span report with LiDAR on LINE_003. D2 and D6 stay perched in reserve.',
+ flow:['S>R','R>V','V>F'],nodeState:{V:'commit'},console:{kind:'rank'},focus:'D1',
+ drones:{D1:{at:mix(HOME.D1,MP26,.5),route:[MP26],st:'flying',bat:90,task:'TDR · LINE_026 S15 end'},D3:{at:mix(HOME.D3,MP26b,.45),route:[MP26b],st:'flying',bat:91,task:'TDR · LINE_026 NODE_009 end'},
+   D4:{at:mix(HOME.D4,R05P,.5),route:[R05P],st:'flying',bat:87,task:'IR · R05 on LINE_019'},D5:{at:mix(HOME.D5,R06P,.5),route:[R06P],st:'flying',bat:94,task:'LiDAR · R06 on LINE_003'}},
+ reps:{R02:'chk',R05:'chk',R06:'chk'},
+ log:[['T+00:46','Decision #1 committed · 4 drones dispatched, 2 in reserve','commit']]},
+{t:'T+00:52',title:'Validation: no on LINE_026',cap:'D1 and D3 fire TDR pulses from both ends of LINE_026. Both traces are clean: no reflection along the line, only the expected junction. The report is not confirmed on this line. H1 drops to {H1}, so no crew goes out.',
+ banner:['ok','Not validated · LINE_026 clean from both ends · no crew sent · ≈4.5 crew-hours saved'],flow:['F>E','E>S','S>M'],ev:['P1','P2','E1','E1c'],lines:{LINE_026:'cleared'},focus:'D1',
+ drones:{D1:{at:MP26,route:[],st:'measuring',bat:86},D3:{at:MP26b,route:[],st:'measuring',bat:84},D4:{at:R05P,route:[],st:'measuring',bat:80},D5:{at:R06P,route:[],st:'measuring',bat:88}},reps:{R02:'no26'},
+ sensor:{drone:'D1',stage:2,line:'LINE_026',ref:'S15 (Schwabmünchen) end',pt:MP26,len:10.84,shots:[{from:0,end:-.3}],verdict:'clean',cross:'D3 from the NODE_009 end: also clean'},
+ console:{kind:'verdict',cls:'no',title:'Not validated · LINE_026',rows:[['D1 TDR','Clean from the S15 end, 0.2–10.6 km'],['D3 TDR','Clean from the NODE_009 end'],['Report','R02 not confirmed on LINE_026'],['Decision','No crew. Search continues.'],['Saved','≈4.5 crew-hours (drive + 10.8 km line patrol)']]},
+ log:[['T+00:51','D1 point: S15 end · LINE_026 · de-energized (master)','obs'],['T+00:52','D1 + D3 TDR: no reflection on LINE_026','obs'],['T+00:52','H1 → {H1} · crew dispatch to LINE_026 avoided','ok']]},
+{t:'T+01:00',title:'Close the weak reports, send two drones to LINE_064',cap:'D4\'s IR scan finds no hotspot and D5\'s LiDAR finds normal clearance, so reports R05 and R06 are closed. The LLM re-reads the caller\'s words: the branch lay across a track beside LINE_064. D2 goes to its NODE_009 end and D6 to its Balzhausen end, so the fault can be ranged from both sides.',
+ banner:['info','R05 + R06 closed · LINE_064: D2 and D6 dispatched to both ends'],flow:['M>P','P>D','D>C','C>R','R>V','V>F'],nodeState:{C:'pass',V:'commit'},ev:['P1','P2','E1','E1c','E1b','ER5','ER6'],focus:'D2',
+ drones:{D1:{at:HOME.D1,route:[],st:'charging',bat:78,task:'recharging'},D3:{at:HOME.D3,route:[],st:'charging',bat:66,task:'recharging'},D4:{at:mix(R05P,HOME.D4,.5),route:[HOME.D4],st:'recovery',bat:72,task:'R05 closed · return'},D5:{at:mix(R06P,HOME.D5,.5),route:[HOME.D5],st:'recovery',bat:84,task:'R06 closed · return'},
+   D2:{at:mix(HOME.D2,MP64,.2),route:[MP64],charge:CH_PLAN,st:'flying',bat:84,task:'TDR · LINE_064 NODE_009 end'},D6:{at:mix(HOME.D6,MP64w,.5),route:[MP64w],st:'flying',bat:82,task:'TDR · LINE_064 S01 end'}},
+ reps:{R02:'chk',R05:'noIR',R06:'noLid'},
+ console:{kind:'checks',id:'#2',items:[[1,'Charge site LINE_041 live · 41 µT, 3 min old'],[1,'D2 battery 84% ≥ 13 min out + 6 min to charge + reserve'],[1,'D6 battery 82% · 4 min to the S01 end'],[1,'LINE_064 de-energized (master) → safe for TDR from both ends']],res:[1,'Compatible · decision #2 committed']},
+ log:[['T+00:58','D4 IR on LINE_019: no hotspot · R05 closed','obs'],['T+00:59','D5 LiDAR on LINE_003: clearance normal · R06 closed','obs'],['T+01:00','LLM: R02 "track" runs within 40 m of LINE_064','llm'],['T+01:00','Decision #2 · D2 → NODE_009 end, D6 → S01 end','commit']]},
+{t:'T+01:06',title:'Charging line goes dead mid-flight',cap:'Halfway there, LINE_041 is switched off. A drone can only charge on a live line, so D2\'s plan no longer holds. The dependency check rejects it and routes are re-solved: D2 will land on live LINE_042 instead, with 3 minutes of reserve. D6 is already in position.',
+ banner:['warn','LINE_041 de-energized · D2 charge site lost · re-solving'],flow:['E>S','D>C','S>R','R>V','V>F'],nodeState:{C:'reject',V:'commit'},lines:{LINE_041:'dead',LINE_040:'dead'},focus:'D2',
+ drones:{D2:{at:mix(HOME.D2,MP64,.6),route:[MP64],charge:CH_ALT,oldCharge:CH_PLAN,st:'flying',bat:70},D6:{at:MP64w,route:[],st:'perched',bat:78,task:'waiting at S01 end'},D4:{at:HOME.D4,route:[],st:'charging',bat:70,task:'standby'},D5:{at:HOME.D5,route:[],st:'charging',bat:82,task:'standby'}},
+ console:{kind:'checks',id:'#2',items:[[0,'Charge site LINE_041 live · 0 µT at T+01:05'],[1,'Re-solved: D2 lands on LINE_042 · live 44 µT'],[1,'D2 battery 70% covers validation, narrowing and LINE_042 with 3.1 min reserve'],[1,'D6 unaffected: its landing line LINE_029 is live']],res:[0,'Decision #2 rejected → #3 committed with LINE_042']},
+ log:[['T+01:05','Meters on LINE_041 drop · line de-energized','alarm'],['T+01:06','Dependency "charge site live" failed · #2 rejected','reject'],['T+01:06','Decision #3 committed · D2 will land on LINE_042','commit']]},
+{t:'T+01:12',title:'Validation: yes on LINE_064, from both ends',cap:'D2 measures an impedance drop 3.4 km from NODE_009. D6, from the Balzhausen end, sees it at 6.86 km, which is the same spot from the other side. The report is validated. H2 is {H2}, but one sensor type is not enough for a crew, and the window is still too wide to search on foot.',
+ banner:['warn','Validated · LINE_064 · both ends agree ≈3.3 km from NODE_009 · narrowing'],flow:['F>E','E>S','S>M'],ev:['P1','P2','E1','E1c','E1b','ER5','ER6','E2','E2c'],lines:{LINE_064:'validated'},focus:'D2',band:['LINE_064',fromTo('LINE_064',4.0),fromTo('LINE_064',2.8)],
+ drones:{D2:{at:MP64,route:[],charge:CH_ALT,oldCharge:null,st:'measuring',bat:62},D6:{at:MP64w,route:[],st:'measuring',bat:76}},reps:{R02:'yes64',R03:'cause64'},
+ sensor:{drone:'D2',stage:3,line:'LINE_064',ref:'NODE_009 end',pt:MP64,len:10.07,shots:[{from:0,peak:3.4,sig:.32}],est:[3.4,600,'toward S01 Balzhausen'],dist:3400,cross:'D6 from the S01 end: 6.86 km → 3.21 km from NODE_009 · agrees'},
+ console:{kind:'verdict',cls:'yes',title:'Validated · LINE_064',rows:[['D2 TDR','Impedance drop 3.4 km from NODE_009'],['D6 TDR','6.86 km from S01 = 3.21 km from NODE_009'],['Window','≈2.8–4.0 km'],['Next','D2 moves along the line for a second pulse; D6 follows toward the candidate']]},
+ log:[['T+01:11','D2 + D6 at both ends · LINE_064 · de-energized (master)','obs'],['T+01:12','D2 TDR 3.4 km · D6 TDR 6.86 km from S01 · consistent','obs'],['T+01:12','H2 → {H2} · gate holds: 1 sensor type','mgr']]},
+{t:'T+01:16',title:'Follow the TDR output, get within 500 m',cap:'D2 flies along the line and fires a second pulse from 2.9 km. The reflection is now 310 m ahead: the candidate is at 3.21 km ±80 m. D2 is inside 500 m, which unlocks the camera and LiDAR. D6 closes in from the other side.',
+ banner:['info','Candidate 3.21 km ±80 m · D2 310 m away · inside 500 m → RGB + LiDAR'],flow:['F>E','E>S','S>M','M>D2'],ev:['P1','P2','E1','E1c','E1b','ER5','ER6','E2','E2c','E3'],focus:'D2',band:['LINE_064',fromTo('LINE_064',3.29),fromTo('LINE_064',3.13)],ring:C64,
+ drones:{D2:{at:N64,route:[],st:'measuring',bat:57},D6:{at:mix(MP64w,I64b,.7),route:[I64b],st:'flying',bat:70,task:'second angle + LiDAR'}},
+ sensor:{drone:'D2',stage:3,line:'LINE_064',ref:'NODE_009 end',pt:N64,len:10.07,shots:[{from:0,peak:3.4,sig:.32,faint:1},{from:2.9,peak:3.21,sig:.06}],est:[3.21,80,'310 m ahead toward S01'],dist:310},
+ console:{kind:'verdict',cls:'info',title:'Location narrowed',rows:[['Shot 2','From 2.9 km · reflection 0.31 km ahead'],['Estimate','3.21 km from NODE_009 ±80 m'],['Coordinates',ll(P(C64))],['Trigger','D2 310 m away < 500 m → RGB + LiDAR'],['D6','Approaching from the S01 side']]},
+ log:[['T+01:15','D2 second TDR from km 2.9: reflection 0.31 km ahead','obs'],['T+01:16','Window → ±80 m · inspection unlocked','plan']]},
+{t:'T+01:19',title:'Local inspection from two sides',cap:'D2\'s camera shows a spruce branch resting on the conductor. D6 arrives from the other side for a second angle and a LiDAR pass: vegetation inside the conductor envelope, 0.0 m clearance. IR is skipped because the line is dead. H2 reaches {H2} with three sensor types.',
+ banner:['warn','Branch on conductor · RGB from D2 + LiDAR from D6 agree · H2 {H2}'],flow:['F>E','E>S','S>M'],ev:['P1','P2','E1','E1c','E1b','ER5','ER6','E2','E2c','E3','E4','E5'],lines:{LINE_064:'fault'},focus:'D2',ring:C64,
+ drones:{D2:{at:I64,route:[],st:'measuring',bat:52},D6:{at:I64b,route:[],st:'measuring',bat:66}},
+ sensor:{drone:'D2',stage:4,line:'LINE_064',ref:'NODE_009 end',pt:I64,len:10.07,shots:[{from:0,peak:3.4,sig:.32,faint:1},{from:2.9,peak:3.21,sig:.06}],est:[3.21,80,'at candidate'],dist:40,rgb:'D2',lidar:'D6'},
+ log:[['T+01:18','D2 RGB: branch on conductor (detector 0.91)','obs'],['T+01:19','D6 LiDAR: vegetation 0.0 m from conductor · sag +0.9 m','obs'],['T+01:19','H2 → {H2} · TDR + RGB + LiDAR','mgr']]},
+{t:'T+01:21',title:'Report the inspection point',cap:'The manager concludes and retires the open diagnostic needs. The operator gets the inspection point: line ID, coordinates, evidence and what is still uncertain. D2 lands on live LINE_042, D6 returns to LINE_029, and the whole fleet is back on live lines.',
+ banner:['ok','Recommendation · crew to LINE_064 km 3.21 · confidence {H2}'],flow:['M>D1','D>C','C>R','R>V','V>F'],nodeState:{C:'pass',V:'commit'},focus:'D2',crew:C64,ring:null,
+ drones:{D2:{at:mix(I64,CH_ALT,.45),route:[CH_ALT],charge:CH_ALT,st:'recovery',bat:46,task:'landing LINE_042'},D6:{at:mix(I64b,HOME.D6,.45),route:[HOME.D6],st:'recovery',bat:60,task:'return LINE_029'}},
+ console:{kind:'rec',seg:'LINE_064',pos:C64,h:1,ev:['TDR from both ends: 3.21 km from NODE_009 ±80 m','RGB (D2): branch resting on conductor','LiDAR (D6): vegetation 0.0 m from conductor, sag +0.9 m'],ruled:'LINE_026 (TDR clean from both ends) · R05 (IR clean) · R06 (clearance normal)',unc:'±80 m along the span. Whether more of the tree will fall is not measurable.',next:'Keep LINE_064 isolated. Crew with saw + line check. LINE_026 test re-energization is the operator\'s call.'},
+ log:[['T+01:21','Cause supported · diagnostic needs retired','mgr'],['T+01:21','Inspection point reported: LINE_064 km 3.21','ok']]},
+];
+const ALT=[
+{t:'T+00:52',title:'What-if: validation yes on LINE_026',cap:'Counterfactual. Here D1\'s pulse reflects 4.3 km from the Schwabmünchen end, and D3 sees the same spot from the NODE_009 end. The report is validated on LINE_026 and H1 rises to {H1}. One sensor type: keep narrowing.',
+ banner:['warn','What-if · validated · LINE_026 · reflection 4.3 km from S15'],flow:['F>E','E>S','S>M'],ev:['P1','P2','E1x','E1cx'],lines:{LINE_026:'validated'},focus:'D1',band:['LINE_026',fromTo('LINE_026',4.9),fromTo('LINE_026',3.7)],
+ drones:{D1:{at:MP26,route:[],st:'measuring',bat:86},D3:{at:MP26b,route:[],st:'measuring',bat:84},D4:{at:R05P,route:[],st:'measuring',bat:80},D5:{at:R06P,route:[],st:'measuring',bat:88}},reps:{R02:'yes26',R03:'cause26'},
+ sensor:{drone:'D1',stage:3,line:'LINE_026',ref:'S15 (Schwabmünchen) end',pt:MP26,len:10.84,shots:[{from:0,peak:4.3,sig:.32,end:-.3}],est:[4.3,600,'toward NODE_009'],dist:4300,cross:'D3 from the NODE_009 end: 6.5 km → 4.34 km from S15 · agrees'},
+ console:{kind:'verdict',cls:'yes',title:'Validated · LINE_026 (what-if)',rows:[['D1 TDR','Impedance drop 4.3 km from S15'],['D3 TDR','Same spot from the NODE_009 end'],['Next','D1 moves along the line, second pulse']]},
+ log:[['T+00:52','(what-if) D1 + D3 TDR: reflection ≈4.3 km from S15','obs']]},
+{t:'T+00:56',title:'What-if: narrowed within 500 m',cap:'D1 fires a second pulse from 4.0 km: the candidate sits at 4.32 km ±80 m, 320 m ahead. Inside 500 m, the camera and LiDAR unlock. D3 closes in from the other side, and D4 and D5 close their reports.',
+ banner:['info','What-if · candidate 4.32 km ±80 m · inside 500 m'],flow:['F>E','E>S','S>M','M>D2'],ev:['P1','P2','E1x','E1cx','ER5','ER6','E3x'],focus:'D1',band:['LINE_026',fromTo('LINE_026',4.4),fromTo('LINE_026',4.24)],ring:C26,
+ drones:{D1:{at:N26,route:[],st:'measuring',bat:82},D3:{at:mix(MP26b,I26b,.7),route:[I26b],st:'flying',bat:78,task:'second angle + LiDAR'},D4:{at:HOME.D4,route:[],st:'charging',bat:72,task:'R05 closed'},D5:{at:HOME.D5,route:[],st:'charging',bat:84,task:'R06 closed'}},reps:{R05:'noIR',R06:'noLid'},
+ sensor:{drone:'D1',stage:3,line:'LINE_026',ref:'S15 (Schwabmünchen) end',pt:N26,len:10.84,shots:[{from:0,peak:4.3,sig:.32,faint:1,end:-.3},{from:4.0,peak:4.32,sig:.06,end:-.3}],est:[4.32,80,'320 m ahead'],dist:320},
+ log:[['T+00:56','(what-if) second TDR: 4.32 km ±80 m','obs']]},
+{t:'T+00:59',title:'What-if: inspection on LINE_026',cap:'D1\'s camera finds the branch on LINE_026 instead, and D3\'s LiDAR agrees. H1 reaches {H1}.',
+ banner:['warn','What-if · branch on conductor · H1 {H1}'],flow:['F>E','E>S','S>M'],ev:['P1','P2','E1x','E1cx','ER5','ER6','E3x','E4x','E5x'],lines:{LINE_026:'fault'},focus:'D1',ring:C26,
+ drones:{D1:{at:I26,route:[],st:'measuring',bat:78},D3:{at:I26b,route:[],st:'measuring',bat:74}},
+ sensor:{drone:'D1',stage:4,line:'LINE_026',ref:'S15 (Schwabmünchen) end',pt:I26,len:10.84,shots:[{from:0,peak:4.3,sig:.32,faint:1,end:-.3},{from:4.0,peak:4.32,sig:.06,end:-.3}],est:[4.32,80,'at candidate'],dist:40,rgb:'D1',lidar:'D3'},
+ log:[['T+00:59','(what-if) D1 RGB + D3 LiDAR confirm contact on LINE_026','obs']]},
+{t:'T+01:01',title:'What-if: report LINE_026',cap:'In this branch the loop concludes on LINE_026. Untick the switch to return to the real readings.',
+ banner:['ok','What-if · crew to LINE_026 km 4.32 · confidence {H1}'],flow:['M>D1','D>C','C>R','R>V','V>F'],nodeState:{C:'pass',V:'commit'},focus:'D1',crew:C26,ring:null,
+ drones:{D1:{at:mix(I26,HOME.D1,.4),route:[HOME.D1],st:'recovery',bat:74,task:'recovery'},D3:{at:mix(I26b,HOME.D3,.4),route:[HOME.D3],st:'recovery',bat:70,task:'recovery'}},
+ console:{kind:'rec',seg:'LINE_026',pos:C26,h:0,ev:['TDR from both ends: 4.32 km from S15 ±80 m','RGB (D1): branch on conductor','LiDAR (D3): vegetation inside envelope'],ruled:'LINE_064 not tested in this branch',unc:'±80 m along the span',next:'Keep LINE_026 isolated until the crew confirms.'},
+ log:[['T+01:01','(what-if) Inspection point: LINE_026 km 4.32','ok']]},
+];
+
+
+/* operator-facing summaries per step */
+const SUM=[
+ ['idle','All clear','LINE_024 is off as planned. Fleet charging on live lines.'],
+ ['reported','Two reports point at LINE_026','Unverified. Next: structure reports and form hypotheses.'],
+ ['investigating','Three candidate causes','Next: validate LINE_026 with TDR from both ends.'],
+ ['investigating','Four drones checking every open report','Next: TDR results on LINE_026 in ≈6 min.'],
+ ['investigating','LINE_026 tested clean from both ends','Not the cause. No crew sent. Next: test LINE_064.'],
+ ['investigating','Search moves to LINE_064','Weak reports R05 and R06 closed. Next: TDR on LINE_064 from both ends.'],
+ ['investigating','D2 lost its charging line mid-flight','Re-routed to land on live LINE_042. Investigation continues.'],
+ ['validated','Fault signal on LINE_064','About 3.3 km from NODE_009. Next: second TDR closer in.'],
+ ['validated','Fault narrowed to ±80 m','Drone within 500 m. Next: photo + LiDAR at the spot.'],
+ ['confirmed','Branch on the conductor, seen by camera and LiDAR','Next: issue the crew recommendation.'],
+ ['confirmed','Send a crew to LINE_064','Keep LINE_064 isolated. Drones returning to live lines.'],
+];
+const SUM_ALT=[
+ ['validated','Fault signal on LINE_026 (what-if)','About 4.3 km from S15. Next: second TDR closer in.'],
+ ['validated','Fault narrowed to ±80 m (what-if)','Next: photo + LiDAR at the spot.'],
+ ['confirmed','Branch on LINE_026 confirmed (what-if)','Next: issue the crew recommendation.'],
+ ['confirmed','Send a crew to LINE_026 (what-if)','Untick the what-if switch to return to the real readings.'],
+];
+let whatif=false;
+const steps=()=>whatif?S.slice(0,4).concat(ALT):S;
+const sums=()=>whatif?SUM.slice(0,4).concat(SUM_ALT):SUM;
+function resolve(i){const st={lines:{},drones:{},layers:{},ev:[],log:[],reps:{},sensor:null,crew:null,band:null,ring:null,focus:null};const arr=steps();
+  for(let k=0;k<=i;k++){const s=arr[k];Object.assign(st.lines,s.lines||{});Object.assign(st.layers,s.layers||{});
+    if(s.drones)for(const d in s.drones)st.drones[d]=Object.assign({},st.drones[d]||{},s.drones[d]);
+    if(s.reps)for(const r in s.reps){if(!(r in st.reps))st.reps[r]={s:s.reps[r],k};else st.reps[r].s=s.reps[r]}
+    for(const key of ['ev','sensor','focus'])if(s[key])st[key]=s[key];
+    for(const key of ['crew','band','ring'])if(key in s)st[key]=s[key];
+    if(s.log)s.log.forEach(l=>st.log.push({l,k}))}
+  st.cur=arr[i];st.i=i;st.sum=sums()[i];st.post=st.ev.length?posterior(st.ev):null;return st}
+const fill=(txt,st)=>!st.post?txt:txt.replace(/\{H(\d)\}/g,(_,n)=>fmt(st.post[n-1]));
+
+/* map build */
+const map=$('map');
+function el(tag,a,p){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e}
+const RPIN={R02:[10.585,48.232],R03:[10.70,48.165],R04:[10.865,48.165],R05:[10.80,48.21],R06:[10.83,48.32]};
+const KEYLINES=['LINE_026','LINE_064'];
+function buildMap(){
+  const cw=250,ch=253,cv=document.createElement('canvas');cv.width=cw;cv.height=ch;const cx=cv.getContext('2d'),img=cx.createImageData(cw,ch),r=rng(3);
+  for(let j=0;j<ch;j++)for(let i=0;i<cw;i++){let d=canopy(i/cw*W,j/ch*H);d=Math.max(0,d*(.8+r()*.35));const o=(j*cw+i)*4;img.data[o]=40+d*30;img.data[o+1]=110+d*60;img.data[o+2]=70+d*20;img.data[o+3]=Math.round(Math.min(1,d)*170)}
+  cx.putImageData(img,0,0);
+  const gF=el('g',{id:'forest',class:'fade',opacity:0},map);el('image',{href:cv.toDataURL(),x:0,y:0,width:W,height:H,preserveAspectRatio:'none'},gF);
+  const gH=el('g',{id:'houses',class:'fade',opacity:0},map);
+  VIL.forEach((v,i)=>{const r=5+Math.sqrt(v.hh)/6;const c=el('circle',{cx:v.xy[0],cy:v.xy[1],r,class:'house',id:'v_'+i,fill:'#3b4b5e',opacity:0},gH);
+    c.addEventListener('pointerenter',e=>showTip(e,vilTip(v)));c.addEventListener('pointermove',moveTip);c.addEventListener('pointerleave',()=>$('tip').hidden=true);
+    el('text',{x:v.xy[0]+r+4,y:v.xy[1]+4,class:'lbl',id:'vl_'+i,style:'font-size:12.5px;fill:#e9c98f',opacity:0},gH).textContent=v.n});
+  const gL=el('g',{id:'lines'},map);
+  G.segs.forEach(s=>{const d='M'+s.p.map(p=>p.map(v=>v.toFixed(1)).join(',')).join(' L');el('path',{d,class:'seg live','stroke-width':s.kv>=380?3.6:2.4,id:'s_'+s.id},gL);
+    const h=el('path',{d,class:'hit'},gL);h.addEventListener('pointerenter',e=>showTip(e,segTip(s.id)));h.addEventListener('pointermove',moveTip);h.addEventListener('pointerleave',()=>$('tip').hidden=true)});
+  el('path',{id:'band',d:'',fill:'none',stroke:'rgba(255,81,72,.38)','stroke-width':18,'stroke-linecap':'round'},map);
+  el('g',{id:'ring'},map);
+  const gN=el('g',{},map);
+  G.nodes.filter(n=>n.type==='abstract_substation').forEach(n=>el('rect',{x:n.px[0]-5,y:n.px[1]-5,width:10,height:10,class:'sub'},gN));
+  [['SUBSTATION_01','S01',10,-10],['SUBSTATION_15','S15',10,22]].forEach(([k,t,dx,dy])=>{const n=NODE[k];el('text',{x:n.px[0]+dx,y:n.px[1]+dy,class:'lbl'},gN).textContent=t});
+  const n9=NODE.NODE_009;el('text',{x:n9.px[0]-4,y:n9.px[1]+24,class:'lbl','text-anchor':'middle'},gN).textContent='NODE_009';
+  [['LINE_026',.42,-16],['LINE_064',.42,-16]].forEach(([id,f,dy])=>{const p=along(id,f);el('text',{x:p[0],y:p[1]+dy,class:'lbl big','text-anchor':'middle',id:'lab_'+id},gN).textContent=id});
+  const gP=el('g',{id:'pins'},map);
+  for(const id in RPIN){const p=[px(RPIN[id][0]),py(RPIN[id][1])];const g=el('g',{id:'pin_'+id,transform:`translate(${p[0]},${p[1]})`,opacity:0,class:'fade'},gP);
+    el('circle',{r:8,class:'ping',id:'ping_'+id},g);
+    el('path',{d:'M0,0 C-10,-12 -10,-26 0,-26 C10,-26 10,-12 0,0 Z',fill:'#e7a1c6',stroke:'#0e1925','stroke-width':1.5,id:'pinb_'+id},g);
+    el('text',{x:0,y:-14,'text-anchor':'middle',style:'font:700 9px IBM Plex Mono,monospace;fill:#0e1925'},g).textContent=id.slice(1)}
+  el('g',{id:'routes'},map);el('g',{id:'crew'},map);el('g',{id:'drones'},map);
+  DR.forEach(d=>{const g=el('g',{id:'dr_'+d,class:'drone'},$('drones'));const n=el('g',{class:'inner'},g);
+    el('circle',{r:16,class:'scan',fill:'none','stroke-width':3},n);
+    el('circle',{r:30,class:'glow',opacity:.28},n);
+    el('circle',{r:21,class:'ring',fill:'#0e1925','fill-opacity':.75,'stroke-width':2.5},n);
+    el('path',{d:'M-12,-12 L12,12 M12,-12 L-12,12',stroke:'#ffffff','stroke-width':3,'stroke-linecap':'round'},n);
+    [[-12,-12],[12,-12],[-12,12],[12,12]].forEach(([a,b])=>el('circle',{cx:a,cy:b,r:7,fill:'#0e1925',stroke:'#ffffff','stroke-width':2.2},n));
+    el('circle',{r:7.5,class:'body',stroke:'#ffffff','stroke-width':2},n);
+    el('rect',{x:20,y:-44,width:42,height:24,rx:5,class:'pill',fill:'#0e1925','stroke-width':2.2},n);
+    el('text',{x:41,y:-26.5,'text-anchor':'middle',style:'font:700 17px IBM Plex Mono,monospace;fill:#ffffff'},n).textContent=d});
+}
+function segTip(id){const s=SEG[id],v=(cur&&cur.lines[id])||'live';return `<b>${id}</b> · ${s.kv} kV · ${s.km} km · ${v}<br>${s.f} → ${s.t}`}
+function pOut(v,st){return st&&st.post?v.p.reduce((a,x,i)=>a+x*st.post[i],0):0}
+function vilTip(v){const p=pOut(v,cur);return `<b>${v.n}</b> · ≈${nf(v.hh)} households<br>P(out) ${fmt(p)} · ≈${nf(v.hh*p)} likely out`}
+function showTip(e,html){const t=$('tip');t.innerHTML=html;t.hidden=false;moveTip(e)}
+function moveTip(e){const t=$('tip');t.style.left=Math.min(e.pageX+14,innerWidth-240)+'px';t.style.top=(e.pageY+12)+'px'}
+function heat(p){const a=[59,75,94],b=[243,178,63],c=[255,81,72];const m=(x,y,t)=>x.map((v,i)=>Math.round(v+(y[i]-v)*t));const t=Math.min(1,p/0.75);const col=t<.45?m(a,b,t/.45):m(b,c,(t-.45)/.55);return`rgb(${col})`}
+
+/* pipeline (system view) */
+const PN={E:[210,22,150,'Event','startup · observation · event'],S:[210,82,170,'Sim','ingest · diagnostics · snapshot'],R:[90,148,150,'Refresh & solve routes','tasks + fleet routes, now'],M:[320,148,140,'Async manager','test hypotheses · explain'],P:[215,212,140,'Async planner','propose needs & sites'],D:[320,276,140,'Decision proposal','structured'],C:[320,340,140,'Semantic check','deps vs current evidence'],V:[90,340,150,'Validate & commit','decision + routes · atomic'],F:[90,404,150,'Drones execute','measure · recovery landing']};
+const PE={'E>S':'M210,41 L210,63','S>R':'M170,101 C150,120 100,118 95,129','S>M':'M250,101 C270,120 315,118 318,129','M>P':'M285,167 C270,182 232,186 224,193','M>D1':'M376,167 C398,200 398,240 378,257','M>D2':'M352,167 C366,200 362,235 348,257','P>D':'M250,231 C265,248 300,246 308,257','D>C':'M320,295 L320,321','C>R':'M250,334 C200,322 118,250 120,167','R>V':'M62,167 L62,321','V>F':'M90,359 L90,385','F>E':'M15,404 H9 Q4,404 4,398 V28 Q4,22 10,22 H135'};
+const pipe=$('pipe');
+function buildPipe(){
+  const mk=el('marker',{id:'ah',viewBox:'0 0 8 8',refX:7,refY:4,markerWidth:6,markerHeight:6,orient:'auto'},el('defs',{},pipe));el('path',{d:'M0,0 L8,4 L0,8 z',fill:'#52667b'},mk);
+  for(const k in PE)el('path',{d:PE[k],class:'pe',id:'e_'+k,'marker-end':'url(#ah)'},pipe);
+  [[240,186,'changed needs','start'],[344,250,'other updates','end'],[178,290,'compatible','middle']].forEach(([x,y,t,a])=>el('text',{x,y,class:'plab','text-anchor':a},pipe).textContent=t);
+  el('text',{x:396,y:212,class:'plab','text-anchor':'middle',transform:'rotate(90 396 212)'},pipe).textContent='cause supported · retire needs';
+  for(const k in PN){const [cx,cy,w,t1,t2]=PN[k];const g=el('g',{class:'pn',id:'n_'+k},pipe);el('rect',{x:cx-w/2,y:cy-19,width:w,height:38,rx:5},g);
+    el('text',{x:cx-w/2+8,y:cy-3,class:'key'},g).textContent=k;el('text',{x:cx-w/2+21,y:cy-3,class:'t1'},g).textContent=t1;el('text',{x:cx-w/2+8,y:cy+12,class:'t2'},g).textContent=t2}
+  el('circle',{r:4.5,class:'packet',id:'packet',opacity:0},pipe);
+}
+const edgeNodes=e=>{const [a,b]=e.split('>');return[a,b.replace(/\d$/,'')]};
+let flowToken=0;
+function setPipe(st,animate,speed){
+  const tok=++flowToken,c=st.cur,flow=c.flow||[],active=c.active||[],ns=c.nodeState||{};
+  document.querySelectorAll('.pn').forEach(n=>n.setAttribute('class','pn'));document.querySelectorAll('.pe').forEach(e=>e.setAttribute('class','pe'));
+  const pk=$('packet');pk.setAttribute('opacity',0);
+  const finish=()=>{if(tok!==flowToken)return;flow.forEach(e=>{$('e_'+e).setAttribute('class','pe done');edgeNodes(e).forEach(n=>$('n_'+n).setAttribute('class','pn visited'))});
+    const last=flow.length?edgeNodes(flow[flow.length-1])[1]:null;[...active,last].filter(Boolean).forEach(n=>$('n_'+n).setAttribute('class','pn active'));
+    for(const n in ns)$('n_'+n).setAttribute('class','pn '+ns[n]);pk.setAttribute('opacity',0)};
+  if(!animate||!flow.length||$('drawer').hidden||matchMedia('(prefers-reduced-motion: reduce)').matches){finish();return}
+  const per=Math.max(260,Math.min(620,3000/flow.length))/speed;let idx=0;
+  const run=()=>{if(tok!==flowToken)return;if(idx>=flow.length){finish();return}
+    const e=flow[idx],path=$('e_'+e),[a,b]=edgeNodes(e);$('n_'+a).setAttribute('class','pn active');path.setAttribute('class','pe lit');
+    const L=path.getTotalLength(),t0=performance.now();pk.setAttribute('opacity',1);
+    const tick=now=>{if(tok!==flowToken)return;const t=Math.min(1,(now-t0)/per),p=path.getPointAtLength(L*t);pk.setAttribute('cx',p.x);pk.setAttribute('cy',p.y);
+      if(t<1)requestAnimationFrame(tick);else{path.setAttribute('class','pe done');$('n_'+a).setAttribute('class','pn '+(ns[a]||'visited'));$('n_'+b).setAttribute('class','pn '+(ns[b]||'active'));idx++;setTimeout(run,60)}};
+    requestAnimationFrame(tick)};
+  run();
+}
+
+/* render */
+let cur=null;const dronePos={},tween={};
+const STC={standby:'#8a9db0',charging:'#6fcf8f',flying:'#5fd4ff',measuring:'#ffb02e',perched:'#c9d6e2',recovery:'#c4a8ff'};
+const bolt=(x,y,c,x2)=>`<g transform="translate(${x},${y})"><circle r="11" fill="#0e1925" stroke="${c}" stroke-width="1.6"/><path d="M1.5,-7 L-4,1 L0,1 L-1.5,7 L4,-1 L0,-1 Z" fill="${c}"/>${x2?'<path d="M-9,-9 L9,9" stroke="#ff5148" stroke-width="2.4"/>':''}</g>`;
+const layerOn={houses:true,canopy:false};
+function renderMap(st,animate,speed){
+  for(const s of G.segs){const v=st.lines[s.id]||'live';$('s_'+s.id).setAttribute('class','seg '+v+(KEYLINES.includes(s.id)&&v!=='live'?' hot':''))}
+  KEYLINES.forEach(id=>$('lab_'+id).setAttribute('class','lbl big'+(['suspect','fault','validated'].includes(st.lines[id])?' red':'')));
+  $('forest').setAttribute('opacity',layerOn.canopy?1:0);
+  $('houses').setAttribute('opacity',layerOn.houses&&st.post?1:0);
+  for(const id in RPIN){const on=!!st.reps[id];$('pin_'+id).setAttribute('opacity',on?1:0);
+    $('ping_'+id).setAttribute('class','ping'+((st.cur.ping||[]).includes(id)?' go':''));
+    const rs=st.reps[id]&&st.reps[id].s;$('pinb_'+id).setAttribute('fill',rs&&rs.startsWith('yes')?'#ff5148':['no26','expl','noIR','noLid'].includes(rs)?'#6b7888':'#e7a1c6')}
+  const top=VIL.map((v,i)=>({i,p:pOut(v,st)})).filter(o=>o.p>=.3).sort((a,b)=>b.p-a.p).slice(0,3).map(o=>o.i);
+  VIL.forEach((v,i)=>{const p=pOut(v,st);$('v_'+i).setAttribute('fill',heat(p));$('v_'+i).setAttribute('opacity',p>=.15?.9:0);$('vl_'+i).setAttribute('opacity',top.includes(i)?1:0)});
+  $('band').setAttribute('d',st.band?sub(...st.band):'');
+  if(st.ring){const c=P(st.ring);$('ring').innerHTML=`<circle cx="${c[0]}" cy="${c[1]}" r="${0.5*PXKM}" fill="rgba(111,207,143,.12)" stroke="#6fcf8f" stroke-width="2" stroke-dasharray="4 3"/>`}else $('ring').innerHTML='';
+  let rh='';
+  DR.forEach(d=>{const s=st.drones[d];if(!s)return;const a=P(s.at),pts=[a,...(s.route||[]).map(P)];
+    if(s.oldCharge){const t=P((s.route||[]).slice(-1)[0]||s.at),o=P(s.oldCharge);rh+=`<path d="M${t[0]},${t[1]} L${o[0]},${o[1]}" stroke="#ff5148" stroke-width="2" stroke-dasharray="3 5" fill="none" opacity=".8"/>`+bolt(o[0],o[1],'#ff5148',1)}
+    if(s.charge)pts.push(P(s.charge));
+    if(pts.length>1)rh+=`<path d="M${pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' L')}" stroke="#8fd0ff" stroke-width="2.4" stroke-dasharray="7 5" fill="none"><animate attributeName="stroke-dashoffset" from="24" to="0" dur="1s" repeatCount="indefinite"/></path>`;
+    if(s.charge){const c=P(s.charge);rh+=bolt(c[0],c[1],'#6fcf8f')}});
+  $('routes').innerHTML=rh;
+  if(st.crew){const c=P(st.crew);$('crew').innerHTML=`<g transform="translate(${c[0]},${c[1]})"><circle r="26" fill="none" stroke="#6fcf8f" stroke-width="3" stroke-dasharray="5 4"><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="8s" repeatCount="indefinite"/></circle><rect x="-54" y="32" width="108" height="26" rx="4" fill="#6fcf8f"/><text x="0" y="50" text-anchor="middle" style="font-family:IBM Plex Mono,monospace;font-size:14px;font-weight:600;fill:#0c141d">SEND CREW</text></g>`}else $('crew').innerHTML='';
+  DR.forEach(d=>{const s=st.drones[d],g=$('dr_'+d);if(!s){g.setAttribute('opacity',0);return}g.setAttribute('opacity',1);
+    const idle=s.st==='charging'||s.st==='standby',col=STC[s.st]||'#8fd0ff',n=g.querySelector('.inner');
+    n.style.transform=idle?'scale(.55)':'scale(1)';n.style.opacity=idle?.55:1;
+    g.querySelector('.body').setAttribute('fill',col);g.querySelector('.glow').setAttribute('fill',col);g.querySelector('.ring').setAttribute('stroke',col);g.querySelector('.pill').setAttribute('stroke',col);
+    const sc=g.querySelector('.scan');sc.setAttribute('stroke',col);sc.setAttribute('class','scan'+(s.st==='measuring'?' go':''));g.setAttribute('class','drone'+(s.st==='flying'||s.st==='measuring'?' busy':''));
+    const to=P(s.at),from=dronePos[d]||to,dur=animate?1300/speed:0,t0=performance.now(),tk=(tween[d]=(tween[d]||0)+1);
+    const stp=now=>{if(tk!==tween[d])return;const t=dur?Math.min(1,(now-t0)/dur):1,e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;const x=from[0]+(to[0]-from[0])*e,y=from[1]+(to[1]-from[1])*e;g.setAttribute('transform',`translate(${x},${y})`);dronePos[d]=[x,y];if(t<1)requestAnimationFrame(stp)};
+    requestAnimationFrame(stp)});
+}
+function locText(st,lead){
+  const c=st.cur.console;
+  if(st.crew){const p=P(st.crew);const seg=st.crew[0]||'';return `<b>${ll(p)}</b><br>${lead===1?'3.21 km from NODE_009':'4.32 km from S15'} · ±80 m`}
+  if(st.sensor&&st.sensor.est&&st.band){const e=st.sensor.est;return `<b>≈${e[0]} km from ${st.sensor.ref.split(' ')[0]}</b> · ±${e[1]} m`}
+  return 'Not located yet';
+}
+function renderRC(st){
+  const box=$('rc'),panel=$('rcPanel'),phase=st.sum[0];panel.className='panel rc '+phase;
+  if(!st.post){box.innerHTML=`<div class="lead"><div class="cause">${phase==='idle'?'No incident':'Reports received'}<small>${phase==='idle'?'Nothing to investigate.':'Waiting for the first analysis.'}</small></div></div><div class="crew idle"><div class="verdict">Crew: not needed yet</div></div>`;$('rcMeta').textContent='';return}
+  const post=st.post,lead=post.indexOf(Math.max(...post)),lv=post[lead],types=typesFor(st.ev,lead),ev=lead<2?evDispatch(lv,lead):-1;
+  const okC=lv>=.8,okT=types.length>=2,okV=ev>0,go=okC&&okT&&okV;
+  const ruled=HYP.map((h,i)=>({h,v:post[i]})).filter(o=>o.v<.2);
+  const closed=Object.entries(st.reps).filter(([id,r])=>['noIR','noLid','expl','no26'].includes(r.s)).map(([id])=>id);
+  const col=lv>=.8?'var(--ok)':lv>=.4?'var(--fg)':'var(--dim)';
+  box.innerHTML=`<div class="lead"><div class="cause">${HYP[lead].n}<small>${phase==='confirmed'?'Confirmed on site by drone sensors':phase==='validated'?'Validated by TDR, not yet seen':'Leading hypothesis, not yet validated'}</small></div><div class="conf" style="color:${col}">${fmt(lv)}<small>confidence</small></div></div>
+  <div class="loc">Location: ${locText(st,lead)}</div>
+  <div class="crew ${go?'go':'hold'}"><div class="verdict">${go?'Send repair crew':'Hold crew · measure more'}</div>
+   <div class="checks"><div class="ck ${okC?'y':'n'}"><b>${fmt(lv)} ${okC?'✓':'✗'}</b>confidence ≥ 0.80</div><div class="ck ${okT?'y':'n'}"><b>${types.map(t=>TYPELAB[t]).join(' + ')||'none'} ${okT?'✓':'✗'}</b>2+ sensor types</div><div class="ck ${okV?'y':'n'}"><b>${lead<2?(ev>0?'+':'')+nf(ev/1000)+'k':'n/a'} ${okV?'✓':'✗'}</b>household-hours gained</div></div></div>
+  ${ruled.length?`<div class="ruled"><b>Ruled out:</b> ${ruled.map(o=>`${o.h.short} (${fmt(o.v)})`).join(' · ')}</div>`:''}`;
+  $('rcMeta').textContent=st.cur.t;
+}
+function renderHyp(st){
+  const h=$('hyp');if(!st.post){h.innerHTML='<div class="empty">Appears once reports are analysed.</div>';return}
+  const prevEv=st.i>0?resolve(st.i-1).ev:[],prev=prevEv.length?posterior(prevEv):null;
+  h.innerHTML='<div class="hyp">'+HYP.map((hy,i)=>{const v=st.post[i],d=prev?v-prev[i]:0,col=v>=.8?'var(--ok)':v>=.4?'var(--live)':'var(--faint)';
+    return `<div class="hrow"><span class="hn"><em>${hy.k}</em>${hy.n}</span><span class="bar"><i style="width:${v*100}%;background:${col}"></i><span class="th"></span></span><span class="hv" title="${prev?(d>=0?'+':'')+fmt(d):''}">${fmt(v)}</span></div>`}).join('')+'</div>';
+}
+function chartSVG(series,{xmax,ticks,marks=[],ymin,ymax,band}){
+  const w=360,h=96,l=8,r=8,t=8,b=18,X=x=>l+x/xmax*(w-l-r),Y=y=>t+(1-(y-ymin)/(ymax-ymin))*(h-t-b);
+  let s=`<svg viewBox="0 0 ${w} ${h}">`;
+  ticks.forEach(v=>{s+=`<line x1="${X(v)}" x2="${X(v)}" y1="${t}" y2="${h-b}" stroke="#22344a"/><text x="${X(v)}" y="${h-5}" text-anchor="middle" style="font:9.5px IBM Plex Mono,monospace;fill:#8a9db0">${v} km</text>`});
+  if(band)s+=`<rect x="${X(band[0])}" y="${t}" width="${X(band[1])-X(band[0])}" height="${h-t-b}" fill="rgba(255,81,72,.16)"/>`;
+  s+=`<line x1="${l}" x2="${w-r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#52667b"/>`;
+  marks.forEach(([m,txt,c])=>{s+=`<line x1="${X(m)}" x2="${X(m)}" y1="${t}" y2="${h-b}" stroke="${c}" stroke-dasharray="3 3"/><text x="${X(m)+(m>xmax*.7?-4:4)}" y="${t+10}" text-anchor="${m>xmax*.7?'end':'start'}" style="font:10px IBM Plex Mono,monospace;fill:${c}">${txt}</text>`});
+  series.forEach(se=>{s+=`<path d="M${se.x.map((x,i)=>X(x).toFixed(1)+','+Y(se.y[i]).toFixed(1)).join(' L')}" fill="none" stroke="${se.c}" stroke-width="${se.w||1.6}" opacity="${se.o||1}"/>`});
+  return s+'</svg>'}
+function tdrTrace(len,sh,seed){const r=rng(seed),x=[],y=[];for(let v=sh.from;v<=len+.001;v+=.04){x.push(v);y.push(.95*Math.exp(-((((v-sh.from-.1)/.09))**2))+(sh.peak?-.45*Math.exp(-((((v-sh.peak)/sh.sig))**2)):0)+(sh.end??.45)*Math.exp(-((((v-len)/.16))**2))+(r()-.5)*.04)}return{x,y}}
+function rgbFrame(line,dr){return `<svg viewBox="0 0 360 180"><defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5d6f82"/><stop offset="1" stop-color="#9aa8b3"/></linearGradient></defs>
+<rect width="360" height="180" fill="url(#sky)"/><rect y="142" width="360" height="38" fill="#3c4a3a"/>
+<g stroke="#2a2f36" stroke-width="2" fill="none"><path d="M38,180 L52,30 L66,180 M42,142 L62,104 M62,142 L42,104 M45,104 L59,66 M59,104 L45,66"/><path d="M20,52 H84 M26,72 H78"/></g>
+<g stroke="#1e2329" stroke-width="2" fill="none"><path d="M24,54 Q190,110 360,64"/><path d="M80,54 Q210,116 360,78"/><path d="M28,74 Q200,130 360,92"/></g>
+<g fill="#24402c"><path d="M262,180 L262,40 L238,95 L250,92 L228,130 L246,127 L220,165 L300,165 L278,127 L294,130 L274,92 L286,95 Z" transform="rotate(-9 262 165)"/></g>
+<path d="M248,70 C226,84 205,96 188,104" stroke="#5a4127" stroke-width="4" fill="none"/>
+<g stroke="#2f5a37" stroke-width="2.2"><path d="M232,80 l-6,-8 M220,86 l-5,-9 M208,93 l-4,-9 M232,80 l2,9 M220,86 l2,9 M208,93 l2,9 M196,99 l-3,-8 M196,99 l2,8"/></g>
+<rect x="176" y="62" width="84" height="56" fill="none" stroke="#ff5148" stroke-width="2"/><rect x="176" y="48" width="138" height="14" fill="#ff5148"/>
+<text x="180" y="58.5" style="font:10px IBM Plex Mono,monospace;fill:#fff">branch_on_conductor 0.91</text>
+<text x="6" y="14" style="font:9.5px IBM Plex Mono,monospace;fill:#eef3f7">${dr} · ${line} · RGB</text><text x="354" y="175" text-anchor="end" style="font:9px IBM Plex Mono,monospace;fill:#eef3f7">illustrative frame</text></svg>`}
+function renderEvid(st){
+  const box=$('evid'),s=st.sensor;
+  const order=['R02','R03','R05','R06','R04'];
+  const chips=order.filter(id=>st.reps[id]).map(id=>{const [c,l]=CHIP[st.reps[id].s];return `<span class="chip ${c}">${id} · ${l}</span>`}).join('');
+  let vis='';
+  if(s&&s.rgb){vis=`<div class="visual"><div class="vt"><span><b>Photo</b> · ${s.rgb}</span><span style="color:#ff9a92">branch on conductor</span></div>${rgbFrame(s.line,s.rgb)}</div>`;$('evMeta').textContent=`${s.rgb} + ${s.lidar} · ${s.line}`}
+  else if(s){const series=s.shots.map((sh,i)=>{const t=tdrTrace(s.len,sh,5+i);return{...t,c:sh.faint?'#52667b':(s.verdict==='clean'?'#6fcf8f':'#8fd0ff'),w:sh.faint?1.2:1.8}});
+    const last=s.shots[s.shots.length-1],marks=[];if(last.peak)marks.push([last.peak,'fault '+last.peak+' km','#ff8a83']);
+    const band=s.est?[s.est[0]-s.est[1]/1000,s.est[0]+s.est[1]/1000]:null;
+    vis=`<div class="visual"><div class="vt"><span><b>TDR</b> · ${s.drone} on ${s.line}, from ${s.ref.split(' ')[0]}</span><span style="color:${s.verdict==='clean'?'var(--ok)':'#ff9a92'}">${s.verdict==='clean'?'clean · no fault':'reflection · fault'}</span></div>${chartSVG(series,{xmax:s.len,ticks:[0,2,4,6,8,10],marks,ymin:-.6,ymax:1.05,band})}${s.cross?`<div class="vt" style="margin-top:2px"><span>${s.cross}</span></div>`:''}</div>`;$('evMeta').textContent=`${s.drone} · ${s.line}`}
+  else $('evMeta').textContent='';
+  let list='';
+  if(st.post){const lead=st.post.indexOf(Math.max(...st.post));const sup=st.ev.filter(e=>EV[e].lr[lead]>=1.15).slice(-2).reverse();const neg=st.ev.filter(e=>EV[e].lr[lead]<=.6).slice(-1);
+    list=`<div class="evlist">${sup.map(e=>`<div>${EV[e].t}</div>`).join('')}${neg.map(e=>`<div class="neg">${EV[e].t}</div>`).join('')}</div>`}
+  box.innerHTML=(vis||'<div class="empty">No drone measurements yet.</div>')+list+(chips?`<div class="reps">${chips}</div>`:'');
+}
+function renderImpact(st){
+  const b=$('impact');if(!st.post){b.innerHTML='<div class="empty">Appears once candidate causes exist.</div>';return}
+  const rows=VIL.map(v=>({v,p:pOut(v,st)})).sort((a,b)=>b.p-a.p).slice(0,3),tot=VIL.reduce((a,v)=>a+v.hh*pOut(v,st),0);
+  b.innerHTML=`<div class="imp"><div class="n">≈${nf(tot)}<small>households likely without power</small></div><div class="vrows">${rows.map(({v,p})=>`<div class="vrow"><span>${v.n}</span><span class="vb"><i style="width:${p*100}%;background:${heat(p)}"></i></span><span>${fmt(p)}</span></div>`).join('')}</div></div>`;
+}
+function renderSystem(st){
+  $('fleet').innerHTML=DR.map(d=>{const s=st.drones[d]||{};return `<div class="dchip"><b>${d}</b> <span style="color:${STC[s.st]}">${s.st||''}</span> · ${s.bat??''}%<div>${s.task||''}</div></div>`}).join('');
+  $('log').innerHTML=st.log.slice().reverse().map(({l,k})=>`<div class="${k===st.i?'new':''}"><b>${l[0]}</b><span>${fill(l[1],resolve(k))}</span></div>`).join('');
+}
+function renderStatus(st){const [ph,t,n]=st.sum;$('phase').className='phase '+ph;$('phase').textContent=({idle:'Monitoring',reported:'Reported',investigating:'Investigating',validated:'Validated',confirmed:'Confirmed'})[ph];
+  $('sTitle').textContent=t;$('sNext').innerHTML=n.replace(/^Next:/,'<em>Next:</em>').replace(/ Next:/,' <em>Next:</em>');$('clock').textContent=st.cur.t}
+function render(i,animate=true){const st=resolve(i);cur=st;const sp=+$('speed').value;
+  renderStatus(st);renderMap(st,animate,sp);renderRC(st);renderHyp(st);renderEvid(st);renderImpact(st);renderSystem(st);setPipe(st,animate,sp);
+  $('slider').max=steps().length-1;$('slider').value=i;$('ticks').innerHTML=steps().map((s,k)=>`<span class="${k===i?'on':''}">${k+1}</span>`).join('')}
+
+/* controls */
+let idx=0,playing=true,timer=null;
+const dwell=i=>(6200+(i===4||i===9||i===10?1200:0))/(+$('speed').value);
+function go(i,animate=true){idx=Math.max(0,Math.min(steps().length-1,i));render(idx,animate);schedule()}
+function schedule(){clearTimeout(timer);if(!playing)return;if(idx>=steps().length-1){playing=false;$('play').textContent='Replay';return}timer=setTimeout(()=>go(idx+1),dwell(idx))}
+$('play').onclick=()=>{if(!playing&&idx>=steps().length-1){playing=true;$('play').textContent='Pause';go(0);return}playing=!playing;$('play').textContent=playing?'Pause':'Play';schedule()};
+$('next').onclick=()=>go(idx+1);$('prev').onclick=()=>go(idx-1,false);$('restart').onclick=()=>go(0,false);
+$('slider').oninput=e=>go(+e.target.value,false);$('speed').onchange=()=>schedule();
+$('whatif').onchange=e=>{whatif=e.target.checked;$('whatifL').classList.toggle('on',whatif);go(idx>=4?4:idx,true)};
+function toggleLayer(k,btn){layerOn[k]=!layerOn[k];btn.setAttribute('aria-pressed',layerOn[k]);renderMap(cur,false,1)}
+$('lyHouses').onclick=e=>toggleLayer('houses',e.currentTarget);$('lyCanopy').onclick=e=>toggleLayer('canopy',e.currentTarget);
+function setDrawer(open){$('drawer').hidden=!open;$('sysBtn').setAttribute('aria-expanded',open);if(open)setPipe(cur,false,1)}
+$('sysBtn').onclick=()=>setDrawer($('drawer').hidden);$('sysClose').onclick=()=>setDrawer(false);
+document.addEventListener('keydown',e=>{if(e.target.tagName==='SELECT')return;if(e.key==='Escape')setDrawer(false);else if(e.key==='ArrowRight'){go(idx+1);e.preventDefault()}else if(e.key==='ArrowLeft'){go(idx-1,false);e.preventDefault()}else if(e.key===' '&&e.target.tagName!=='BUTTON'){$('play').click();e.preventDefault()}});
+buildMap();buildPipe();
+if(matchMedia('(prefers-reduced-motion: reduce)').matches){playing=false;$('play').textContent='Play'}
+render(0,false);
+setTimeout(()=>{if(playing)go(1)},2200);
+</script>
+
+</body></html>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid Ops – Architecture Slide</title>
+<style>
+  html,body{margin:0;height:100%;background:#05070b}
+  body{display:flex;align-items:center;justify-content:center}
+  svg{width:min(100vw,calc(100vh*16/9));height:auto;aspect-ratio:16/9;display:block;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+  .t{fill:#f1f5f9} .m{fill:#94a3b8}
+</style>
+</head>
+<body>
+<svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#101a2e"/>
+    </linearGradient>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#cbd5e1"/>
+    </marker>
+    <marker id="ahb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0L10 5L0 10z" fill="#60a5fa"/>
+    </marker>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="45" y="68" class="t" font-size="36" font-weight="700">Hypothesis-driven outage investigation</text>
+  <text x="45" y="102" class="m" font-size="20">An AI orchestrator directs six sensor drones, using the fewest moves needed to prove the root cause.</text>
+
+  <!-- Cards -->
+  <!-- 1 SENSE -->
+  <g transform="translate(975,150)">
+    <rect width="260" height="290" rx="18" fill="#0f1a2e" stroke="#22d3ee" stroke-width="2"/>
+    <text x="22" y="38" fill="#22d3ee" font-size="14" font-weight="700" letter-spacing="2">4 · SENSE</text>
+    <g transform="translate(130,115)" stroke="#22d3ee" stroke-width="3" fill="none" stroke-linecap="round">
+      <circle r="9" fill="#22d3ee"/>
+      <path d="M-9 -9L-34 -34M9 -9L34 -34M-9 9L-34 34M9 9L34 34"/>
+      <circle cx="-38" cy="-38" r="14"/><circle cx="38" cy="-38" r="14"/>
+      <circle cx="-38" cy="38" r="14"/><circle cx="38" cy="38" r="14"/>
+    </g>
+    <text x="130" y="205" text-anchor="middle" class="t" font-size="24" font-weight="700">6 Sensor drones</text>
+    <text x="130" y="232" text-anchor="middle" class="m" font-size="16">Tasked by the orchestrator</text>
+    <text x="130" y="258" text-anchor="middle" class="m" font-size="16">Voltage · clearance · heat · sway</text>
+  </g>
+
+  <!-- 2 ESTIMATE -->
+  <g transform="translate(665,150)">
+    <rect width="260" height="290" rx="18" fill="#0f1a2e" stroke="#4ade80" stroke-width="2"/>
+    <text x="22" y="38" fill="#4ade80" font-size="14" font-weight="700" letter-spacing="2">3 · ESTIMATE</text>
+    <g transform="translate(130,115)" stroke="#4ade80" stroke-width="3" fill="none" stroke-linecap="round">
+      <path d="M-55 25L-20 -30L25 10L55 -35"/>
+      <path d="M-20 -30L-5 40L25 10" stroke-dasharray="5 6" opacity=".7"/>
+      <circle cx="-55" cy="25" r="8" fill="#0f1a2e"/><circle cx="-20" cy="-30" r="8" fill="#4ade80"/>
+      <circle cx="25" cy="10" r="8" fill="#0f1a2e"/><circle cx="55" cy="-35" r="8" fill="#0f1a2e"/>
+      <circle cx="-5" cy="40" r="8" fill="#0f1a2e" stroke-dasharray="3 3"/>
+    </g>
+    <text x="130" y="205" text-anchor="middle" class="t" font-size="24" font-weight="700">Grid physics</text>
+    <text x="130" y="232" text-anchor="middle" class="m" font-size="16">Power-flow state estimation</text>
+    <text x="130" y="258" text-anchor="middle" class="m" font-size="16">Knows what it cannot see</text>
+  </g>
+
+  <!-- 3 HYPOTHESIZE -->
+  <g transform="translate(45,150)">
+    <rect width="260" height="290" rx="18" fill="#0f1a2e" stroke="#a78bfa" stroke-width="2"/>
+    <text x="22" y="38" fill="#a78bfa" font-size="14" font-weight="700" letter-spacing="2">1 · ORCHESTRATE</text>
+    <g transform="translate(130,115)" stroke="#a78bfa" stroke-width="3" fill="none" stroke-linecap="round">
+      <circle cy="-40" r="9" fill="#a78bfa"/>
+      <path d="M0 -31L-45 25M0 -31L0 25M0 -31L45 25"/>
+      <circle cx="-45" cy="32" r="9" fill="#0f1a2e" opacity=".6"/>
+      <circle cx="0" cy="32" r="12" fill="#a78bfa"/>
+      <circle cx="45" cy="32" r="9" fill="#0f1a2e" opacity=".6"/>
+    </g>
+    <text x="130" y="205" text-anchor="middle" class="t" font-size="24" font-weight="700">AI orchestrator</text>
+    <text x="130" y="232" text-anchor="middle" class="m" font-size="16">Ranks root causes, explains why</text>
+    <text x="130" y="258" text-anchor="middle" class="m" font-size="16">Fewest drone moves to the answer</text>
+  </g>
+
+  <!-- 4 OPTIMIZE -->
+  <g transform="translate(355,150)">
+    <rect width="260" height="290" rx="18" fill="#0f1a2e" stroke="#fb923c" stroke-width="2"/>
+    <text x="22" y="38" fill="#fb923c" font-size="14" font-weight="700" letter-spacing="2">2 · OPTIMIZE</text>
+    <g transform="translate(130,115)" stroke="#fb923c" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M-55 30L-25 -20L10 15L40 -35L58 -10" stroke-dasharray="8 6"/>
+      <circle cx="-55" cy="30" r="9" fill="#fb923c"/>
+      <circle cx="-25" cy="-20" r="7" fill="#0f1a2e"/><circle cx="10" cy="15" r="7" fill="#0f1a2e"/>
+      <circle cx="40" cy="-35" r="7" fill="#0f1a2e"/>
+      <circle cx="58" cy="-10" r="9" fill="#fb923c"/>
+    </g>
+    <text x="130" y="205" text-anchor="middle" class="t" font-size="24" font-weight="700">Fleet routing</text>
+    <text x="130" y="232" text-anchor="middle" class="m" font-size="16">Re-plans mid-flight in &lt; 1 s</text>
+    <text x="130" y="258" text-anchor="middle" class="m" font-size="16">Safe recharge landing guaranteed</text>
+  </g>
+
+  <!-- Arrows between cards -->
+  <g stroke="#cbd5e1" stroke-width="3" fill="none" marker-end="url(#ah)">
+    <path d="M308 295H348"/><path d="M618 295H658"/><path d="M928 295H968"/>
+  </g>
+
+  <!-- Feedback loop -->
+  <path d="M1105 448V500Q1105 520 1085 520H215Q195 520 195 500V452" stroke="#60a5fa" stroke-width="3" fill="none"
+        stroke-dasharray="10 8" marker-end="url(#ahb)"/>
+  <rect x="440" y="500" width="400" height="40" rx="20" fill="#0b1220" stroke="#60a5fa" stroke-width="2"/>
+  <text x="640" y="526" text-anchor="middle" fill="#93c5fd" font-size="18" font-weight="600">Every new reading re-plans the whole fleet</text>
+
+  <!-- Beyond the mock -->
+  <text x="45" y="592" fill="#f472b6" font-size="14" font-weight="700" letter-spacing="2">BEYOND THE MOCK</text>
+  <g font-size="17" font-weight="600">
+    <g transform="translate(45,610)">
+      <rect width="285" height="72" rx="12" fill="#1a1426" stroke="#f472b6" stroke-opacity=".5"/>
+      <text x="142" y="32" text-anchor="middle" class="t">Hidden ground truth</text>
+      <text x="142" y="55" text-anchor="middle" class="m" font-weight="400" font-size="15">AC simulation we can only probe</text>
+    </g>
+    <g transform="translate(350,610)">
+      <rect width="285" height="72" rx="12" fill="#1a1426" stroke="#f472b6" stroke-opacity=".5"/>
+      <text x="142" y="32" text-anchor="middle" class="t">Knows when to stop</text>
+      <text x="142" y="55" text-anchor="middle" class="m" font-weight="400" font-size="15">Cause proven, not data exhausted</text>
+    </g>
+    <g transform="translate(655,610)">
+      <rect width="285" height="72" rx="12" fill="#1a1426" stroke="#f472b6" stroke-opacity=".5"/>
+      <text x="142" y="32" text-anchor="middle" class="t">Every route verified</text>
+      <text x="142" y="55" text-anchor="middle" class="m" font-weight="400" font-size="15">Battery · deadline · live landing</text>
+    </g>
+    <g transform="translate(960,610)">
+      <rect width="275" height="72" rx="12" fill="#1a1426" stroke="#f472b6" stroke-opacity=".5"/>
+      <text x="137" y="32" text-anchor="middle" class="t">Scored vs. truth</text>
+      <text x="137" y="55" text-anchor="middle" class="m" font-weight="400" font-size="15">Isolated from the agents</text>
+    </g>
+  </g>
+</svg>
+</body>
+</html>

@@ -1,0 +1,855 @@
+{
+ "model": "openrouter:z-ai/glm-5.3-flash",
+ "snapshot_revision": 1,
+ "prompt": "New measurements arrived (events ['EVT0002', 'EVT0004']). No hypotheses are accepted yet: create them from the reports and the readings (change kind 'creation', before null) and cite the readings.",
+ "system": "You are the investigation manager for a power-grid outage after a windstorm.\nYour job is an evidence-supported cause of the outage and a scoped recommended action. You own\nhypotheses, urgency (1-5; urgency is not probability) and recommendations. You work only from a\npinned, read-only snapshot through the tools. You cannot see ground truth and you cannot\ncommand drones.\n\nRules:\n- State falsifiable claims with spatial scope, predictions and required conditions.\n- A qualified negative contradicts only the interval actually inspected. Thermal negatives\n  without excitation and motion negatives outside a gust are inconclusive.\n- A detected local hazard is an urgent hazard action, but it does not by itself explain the outage.\n- Test any electrical candidate (a changed topology) with test_electrical_candidate before you\n  propose it, and cite the returned diagnostic id.\n- Every revision needs: before/after values, a finding_summary, a causal update_reason, and the\n  remaining_uncertainty. Cite real ids (reports SYN_REPORT_xx, readings Rxxxx, events EVTxxxx,\n  hazards HZxxx, diagnostics DX-...). Quote only numbers present in cited readings.\n- At startup, cite the reports and say plainly that no drone measurements exist yet.\n- For a measurement-triggered revision, cite the trigger events and EVERY latest tied measurement\n  with value, unit, location and conditions, plus any contrary evidence.\n- Hypotheses unchanged this turn get a turn assessment, not a revision.\n- Say what you could not distinguish in untested_alternatives.\n\nChecklist for every revision (validation rejects anything missing):\n1. `scope`: non-empty list of spans taken from segments_in_report (never invented).\n2. `predictions`: at least one with a statement, `expected`, a `measurement` name and conditions.\n3. `finding_summary`, `update_reason`, `remaining_uncertainty`: non-empty plain sentences.\n4. `change_kinds` includes \"creation\" and `before` is null for a new hypothesis.\n5. Startup: trigger_kind \"startup\", `contributing_evidence_ids` = the SYN_REPORT ids you used, and\n   the finding_summary or update_reason contains the words \"no drone measurements\".\n6. Measurement turn: trigger_kind \"measurement\", trigger_event_ids from list_events (kind\n   reading), latest_measurement_ids = every latest reading inside the scope, cited_values with\n   the exact payload numbers, contrary_evidence_ids for readings that disagree with the claim.\n7. `priority` is an integer 1-5 (urgency); `assessment` is one of SUPPORTED, PLAUSIBLE,\n   UNRESOLVED, UNLIKELY, REFUTED.\nKeep the number of hypotheses small (at most 3) and scopes to the 6 most relevant spans.",
+ "transcript": [
+  {
+   "role": "human",
+   "content": "New measurements arrived (events ['EVT0002', 'EVT0004']). No hypotheses are accepted yet: create them from the reports and the readings (change kind 'creation', before null) and cite the readings.\n\nYour previous proposal was REJECTED by validation.\nPrevious proposal:\n{\n \"summary\": \"Two drone readings arrived at T+00:25 (EVT0002\u2192R0001, EVT0004\u2192R0002) but no hypotheses are accepted yet, so this is a startup turn: the reports and the two new readings are used together, and no drone measurements beyond these two exist yet. R0001 (LINE_058 @ 0.028 km, clearance 0.349 m, visible_fraction 1.0, detection probability 0.977) is a positive clearance detection: urgent local hazard, scope assessment FAIL for LINE_058 0.028\u20130.05 km, but it does not by itself explain the outage. R0002 (LINE_064 @ 9.0 km, clearance 2.052 m, visible_fraction 0.7, detection probability 0.977) is a qualified negative over LINE_064 8.8\u20139.5 km. Three hypotheses are created (before null, change kind creation): H-CLEAR-058 (SUPPORTED, urgent), H-VEG-064 (UNLIKELY on the inspected span, unresolved elsewhere), and H-PROT-024 (UNRESOLVED). The candidate topology (LINE_024 assumed out of service) was tested (DX-r1-01) and is indistinguishable/not testable (dof 0, prior-only); the outage cause remains unresolved.\",\n \"revisions\": [\n  {\n   \"hypothesis_id\": \"H-CLEAR-058\",\n   \"change_kinds\": [\n    \"creation\"\n   ],\n   \"before\": null,\n   \"after\": {\n    \"id\": \"H-CLEAR-058\",\n    \"claim\": \"Vegetation/obstacle clearance on LINE_058 is critically reduced near 0.028 km such that the conductor is close to or touching vegetation, posing an immediate fault and clearance hazard (verified locally; causal role in the outage not yet established).\",\n    \"scope\": [\n     {\n      \"segment_id\": \"LINE_058\",\n      \"start_km\": 0.028,\n      \"end_km\": 0.05\n     }\n    ],\n    \"predictions\": [\n     {\n      \"id\": \"P-CLEAR-058-1\",\n      \"statement\": \"Drone clearance measurement at LINE_058 0.028 km reports clearance below the vegetation threshold under adequate visibility.\",\n      \"measurement\": \"clearance\",\n      \"expected\": \"clearance well below the clearance threshold (measured 0.349 m vs several-meter normal values seen on the same corridor type), positive interpretation\",\n      \"required_conditions\": [\n       \"visible_fraction at or near 1.0\",\n       \"detection probability ~0.977\"\n      ]\n     },\n     {\n      \"id\": \"P-CLEAR-058-2\",\n      \"statement\": \"If vegetation contact persists, current measurements near LINE_058 will show fault-indicative current during excitation conditions.\",\n      \"measurement\": \"current\",\n      \"expected\": \"fault or elevated current consistent with vegetation contact when the line is energized/excited\",\n      \"required_conditions\": [\n       \"line energized or under test\",\n       \"measurable fault or load current\"\n      ]\n     }\n    ],\n    \"assessment\": \"SUPPORTED\",\n    \"priority\": 5,\n    \"lifecycle\": \"ACTIVE\",\n    \"supporting_evidence_ids\": [\n     \"R0001\",\n     \"EVT0002\",\n     \"SYN_REPORT_02\"\n    ],\n    \"contradicting_evidence_ids\": [],\n    \"model_change\": null\n   },\n   \"finding_summary\": \"R0001 (EVT0002) detected a threshold clearance event on LINE_058 @ 0.028 km with clearance 0.349 m, visible_fraction 1.0, and detection probability 0.977; scope assessment returned FAIL for LINE_058 0.028\u20130.05 km (evidence R0001). This is a detected local hazard requiring urgent inspection/mitigation.\",\n   \"update_reason\": \"No hypotheses were accepted yet, so the hypothesis is created from the synthetic reports and the new measurement; creation is causal in the sense that the positive clearance detection is the direct trigger for establishing this hypothesis as an urgent local hazard.\",\n   \"remaining_uncertainty\": \"The detection confirms a clearance violation locally but does not establish that vegetation contact caused the protection event or the outage; whether this local hazard is the causal fault origin is not determined by the available evidence.\",\n   \"trigger_kind\": \"startup\",\n   \"trigger_event_ids\": [\n    \"EVT0002\"\n   ],\n   \"operator_event_id\": null,\n   \"contributing_evidence_ids\": [\n    \"SYN_REPORT_01\",\n    \"SYN_REPORT_02\",\n    \"SYN_REPORT_03\",\n    \"SYN_REPORT_04\",\n    \"SYN_REPORT_05\",\n    \"SYN_REPORT_06\"\n   ],\n   \"latest_measurement_ids\": [\n    \"R0001\"\n   ],\n   \"contrary_evidence_ids\": [],\n   \"diagnostic_ids\": [],\n   \"cited_values\": [\n    {\n     \"reading_id\": \"R0001\",\n     \"quantity\": \"clearance_m\",\n     \"value\": 0.349,\n     \"unit\": \"m\",\n     \"location\": \"LINE_058 @ 0.028 km\",\n     \"conditions\": \"visible_fraction 1.0; detection probability 0.977\"\n    }\n   ]\n  },\n  {\n   \"hypothesis_id\": \"H-VEG-064\",\n   \"change_kinds\": [\n    \"creation\"\n   ],\n   \"before\": null,\n   \"after\": {\n    \"id\": \"H-VEG-064\",\n    \"claim\": \"Vegetation contact with the LINE_064 conductor (caller-reported tree brushing an overhead route) could explain the outage; on the inspected span it is not supported, and it remains possible elsewhere on the corridor.\",\n    \"scope\": [\n     {\n      \"segment_id\": \"LINE_064\",\n      \"start_km\": 8.8,\n      \"end_km\": 9.5\n     }\n    ],\n    \"predictions\": [\n     {\n      \"id\": \"P-VEG-064-1\",\n      \"statement\": \"A clearance measurement on the inspected LINE_064 span shows clearance above the vegetation threshold under adequate visibility.\",\n      \"measurement\": \"clearance\",\n      \"expected\": \"clearance well above the threshold (measured 2.052 m) with a qualified-negative interpretation\",\n      \"required_conditions\": [\n       \"visible_fraction ~0.7 or better\",\n       \"detection probability ~0.977\"\n      ]\n     },\n     {\n      \"id\": \"P-VEG-064-2\",\n      \"statement\": \"Additional clearance measurements on uninspected LINE_064 spans will show any vegetation-contact violation present on the corridor.\",\n      \"measurement\": \"clearance\",\n      \"expected\": \"clearance below threshold on any violating span, or continued qualified negatives elsewhere\",\n      \"required_conditions\": [\n       \"adequate visibility\",\n       \"detection probability ~0.977\"\n      ]\n     }\n    ],\n    \"assessment\": \"UNLIKELY\",\n    \"priority\": 2,\n    \"lifecycle\": \"ACTIVE\",\n    \"supporting_evidence_ids\": [\n     \"SYN_REPORT_02\"\n    ],\n    \"contradicting_evidence_ids\": [\n     \"R0002\",\n     \"EVT0004\"\n    ],\n    \"model_change\": null\n   },\n   \"finding_summary\": \"R0002 (EVT0004) recorded a qualified negative on LINE_064 @ 9.0 km with clearance 2.052 m, visible_fraction 0.7, detection probability 0.977; scope assessment returned PASS for LINE_064 8.8\u20139.5 km (evidence R0002). The caller report (SYN_REPORT_02) cannot be mapped to a specific line or span, so the qualified negative contradicts vegetation contact only within the inspected interval.\",\n   \"update_reason\": \"Created from the report and the measurement; the qualified negative lowers confidence for vegetation contact on the inspected span, but the caller report's broad scope leaves the rest of the corridor unresolved.\",\n   \"remaining_uncertainty\": \"No measurement exists for LINE_064 spans outside 8.8\u20139.5 km, so vegetation contact on the corridor cannot be ruled out; the caller report cannot be mapped to a specific asset.\",\n   \"trigger_kind\": \"startup\",\n   \"trigger_event_ids\": [\n    \"EVT0004\"\n   ],\n   \"operator_event_id\": null,\n   \"contributing_evidence_ids\": [\n    \"SYN_REPORT_01\",\n    \"SYN_REPORT_02\",\n    \"SYN_REPORT_03\",\n    \"SYN_REPORT_04\",\n    \"SYN_REPORT_05\",\n    \"SYN_REPORT_06\"\n   ],\n   \"latest_measurement_ids\": [\n    \"R0002\"\n   ],\n   \"contrary_evidence_ids\": [],\n   \"diagnostic_ids\": [],\n   \"cited_values\": [\n    {\n     \"reading_id\": \"R0002\",\n     \"quantity\": \"clearance_m\",\n     \"value\": 2.052,\n     \"unit\": \"m\",\n     \"location\": \"LINE_064 @ 9.0 km\",\n     \"conditions\": \"visible_fraction 0.7; detection probability 0.977\"\n    }\n   ]\n  },\n  {\n   \"hypothesis_id\": \"H-PROT-024\",\n   \"change_kinds\": [\n    \"creation\"\n   ],\n   \"before\": null,\n   \"after\": {\n    \"id\": \"H-PROT-024\",\n    \"claim\": \"The protection event that led to the outage (dispatch log SYN_REPORT_03) originated on or near LINE_024, which was precautionarily de-energized (known_switching LINE_024 = 0); a fault on this corridor, possibly vegetation-related, is the cause of the outage.\",\n    \"scope\": [\n     {\n      \"segment_id\": \"LINE_024\",\n      \"start_km\": 0.0,\n      \"end_km\": 10.0\n     }\n    ],\n    \"predictions\": [\n     {\n      \"id\": \"P-PROT-024-1\",\n      \"statement\": \"Voltage-presence measurement on LINE_024 shows the line de-energized as recorded in known_switching.\",\n      \"measurement\": \"voltage_presence\",\n      \"expected\": \"no voltage present on LINE_024, consistent with the precautionary de-energization\",\n      \"required_conditions\": [\n       \"access to LINE_024 terminal or field measurement point\"\n      ]\n     },\n     {\n      \"id\": \"P-PROT-024-2\",\n      \"statement\": \"Current measurements on the LINE_024 corridor will show fault signatures or abnormal flows consistent with a fault event that triggered the protection operation.\",\n      \"measurement\": \"current\",\n      \"expected\": \"elevated or fault-characteristic current during excitation if a fault is present on the corridor\",\n      \"required_conditions\": [\n       \"line energized or under test\",\n       \"measurable fault or load current\"\n      ]\n     }\n    ],\n    \"assessment\": \"UNRESOLVED\",\n    \"priority\": 3,\n    \"lifecycle\": \"ACTIVE\",\n    \"supporting_evidence_ids\": [\n     \"SYN_REPORT_03\"\n    ],\n    \"contradicting_evidence_ids\": [],\n    \"model_change\": null\n   },\n   \"finding_summary\": \"SYN_REPORT_03 records one automatic protection event and attempted reclose in a broad service sector, with LINE_024 confirmed precautionarily de-energized (known_switching LINE_024 = 0); the reason for the protection event and its relation to the switching are unknown. With only two clearance readings and no electrical measurements, this candidate is untested.\",\n   \"update_reason\": \"Created from the reports: the protection event is the only direct link to the outage cause in the snapshot, and the de-energization of LINE_024 is the only confirmed switching action, making it a plausible but unverified fault origin.\",\n   \"remaining_uncertainty\": \"No electrical measurements exist yet; the consistency summary is NOT_TESTABLE (prior-only) and the candidate topology (LINE_024 assumed out of service) was tested (DX-r1-01) and returned NOT_TESTABLE (dof 0, indistinguishable from baseline), so this hypothesis cannot be confirmed or refuted.\",\n   \"trigger_kind\": \"startup\",\n   \"trigger_event_ids\": [\n    \"EVT0002\",\n    \"EVT0004\"\n   ],\n   \"operator_event_id\": null,\n   \"contributing_evidence_ids\": [\n    \"SYN_REPORT_01\",\n    \"SYN_REPORT_02\",\n    \"SYN_REPORT_03\",\n    \"SYN_REPORT_04\",\n    \"SYN_REPORT_05\",\n    \"SYN_REPORT_06\"\n   ],\n   \"latest_measurement_ids\": [\n    \"R0001\",\n    \"R0002\"\n   ],\n   \"contrary_evidence_ids\": [],\n   \"diagnostic_ids\": [],\n   \"cited_values\": [\n    {\n     \"reading_id\": \"R0001\",\n     \"quantity\": \"clearance_m\",\n     \"value\": 0.349,\n     \"unit\": \"m\",\n     \"location\": \"LINE_058 @ 0.028 km\",\n     \"conditions\": \"visible_fraction 1.0; detection probability 0.977\"\n    },\n    {\n     \"reading_id\": \"R0002\",\n     \"quantity\": \"clearance_m\",\n     \"value\": 2.052,\n     \"unit\": \"m\",\n     \"location\": \"LINE_064 @ 9.0 km\",\n     \"conditions\": \"visible_fraction 0.7; detection probability 0.977\"\n    }\n   ]\n  }\n ],\n \"unchanged\": [],\n \"recommendations\": [\n  {\n   \"id\": \"REC-1\",\n   \"action_kind\": \"inspect\",\n   \"text\": \"Urgent hazard action: dispatch a drone to inspect and confirm the vegetation/obstacle contact at LINE_058 0.028\u20130.05 km and schedule vegetation clearance work on that span.\",\n   \"scope\": {\n    \"segment_id\": \"LINE_058\",\n    \"start_km\": 0.028,\n    \"end_km\": 0.05\n   },\n   \"urgency\": 5,\n   \"evidence_ids\": [\n    \"R0001\",\n    \"EVT0002\",\n    \"SYN_REPORT_02\"\n   ],\n   \"rationale\": \"A positive clearance detection (0.349 m, visible_fraction 1.0, detection probability 0.977) is a confirmed local hazard requiring immediate inspection and mitigation, independent of whether it caused the outage.\",\n   \"uncertainty\": \"The hazard is confirmed locally; its causal role in the protection event/outage is not established.\"\n  },\n  {\n   \"id\": \"REC-2\",\n   \"action_kind\": \"measure\",\n   \"text\": \"Extend vegetation-clearance measurement along LINE_064 outside the already-inspected 8.8\u20139.5 km interval, prioritizing spans near the caller-reported corridor.\",\n   \"scope\": {\n    \"segment_id\": \"LINE_064\",\n    \"start_km\": 0.0,\n    \"end_km\": 8.8\n   },\n   \"urgency\": 3,\n   \"evidence_ids\": [\n    \"R0002\",\n    \"EVT0004\",\n    \"SYN_REPORT_02\"\n   ],\n   \"rationale\": \"The qualified negative only covers the inspected span; the caller report cannot be mapped to a specific line, so the rest of the corridor remains uninspected.\",\n   \"uncertainty\": \"Whether any LINE_064 span outside 8.8\u20139.5 km has a clearance violation.\"\n  },\n  {\n   \"id\": \"REC-3\",\n   \"action_kind\": \"measure\",\n   \"text\": \"Obtain voltage-presence and current measurements on the LINE_024 corridor to characterize the recorded protection event and enable topology testing before any re-energization decision.\",\n   \"scope\": {\n    \"segment_id\": \"LINE_024\",\n    \"start_km\": 0.0,\n    \"end_km\": 10.0\n   },\n   \"urgency\": 3,\n   \"evidence_ids\": [\n    \"SYN_REPORT_03\"\n   ],\n   \"rationale\": \"LINE_024 is confirmed precautionarily de-energized (known_switching = 0), but the reason for the protection event is unknown; electrical measurements are required before any topology candidate can be tested against the readings.\",\n   \"uncertainty\": \"No electrical measurements exist yet; the consistency summary is NOT_TESTABLE (prior-only) and candidate topology testing (DX-r1-01) is indistinguishable.\"\n  },\n  {\n   \"id\": \"REC-4\",\n   \"action_kind\": \"monitor\",\n   \"text\": \"Monitor LINE_058 for conductor motion during qualifying gusts, alongside the clearance inspection, since a windstorm is active and the clearance hazard is on that corridor.\",\n   \"scope\": null,\n   \"urgency\": 2,\n   \"evidence_ids\": [\n    \"SYN_REPORT_01\",\n    \"SYN_REPORT_06\",\n    \"R0001\"\n   ],\n   \"rationale\": \"A windstorm is active and the clearance hazard is on the same corridor; motion negatives outside a gust are inconclusive, so monitoring should be gust-conditioned.\",\n   \"uncertainty\": \"The northeast motion report (SYN_REPORT_06) could not be mapped to a specific line or span.\"\n  }\n ],\n \"untested_alternatives\": [\n  \"Vegetation contact on LINE_064 spans outside the inspected 8.8\u20139.5 km interval (unmappable caller report SYN_REPORT_02) \u2014 not distinguishable with current evidence.\",\n  \"A conductor-motion/galloping event in the broad northeast area (SYN_REPORT_06) \u2014 cannot be mapped to a specific line or span; no motion measurement under qualifying-gust conditions exists.\",\n  \"The orange flash near the industrial site (SYN_REPORT_04, possible backup-generator test) \u2014 no calibrated measurement or asset match available.\",\n  \"Thermal hotspot in the broad east-central area (SYN_REPORT_05) \u2014 no controlled or calibrated thermal reading exists, so it cannot be tested against any span.\",\n  \"Alternative electrical topologies for the protection event (e.g., faults on other lines) \u2014 no electrical measurements exist, so the tested candidate (DX-r1-01) is NOT_TESTABLE and no other topology can be distinguished.\"\n ]\n}\n\nValidation errors to fix:\n- revision H-CLEAR-058: startup trigger but drone measurements already exist\n- revision H-CLEAR-058: a startup revision must state that no drone measurements exist\n- revision H-VEG-064: startup trigger but drone measurements already exist\n- revision H-VEG-064: a startup revision must state that no drone measurements exist\n- revision H-PROT-024: startup trigger but drone measurements already exist\n- revision H-PROT-024: a startup revision must state that no drone measurements exist\n- revision H-PROT-024: an electrical candidate must cite a tested diagnostic\n\nCall the tools again if you need to, then return a corrected, complete ManagerOutput.",
+   "tool_calls": null
+  },
+  {
+   "role": "ai",
+   "content": "",
+   "tool_calls": [
+    {
+     "name": "overview",
+     "args": {},
+     "id": "chatcmpl-tool-9122def82d204374",
+     "type": "tool_call"
+    },
+    {
+     "name": "list_reports",
+     "args": {},
+     "id": "chatcmpl-tool-bc80c7e20653ac3b",
+     "type": "tool_call"
+    },
+    {
+     "name": "list_readings",
+     "args": {},
+     "id": "chatcmpl-tool-8dd29fba018f7a12",
+     "type": "tool_call"
+    },
+    {
+     "name": "list_events",
+     "args": {},
+     "id": "chatcmpl-tool-b393a5907ee37814",
+     "type": "tool_call"
+    }
+   ]
+  },
+  {
+   "role": "tool",
+   "content": "[snapshot r1 @ T+00:25] {\"scenario\": \"incident_demo\", \"clock\": \"T+00:25\", \"readings\": 2, \"drones\": {\"DRONE_1\": \"ready\", \"DRONE_2\": \"charging\", \"DRONE_3\": \"ready\", \"DRONE_4\": \"ready\", \"DRONE_5\": \"ready\"}, \"known_switching\": {\"LINE_024\": 0}, \"hazards\": [\"HZ001\"], \"accepted_hypotheses\": [], \"estimate\": \"prior-only\", \"note\": \"measurements exist\"}",
+   "tool_calls": null
+  },
+  {
+   "role": "tool",
+   "content": "[snapshot r1 @ T+00:25] [{\"id\": \"SYN_REPORT_01\", \"time\": \"T+00:12\", \"confidence\": \"high for the exercise forecast; low for any asset-level implication\", \"text\": \"SYNTHETIC exercise weather desk estimates strong, gusty winds across much of the study area. The estimate is broad and does not identify damaged infrastructure.\"}, {\"id\": \"SYN_REPORT_02\", \"time\": \"T+00:31\", \"confidence\": \"low to medium\", \"text\": \"SYNTHETIC caller reports a fallen branch across a rural access track and says nearby trees are brushing an overhead route somewhere in a broad area. No photograph, line identifier, or confirmed contact with a conductor is available; the report could refer to non-grid vegetation or any of several nearby corridors.\"}, {\"id\": \"SYN_REPORT_03\", \"time\": \"T+00:44\", \"confidence\": \"high that an exercise event was logged; low for its location and interpretation\", \"text\": \"SYNTHETIC dispatch summary records one automatic protection event and attempted reclose somewhere in a broad service sector. A separate status check confirms LINE_024 was precautionarily switched to de-energized; its status is known, but the reason for the protection event and any relationship to that switching action are not. Telemetry is delayed, and this report does not establish customer or asset connectivity.\"}, {\"id\": \"SYN_REPORT_04\", \"time\": \"T+01:03\", \"confidence\": \"low to medium\", \"text\": \"SYNTHETIC resident reports a brief orange flash near a private industrial site during a gust. A site attendant mentions a backup-generator test around the same time, but the log has not yet been checked. The distant view cannot distinguish that activity from lightning, a vehicle, or a grid event.\"}, {\"id\": \"SYN_REPORT_05\", \"time\": \"T+01:27\", \"confidence\": \"low to medium\", \"text\": \"SYNTHETIC field observer reports intermittent ticking and a handheld thermal contrast somewhere in a broad east-central area containing multiple overhead corridors. Wind, sun-warmed surfaces, load, distance, and viewing angle were not controlled; no calibrated reading or asset match exists.\"}, {\"id\": \"SYN_REPORT_06\", \"time\": \"T+01:51\", \"confidence\": \"low\", \"text\": \"SYNTHETIC observer says a span somewhere in a broad northeast area appeared to move more than nearby spans during a gust. Several mapped lines cross the area. No baseline video, measured clearance, support inspection, or confirmed conductor identity is available.\"}]",
+   "tool_calls": null
+  },
+  {
+   "role": "tool",
+   "content": "[snapshot r1 @ T+00:25] [{\"id\": \"R0001\", \"kind\": \"clearance\", \"site\": \"LINE_058@28000mm\", \"time\": \"T+00:03\", \"values\": {\"clearance_m\": 0.34921571683609165}, \"conditions\": {\"visible_fraction\": 1.0}, \"interpretation\": \"positive\"}, {\"id\": \"R0002\", \"kind\": \"clearance\", \"site\": \"LINE_064@9000000mm\", \"time\": \"T+00:07\", \"values\": {\"clearance_m\": 2.0522906005246884}, \"conditions\": {\"visible_fraction\": 0.7}, \"interpretation\": \"qualified_negative\"}]",
+   "tool_calls": null
+  },
+  {
+   "role": "tool",
+   "content": "[snapshot r1 @ T+00:25] [{\"id\": \"EVT0001\", \"time\": \"T+00:00\", \"kind\": \"measuring\", \"detail\": \"T0001\"}, {\"id\": \"EVT0002\", \"time\": \"T+00:03\", \"kind\": \"reading\", \"detail\": \"R0001\"}, {\"id\": \"EVT0003\", \"time\": \"T+00:04\", \"kind\": \"measuring\", \"detail\": \"T0002\"}, {\"id\": \"EVT0004\", \"time\": \"T+00:07\", \"kind\": \"reading\", \"detail\": \"R0002\"}, {\"id\": \"EVT0005\", \"time\": \"T+00:08\", \"kind\": \"landed_charging\", \"detail\": \"LINE_025/C1\"}]",
+   "tool_calls": null
+  },
+  {
+   "role": "ai",
+   "content": "",
+   "tool_calls": [
+    {
+     "name": "scope_assessment",
+     "args": {
+      "segment_id": "LINE_058",
+      "start_km": 0.028,
+      "end_km": 0.05,
+      "condition": "vegetation_clearance"
+     },
+     "id": "chatcmpl-tool-95949dbe052fac48",
+     "type": "tool_call"
+    },
+    {
+     "name": "scope_assessment",
+     "args": {
+      "segment_id": "LINE_064",
+      "start_km": 8.8,
+      "end_km": 9.5,
+      "condition": "vegetation_clearance"
+     },
+     "id": "chatcmpl-tool-95cd7a9fa47f1d0f",
+     "type": "tool_call"
+    },
+    {
+     "name": "test_electrical_candidate",
+     "args": {
+      "out_of_service_segments": [
+       "LINE_024"
+      ]
+     },
+     "id": "chatcmpl-tool-b5dfd9ee87a35799",
+     "type": "tool_call"
+    },
+    {
+     "name": "consistency_summary",
+     "args": {},
+     "id": "chatcmpl-tool-8781cfa7d096a0be",
+     "type": "tool_call"
+    },
+    {
+     "name": "estimate_summary",
+     "args": {},
+     "id": "chatcmpl-tool-a90c3f8ab47ed828",
+     "type": "tool_call"
+    }
+   ]
+  },
+  {
+   "role": "tool",
+   "content": "[snapshot r1 @ T+00:25] {\"scope\": \"LINE_058 0.028-0.05 km\", \"condition\": \"vegetation_clearance\", \"verdict\": \"FAIL\", \"evidence\": [\"R0001\"], \"explanation\": \"Threshold event detected on LINE_058 0.028-0.050 km; qualified-clear on none. Local findings do not show this condition caused the outage; clean readings do not prove mechanical integrity.\", \"untested_mm\": 0}",
+   "tool_calls": null
+  },
+  {
+   "role": "tool",
+   "content": "[snapshot r1 @ T+00:25] {\"scope\": \"LINE_064 8.8-9.5 km\", \"condition\": \"vegetation_clearance\", \"verdict\": \"PASS\", \"evidence\": [\"R0002\"], \"explanation\": \"Qualified negative evidence covers the whole scope under adequate conditions. Local findings do not show this condition caused the outage; clean readings do not prove mechanical integrity.\", \"untested_mm\": 0}",
+   "tool_calls": null
+  },
+  {
+   "role": "tool",
+   "content": "[snapshot r1 @ T+00:25] {\"diagnostic_id\": \"DX-r1-02\", \"unknown_segments\": [], \"results\": {\"candidate\": {\"estimate\": \"ok\", \"dof\": 0, \"chi2\": null, \"status\": \"NOT_TESTABLE\", \"components\": 7}, \"baseline\": {\"estimate\": \"ok\", \"dof\": 0, \"chi2\": null, \"status\": \"NOT_TESTABLE\", \"components\": 7}}, \"verdict\": \"indistinguishable: both topologies are untestable with these readings\"}",
+   "tool_calls": null
+  },
+  {
+   "role": "tool",
+   "content": "[snapshot r1 @ T+00:25] {\"status\": \"NOT_TESTABLE\", \"dof\": 0, \"suspects\": [], \"meaning\": \"NOT TESTED: there are no real measurements (prior-only).\", \"critical_sets\": [], \"explanations\": []}",
+   "tool_calls": null
+  },
+  {
+   "role": "tool",
+   "content": "[snapshot r1 @ T+00:25] {\"prior_only\": true, \"accepted_readings\": [], \"observable_segments\": [], \"assumptions\": [\"reduced DC model: lossless, 100 MVA base, circuit reactances from the public catalogue\", \"voltage-specific buses collapsed at each mapped node; ideal transformers, zero phase shift\", \"junction and intermediate nodes: exact zero injection\", \"substation/terminal injection prior -30 MW and boundary prior 0 MW, sigma 30 MW (pseudo-measurements, not evidence of observability)\", \"AC/DC, transformer and parameter mismatch are not included in conditional uncertainty\"], \"flows\": {}}",
+   "tool_calls": null
+  },
+  {
+   "role": "ai",
+   "content": "",
+   "tool_calls": [
+    {
+     "name": "ManagerOutput",
+     "args": {
+      "summary": "Measurement turn at T+00:25: two drone readings arrived (EVT0002\u2192R0001, EVT0004\u2192R0002) and no hypotheses were accepted yet, so three hypotheses are created (change kind creation, before null) from the reports plus these readings. R0001 (LINE_058 @ 0.028 km, clearance 0.349 m, visible_fraction 1.0) is a positive clearance detection and a qualified threshold event: scope assessment FAIL for LINE_058 0.028\u20130.05 km; it is an urgent local hazard (HZ001) but does not by itself explain the outage. R0002 (LINE_064 @ 9.0 km, clearance 2.052 m, visible_fraction 0.7) is a qualified negative over LINE_064 8.8\u20139.5 km (scope assessment PASS). H-PROT-024 (protection event near LINE_024, which is precautionarily de-energized) is UNRESOLVED: the electrical candidate (LINE_024 out of service) was tested and returned diagnostic DX-r1-02 (dof 0, NOT_TESTABLE, indistinguishable from baseline), so no topology can be distinguished yet. Recommendations: urgent inspection of the LINE_058 span, extended clearance measurement on uninspected LINE_064 spans, and electrical measurements on LINE_024 to enable topology testing.",
+      "revisions": [
+       {
+        "hypothesis_id": "H-CLEAR-058",
+        "change_kinds": [
+         "creation"
+        ],
+        "before": null,
+        "after": {
+         "id": "H-CLEAR-058",
+         "claim": "Vegetation/obstacle clearance on LINE_058 is critically reduced near 0.028 km such that the conductor is close to or touching vegetation, posing an immediate fault and clearance hazard (verified locally; causal role in the outage not yet established).",
+         "scope": [
+          {
+           "segment_id": "LINE_058",
+           "start_km": 0.028,
+           "end_km": 0.05
+          }
+         ],
+         "predictions": [
+          {
+           "id": "P-CLEAR-058-1",
+           "statement": "Drone clearance measurement at LINE_058 0.028 km reports clearance below the vegetation threshold under adequate visibility.",
+           "measurement": "clearance",
+           "expected": "clearance well below the threshold, positive interpretation (measured 0.349 m with visible_fraction 1.0)",
+           "required_conditions": [
+            "visible_fraction at or near 1.0",
+            "clearance drone pass with unobstructed view of the span"
+           ]
+          },
+          {
+           "id": "P-CLEAR-058-2",
+           "statement": "If vegetation contact persists, current measurements near LINE_058 will show fault-indicative current when the line is energized or under test.",
+           "measurement": "current",
+           "expected": "fault or elevated current consistent with vegetation contact",
+           "required_conditions": [
+            "line energized or under test",
+            "measurable fault or load current"
+           ]
+          }
+         ],
+         "assessment": "SUPPORTED",
+         "priority": 5,
+         "lifecycle": "ACTIVE",
+         "supporting_evidence_ids": [
+          "R0001",
+          "EVT0002",
+          "SYN_REPORT_02",
+          "HZ001"
+         ],
+         "contradicting_evidence_ids": [],
+         "model_change": null
+        },
+        "finding_summary": "R0001 (trigger EVT0002) detected a positive threshold clearance event on LINE_058 @ 0.028 km: clearance 0.349 m under visible_fraction 1.0. The scope assessment returned FAIL for LINE_058 0.028\u20130.05 km (evidence R0001), and hazard HZ001 is registered in the snapshot. This is a detected local hazard requiring urgent inspection and mitigation; it does not by itself explain the outage.",
+        "update_reason": "The measurement-triggered turn supplied the first drone reading, and since no hypotheses were accepted yet the positive clearance detection directly motivates creation of this hypothesis as an urgent local hazard; the detection is the causal trigger for establishing the claim.",
+        "remaining_uncertainty": "The detection confirms a clearance violation locally but does not establish that vegetation contact caused the protection event or the outage; the causal origin of the outage remains undetermined.",
+        "trigger_kind": "measurement",
+        "trigger_event_ids": [
+         "EVT0002"
+        ],
+        "operator_event_id": null,
+        "contributing_evidence_ids": [
+         "SYN_REPORT_01",
+         "SYN_REPORT_02",
+         "SYN_REPORT_03",
+         "SYN_REPORT_04",
+         "SYN_REPORT_05",
+         "SYN_REPORT_06"
+        ],
+        "latest_measurement_ids": [
+         "R0001"
+        ],
+        "contrary_evidence_ids": [],
+        "diagnostic_ids": [],
+        "cited_values": [
+         {
+          "reading_id": "R0001",
+          "quantity": "clearance_m",
+          "value": 0.349,
+          "unit": "m",
+          "location": "LINE_058 @ 0.028 km",
+          "conditions": "visible_fraction 1.0; interpretation positive"
+         }
+        ]
+       },
+       {
+        "hypothesis_id": "H-VEG-064",
+        "change_kinds": [
+         "creation"
+        ],
+        "before": null,
+        "after": {
+         "id": "H-VEG-064",
+         "claim": "Vegetation contact with the LINE_064 conductor (caller-reported trees brushing an overhead route) could explain the outage; on the inspected span it is not supported, and it remains possible elsewhere on the corridor.",
+         "scope": [
+          {
+           "segment_id": "LINE_064",
+           "start_km": 8.8,
+           "end_km": 9.5
+          }
+         ],
+         "predictions": [
+          {
+           "id": "P-VEG-064-1",
+           "statement": "A clearance measurement on the inspected LINE_064 span shows clearance above the vegetation threshold under adequate visibility.",
+           "measurement": "clearance",
+           "expected": "clearance well above the threshold with a qualified-negative interpretation (measured 2.052 m)",
+           "required_conditions": [
+            "visible_fraction ~0.7 or better",
+            "clearance drone pass over the span"
+           ]
+          },
+          {
+           "id": "P-VEG-064-2",
+           "statement": "Additional clearance measurements on uninspected LINE_064 spans will show any vegetation-contact violation present on the corridor.",
+           "measurement": "clearance",
+           "expected": "clearance below threshold on any violating span, or continued qualified negatives elsewhere",
+           "required_conditions": [
+            "adequate visibility",
+            "drone pass over each candidate span"
+           ]
+          }
+         ],
+         "assessment": "UNLIKELY",
+         "priority": 2,
+         "lifecycle": "ACTIVE",
+         "supporting_evidence_ids": [
+          "SYN_REPORT_02"
+         ],
+         "contradicting_evidence_ids": [
+          "R0002",
+          "EVT0004"
+         ],
+         "model_change": null
+        },
+        "finding_summary": "R0002 (trigger EVT0004) recorded a qualified negative on LINE_064 @ 9.0 km: clearance 2.052 m under visible_fraction 0.7. The scope assessment returned PASS for LINE_064 8.8\u20139.5 km (evidence R0002). The caller report (SYN_REPORT_02) cannot be mapped to a specific line or span, so the qualified negative contradicts vegetation contact only within the inspected interval.",
+        "update_reason": "The measurement-triggered turn supplied the first reading on this corridor; since no hypotheses were accepted yet the hypothesis is created with the qualified negative recorded as contrary evidence, lowering confidence for vegetation contact on the inspected span while the caller report's broad scope leaves the rest of the corridor unresolved.",
+        "remaining_uncertainty": "No measurement exists for LINE_064 spans outside 8.8\u20139.5 km, so vegetation contact on the corridor cannot be ruled out; the caller report cannot be mapped to a specific asset.",
+        "trigger_kind": "measurement",
+        "trigger_event_ids": [
+         "EVT0004"
+        ],
+        "operator_event_id": null,
+        "contributing_evidence_ids": [
+         "SYN_REPORT_01",
+         "SYN_REPORT_02",
+         "SYN_REPORT_03",
+         "SYN_REPORT_04",
+         "SYN_REPORT_05",
+         "SYN_REPORT_06"
+        ],
+        "latest_measurement_ids": [
+         "R0002"
+        ],
+        "contrary_evidence_ids": [
+         "R0002",
+         "EVT0004"
+        ],
+        "diagnostic_ids": [],
+        "cited_values": [
+         {
+          "reading_id": "R0002",
+          "quantity": "clearance_m",
+          "value": 2.052,
+          "unit": "m",
+          "location": "LINE_064 @ 9.0 km",
+          "conditions": "visible_fraction 0.7; interpretation qualified_negative"
+         }
+        ]
+       },
+       {
+        "hypothesis_id": "H-PROT-024",
+        "change_kinds": [
+         "creation"
+        ],
+        "before": null,
+        "after": {
+         "id": "H-PROT-024",
+         "claim": "The protection event that led to the outage (dispatch log SYN_REPORT_03) originated on or near LINE_024, which was precautionarily de-energized (known_switching LINE_024 = 0); a fault on this corridor is the cause of the outage.",
+         "scope": [
+          {
+           "segment_id": "LINE_024",
+           "start_km": 0,
+           "end_km": 10
+          }
+         ],
+         "predictions": [
+          {
+           "id": "P-PROT-024-1",
+           "statement": "Voltage-presence measurement on LINE_024 shows the line de-energized as recorded in known_switching.",
+           "measurement": "voltage_presence",
+           "expected": "no voltage present on LINE_024, consistent with the precautionary de-energization",
+           "required_conditions": [
+            "access to a LINE_024 terminal or field measurement point"
+           ]
+          },
+          {
+           "id": "P-PROT-024-2",
+           "statement": "Current measurements on the LINE_024 corridor will show fault signatures consistent with a fault event that triggered the protection operation.",
+           "measurement": "current",
+           "expected": "elevated or fault-characteristic current during excitation if a fault is present on the corridor",
+           "required_conditions": [
+            "line energized or under test",
+            "measurable fault or load current"
+           ]
+          }
+         ],
+         "assessment": "UNRESOLVED",
+         "priority": 3,
+         "lifecycle": "ACTIVE",
+         "supporting_evidence_ids": [
+          "SYN_REPORT_03"
+         ],
+         "contradicting_evidence_ids": [],
+         "model_change": [
+          "LINE_024"
+         ]
+        },
+        "finding_summary": "SYN_REPORT_03 records one automatic protection event and attempted reclose in a broad service sector, with LINE_024 confirmed precautionarily de-energized (known_switching LINE_024 = 0); the reason for the protection event and its relation to the switching are unknown. The two latest drone readings (R0001, R0002) are clearance readings on other corridors and provide no electrical evidence in the LINE_024 scope.",
+        "update_reason": "Created from the reports in this measurement-triggered turn: the protection event is the only direct link to the outage cause in the snapshot and the de-energization of LINE_024 is the only confirmed switching action, making it a plausible but unverified fault origin. The candidate topology (LINE_024 out of service) was tested and returned diagnostic DX-r1-02 (dof 0, NOT_TESTABLE, indistinguishable from baseline), so it can be neither confirmed nor refuted.",
+        "remaining_uncertainty": "No electrical measurements exist in the LINE_024 scope; the consistency summary is NOT_TESTABLE (dof 0, prior-only) and candidate topology testing (DX-r1-02) is indistinguishable from baseline, so the hypothesis cannot be confirmed or refuted.",
+        "trigger_kind": "measurement",
+        "trigger_event_ids": [
+         "EVT0002",
+         "EVT0004"
+        ],
+        "operator_event_id": null,
+        "contributing_evidence_ids": [
+         "SYN_REPORT_01",
+         "SYN_REPORT_02",
+         "SYN_REPORT_03",
+         "SYN_REPORT_04",
+         "SYN_REPORT_05",
+         "SYN_REPORT_06"
+        ],
+        "latest_measurement_ids": [],
+        "contrary_evidence_ids": [],
+        "diagnostic_ids": [
+         "DX-r1-02"
+        ],
+        "cited_values": [
+         {
+          "reading_id": "R0001",
+          "quantity": "clearance_m",
+          "value": 0.349,
+          "unit": "m",
+          "location": "LINE_058 @ 0.028 km",
+          "conditions": "visible_fraction 1.0; interpretation positive"
+         },
+         {
+          "reading_id": "R0002",
+          "quantity": "clearance_m",
+          "value": 2.052,
+          "unit": "m",
+          "location": "LINE_064 @ 9.0 km",
+          "conditions": "visible_fraction 0.7; interpretation qualified_negative"
+         }
+        ]
+       }
+      ],
+      "unchanged": [],
+      "recommendations": [
+       {
+        "id": "REC-1",
+        "action_kind": "inspect",
+        "text": "Urgent hazard action: dispatch a drone to inspect and confirm the vegetation/obstacle contact at LINE_058 0.028\u20130.05 km and schedule vegetation clearance work on that span.",
+        "scope": {
+         "segment_id": "LINE_058",
+         "start_km": 0.028,
+         "end_km": 0.05
+        },
+        "urgency": 5,
+        "evidence_ids": [
+         "R0001",
+         "EVT0002",
+         "SYN_REPORT_02",
+         "HZ001"
+        ],
+        "rationale": "A positive clearance detection (0.349 m, visible_fraction 1.0) with a FAIL scope assessment is a confirmed local hazard (HZ001) requiring immediate inspection and mitigation, independent of whether it caused the outage.",
+        "uncertainty": "The hazard is confirmed locally; its causal role in the protection event/outage is not established."
+       },
+       {
+        "id": "REC-2",
+        "action_kind": "measure",
+        "text": "Extend vegetation-clearance measurement along LINE_064 outside the already-inspected 8.8\u20139.5 km interval, prioritizing spans near the caller-reported corridor.",
+        "scope": {
+         "segment_id": "LINE_064",
+         "start_km": 0,
+         "end_km": 8.8
+        },
+        "urgency": 3,
+        "evidence_ids": [
+         "R0002",
+         "EVT0004",
+         "SYN_REPORT_02"
+        ],
+        "rationale": "The qualified negative only covers the inspected span; the caller report cannot be mapped to a specific line, so the rest of the corridor remains uninspected.",
+        "uncertainty": "Whether any LINE_064 span outside 8.8\u20139.5 km has a clearance violation."
+       },
+       {
+        "id": "REC-3",
+        "action_kind": "measure",
+        "text": "Obtain voltage-presence and current measurements on the LINE_024 corridor to characterize the recorded protection event and enable topology testing before any re-energization decision.",
+        "scope": {
+         "segment_id": "LINE_024",
+         "start_km": 0,
+         "end_km": 10
+        },
+        "urgency": 3,
+        "evidence_ids": [
+         "SYN_REPORT_03",
+         "DX-r1-02"
+        ],
+        "rationale": "LINE_024 is confirmed precautionarily de-energized (known_switching = 0), but the reason for the protection event is unknown; electrical measurements are required because the candidate topology test (DX-r1-02) was NOT_TESTABLE with the current readings.",
+        "uncertainty": "No electrical measurements exist yet; the consistency summary is NOT_TESTABLE (prior-only) and candidate topology testing (DX-r1-02) is indistinguishable from baseline."
+       },
+       {
+        "id": "REC-4",
+        "action_kind": "monitor",
+        "text": "Monitor LINE_058 for conductor motion during qualifying gusts, alongside the clearance inspection, since a windstorm is active and the clearance hazard is on that corridor.",
+        "scope": null,
+        "urgency": 2,
+        "evidence_ids": [
+         "SYN_REPORT_01",
+         "SYN_REPORT_06",
+         "R0001"
+        ],
+        "rationale": "A windstorm is active and the clearance hazard is on the same corridor; motion negatives outside a gust are inconclusive, so monitoring should be gust-conditioned.",
+        "uncertainty": "The northeast motion report (SYN_REPORT_06) could not be mapped to a specific line or span."
+       }
+      ],
+      "untested_alternatives": [
+       "Vegetation contact on LINE_064 spans outside the inspected 8.8\u20139.5 km interval (unmappable caller report SYN_REPORT_02) \u2014 not distinguishable with current evidence.",
+       "A conductor-motion/galloping event in the broad northeast area (SYN_REPORT_06) \u2014 cannot be mapped to a specific line or span; no motion measurement under qualifying-gust conditions exists.",
+       "The orange flash near the industrial site (SYN_REPORT_04, possible backup-generator test) \u2014 no calibrated measurement or asset match available.",
+       "Thermal hotspot in the broad east-central area (SYN_REPORT_05) \u2014 no controlled or calibrated thermal reading exists, so it cannot be tested against any span.",
+       "Alternative electrical topologies for the protection event (e.g., faults on other lines) \u2014 the tested candidate (DX-r1-02) was NOT_TESTABLE (dof 0, indistinguishable from baseline) and no other topology can be distinguished without electrical measurements."
+      ]
+     },
+     "id": "chatcmpl-tool-bfb4e8fa996a9a72",
+     "type": "tool_call"
+    }
+   ]
+  },
+  {
+   "role": "tool",
+   "content": "Returning structured response: summary='Measurement turn at T+00:25: two drone readings arrived (EVT0002\u2192R0001, EVT0004\u2192R0002) and no hypotheses were accepted yet, so three hypotheses are created (change kind creation, before null) from the reports plus these readings. R0001 (LINE_058 @ 0.028 km, clearance 0.349 m, visible_fraction 1.0) is a positive clearance detection and a qualified threshold event: scope assessment FAIL for LINE_058 0.028\u20130.05 km; it is an urgent local hazard (HZ001) but does not by itself explain the outage. R0002 (LINE_064 @ 9.0 km, clearance 2.052 m, visible_fraction 0.7) is a qualified negative over LINE_064 8.8\u20139.5 km (scope assessment PASS). H-PROT-024 (protection event near LINE_024, which is precautionarily de-energized) is UNRESOLVED: the electrical candidate (LINE_024 out of service) was tested and returned diagnostic DX-r1-02 (dof 0, NOT_TESTABLE, indistinguishable from baseline), so no topology can be distinguished yet. Recommendations: urgent inspection of the LINE_058 span, extended clearance measurement on uninspected LINE_064 spans, and electrical measurements on LINE_024 to enable topology testing.' revisions=[RevisionModel(hypothesis_id='H-CLEAR-058', change_kinds=['creation'], before=None, after=HypothesisModel(id='H-CLEAR-058', claim='Vegetation/obstacle clearance on LINE_058 is critically reduced near 0.028 km such that the conductor is close to or touching vegetation, posing an immediate fault and clearance hazard (verified locally; causal role in the outage not yet established).', scope=[SpanModel(segment_id='LINE_058', start_km=0.028, end_km=0.05)], predictions=[PredictionModel(id='P-CLEAR-058-1', statement='Drone clearance measurement at LINE_058 0.028 km reports clearance below the vegetation threshold under adequate visibility.', measurement='clearance', expected='clearance well below the threshold, positive interpretation (measured 0.349 m with visible_fraction 1.0)', required_conditions=['visible_fraction at or near 1.0', 'clearance drone pass with unobstructed view of the span']), PredictionModel(id='P-CLEAR-058-2', statement='If vegetation contact persists, current measurements near LINE_058 will show fault-indicative current when the line is energized or under test.', measurement='current', expected='fault or elevated current consistent with vegetation contact', required_conditions=['line energized or under test', 'measurable fault or load current'])], assessment=<Assessment.SUPPORTED: 'SUPPORTED'>, priority=5, lifecycle=<Lifecycle.ACTIVE: 'ACTIVE'>, supporting_evidence_ids=['R0001', 'EVT0002', 'SYN_REPORT_02', 'HZ001'], contradicting_evidence_ids=[], model_change=None), finding_summary='R0001 (trigger EVT0002) detected a positive threshold clearance event on LINE_058 @ 0.028 km: clearance 0.349 m under visible_fraction 1.0. The scope assessment returned FAIL for LINE_058 0.028\u20130.05 km (evidence R0001), and hazard HZ001 is registered in the snapshot. This is a detected local hazard requiring urgent inspection and mitigation; it does not by itself explain the outage.', update_reason='The measurement-triggered turn supplied the first drone reading, and since no hypotheses were accepted yet the positive clearance detection directly motivates creation of this hypothesis as an urgent local hazard; the detection is the causal trigger for establishing the claim.', remaining_uncertainty='The detection confirms a clearance violation locally but does not establish that vegetation contact caused the protection event or the outage; the causal origin of the outage remains undetermined.', trigger_kind='measurement', trigger_event_ids=['EVT0002'], operator_event_id=None, contributing_evidence_ids=['SYN_REPORT_01', 'SYN_REPORT_02', 'SYN_REPORT_03', 'SYN_REPORT_04', 'SYN_REPORT_05', 'SYN_REPORT_06'], latest_measurement_ids=['R0001'], contrary_evidence_ids=[], diagnostic_ids=[], cited_values=[CitedValue(reading_id='R0001', quantity='clearance_m', value=0.349, unit='m', location='LINE_058 @ 0.028 km', conditions='visible_fraction 1.0; interpretation positive')]), RevisionModel(hypothesis_id='H-VEG-064', change_kinds=['creation'], before=None, after=HypothesisModel(id='H-VEG-064', claim='Vegetation contact with the LINE_064 conductor (caller-reported trees brushing an overhead route) could explain the outage; on the inspected span it is not supported, and it remains possible elsewhere on the corridor.', scope=[SpanModel(segment_id='LINE_064', start_km=8.8, end_km=9.5)], predictions=[PredictionModel(id='P-VEG-064-1', statement='A clearance measurement on the inspected LINE_064 span shows clearance above the vegetation threshold under adequate visibility.', measurement='clearance', expected='clearance well above the threshold with a qualified-negative interpretation (measured 2.052 m)', required_conditions=['visible_fraction ~0.7 or better', 'clearance drone pass over the span']), PredictionModel(id='P-VEG-064-2', statement='Additional clearance measurements on uninspected LINE_064 spans will show any vegetation-contact violation present on the corridor.', measurement='clearance', expected='clearance below threshold on any violating span, or continued qualified negatives elsewhere', required_conditions=['adequate visibility', 'drone pass over each candidate span'])], assessment=<Assessment.UNLIKELY: 'UNLIKELY'>, priority=2, lifecycle=<Lifecycle.ACTIVE: 'ACTIVE'>, supporting_evidence_ids=['SYN_REPORT_02'], contradicting_evidence_ids=['R0002', 'EVT0004'], model_change=None), finding_summary='R0002 (trigger EVT0004) recorded a qualified negative on LINE_064 @ 9.0 km: clearance 2.052 m under visible_fraction 0.7. The scope assessment returned PASS for LINE_064 8.8\u20139.5 km (evidence R0002). The caller report (SYN_REPORT_02) cannot be mapped to a specific line or span, so the qualified negative contradicts vegetation contact only within the inspected interval.', update_reason=\"The measurement-triggered turn supplied the first reading on this corridor; since no hypotheses were accepted yet the hypothesis is created with the qualified negative recorded as contrary evidence, lowering confidence for vegetation contact on the inspected span while the caller report's broad scope leaves the rest of the corridor unresolved.\", remaining_uncertainty='No measurement exists for LINE_064 spans outside 8.8\u20139.5 km, so vegetation contact on the corridor cannot be ruled out; the caller report cannot be mapped to a specific asset.', trigger_kind='measurement', trigger_event_ids=['EVT0004'], operator_event_id=None, contributing_evidence_ids=['SYN_REPORT_01', 'SYN_REPORT_02', 'SYN_REPORT_03', 'SYN_REPORT_04', 'SYN_REPORT_05', 'SYN_REPORT_06'], latest_measurement_ids=['R0002'], contrary_evidence_ids=['R0002', 'EVT0004'], diagnostic_ids=[], cited_values=[CitedValue(reading_id='R0002', quantity='clearance_m', value=2.052, unit='m', location='LINE_064 @ 9.0 km', conditions='visible_fraction 0.7; interpretation qualified_negative')]), RevisionModel(hypothesis_id='H-PROT-024', change_kinds=['creation'], before=None, after=HypothesisModel(id='H-PROT-024', claim='The protection event that led to the outage (dispatch log SYN_REPORT_03) originated on or near LINE_024, which was precautionarily de-energized (known_switching LINE_024 = 0); a fault on this corridor is the cause of the outage.', scope=[SpanModel(segment_id='LINE_024', start_km=0.0, end_km=10.0)], predictions=[PredictionModel(id='P-PROT-024-1', statement='Voltage-presence measurement on LINE_024 shows the line de-energized as recorded in known_switching.', measurement='voltage_presence', expected='no voltage present on LINE_024, consistent with the precautionary de-energization', required_conditions=['access to a LINE_024 terminal or field measurement point']), PredictionModel(id='P-PROT-024-2', statement='Current measurements on the LINE_024 corridor will show fault signatures consistent with a fault event that triggered the protection operation.', measurement='current', expected='elevated or fault-characteristic current during excitation if a fault is present on the corridor', required_conditions=['line energized or under test', 'measurable fault or load current'])], assessment=<Assessment.UNRESOLVED: 'UNRESOLVED'>, priority=3, lifecycle=<Lifecycle.ACTIVE: 'ACTIVE'>, supporting_evidence_ids=['SYN_REPORT_03'], contradicting_evidence_ids=[], model_change=['LINE_024']), finding_summary='SYN_REPORT_03 records one automatic protection event and attempted reclose in a broad service sector, with LINE_024 confirmed precautionarily de-energized (known_switching LINE_024 = 0); the reason for the protection event and its relation to the switching are unknown. The two latest drone readings (R0001, R0002) are clearance readings on other corridors and provide no electrical evidence in the LINE_024 scope.', update_reason='Created from the reports in this measurement-triggered turn: the protection event is the only direct link to the outage cause in the snapshot and the de-energization of LINE_024 is the only confirmed switching action, making it a plausible but unverified fault origin. The candidate topology (LINE_024 out of service) was tested and returned diagnostic DX-r1-02 (dof 0, NOT_TESTABLE, indistinguishable from baseline), so it can be neither confirmed nor refuted.', remaining_uncertainty='No electrical measurements exist in the LINE_024 scope; the consistency summary is NOT_TESTABLE (dof 0, prior-only) and candidate topology testing (DX-r1-02) is indistinguishable from baseline, so the hypothesis cannot be confirmed or refuted.', trigger_kind='measurement', trigger_event_ids=['EVT0002', 'EVT0004'], operator_event_id=None, contributing_evidence_ids=['SYN_REPORT_01', 'SYN_REPORT_02', 'SYN_REPORT_03', 'SYN_REPORT_04', 'SYN_REPORT_05', 'SYN_REPORT_06'], latest_measurement_ids=[], contrary_evidence_ids=[], diagnostic_ids=['DX-r1-02'], cited_values=[CitedValue(reading_id='R0001', quantity='clearance_m', value=0.349, unit='m', location='LINE_058 @ 0.028 km', conditions='visible_fraction 1.0; interpretation positive'), CitedValue(reading_id='R0002', quantity='clearance_m', value=2.052, unit='m', location='LINE_064 @ 9.0 km', conditions='visible_fraction 0.7; interpretation qualified_negative')])] unchanged=[] recommendations=[RecommendationModel(id='REC-1', action_kind='inspect', text='Urgent hazard action: dispatch a drone to inspect and confirm the vegetation/obstacle contact at LINE_058 0.028\u20130.05 km and schedule vegetation clearance work on that span.', scope=SpanModel(segment_id='LINE_058', start_km=0.028, end_km=0.05), urgency=5, evidence_ids=['R0001', 'EVT0002', 'SYN_REPORT_02', 'HZ001'], rationale='A positive clearance detection (0.349 m, visible_fraction 1.0) with a FAIL scope assessment is a confirmed local hazard (HZ001) requiring immediate inspection and mitigation, independent of whether it caused the outage.', uncertainty='The hazard is confirmed locally; its causal role in the protection event/outage is not established.'), RecommendationModel(id='REC-2', action_kind='measure', text='Extend vegetation-clearance measurement along LINE_064 outside the already-inspected 8.8\u20139.5 km interval, prioritizing spans near the caller-reported corridor.', scope=SpanModel(segment_id='LINE_064', start_km=0.0, end_km=8.8), urgency=3, evidence_ids=['R0002', 'EVT0004', 'SYN_REPORT_02'], rationale='The qualified negative only covers the inspected span; the caller report cannot be mapped to a specific line, so the rest of the corridor remains uninspected.', uncertainty='Whether any LINE_064 span outside 8.8\u20139.5 km has a clearance violation.'), RecommendationModel(id='REC-3', action_kind='measure', text='Obtain voltage-presence and current measurements on the LINE_024 corridor to characterize the recorded protection event and enable topology testing before any re-energization decision.', scope=SpanModel(segment_id='LINE_024', start_km=0.0, end_km=10.0), urgency=3, evidence_ids=['SYN_REPORT_03', 'DX-r1-02'], rationale='LINE_024 is confirmed precautionarily de-energized (known_switching = 0), but the reason for the protection event is unknown; electrical measurements are required because the candidate topology test (DX-r1-02) was NOT_TESTABLE with the current readings.', uncertainty='No electrical measurements exist yet; the consistency summary is NOT_TESTABLE (prior-only) and candidate topology testing (DX-r1-02) is indistinguishable from baseline.'), RecommendationModel(id='REC-4', action_kind='monitor', text='Monitor LINE_058 for conductor motion during qualifying gusts, alongside the clearance inspection, since a windstorm is active and the clearance hazard is on that corridor.', scope=None, urgency=2, evidence_ids=['SYN_REPORT_01', 'SYN_REPORT_06', 'R0001'], rationale='A windstorm is active and the clearance hazard is on the same corridor; motion negatives outside a gust are inconclusive, so monitoring should be gust-conditioned.', uncertainty='The northeast motion report (SYN_REPORT_06) could not be mapped to a specific line or span.')] untested_alternatives=['Vegetation contact on LINE_064 spans outside the inspected 8.8\u20139.5 km interval (unmappable caller report SYN_REPORT_02) \u2014 not distinguishable with current evidence.', 'A conductor-motion/galloping event in the broad northeast area (SYN_REPORT_06) \u2014 cannot be mapped to a specific line or span; no motion measurement under qualifying-gust conditions exists.', 'The orange flash near the industrial site (SYN_REPORT_04, possible backup-generator test) \u2014 no calibrated measurement or asset match available.', 'Thermal hotspot in the broad east-central area (SYN_REPORT_05) \u2014 no controlled or calibrated thermal reading exists, so it cannot be tested against any span.', 'Alternative electrical topologies for the protection event (e.g., faults on other lines) \u2014 the tested candidate (DX-r1-02) was NOT_TESTABLE (dof 0, indistinguishable from baseline) and no other topology can be distinguished without electrical measurements.']",
+   "tool_calls": null
+  }
+ ],
+ "output": {
+  "summary": "Measurement turn at T+00:25: two drone readings arrived (EVT0002\u2192R0001, EVT0004\u2192R0002) and no hypotheses were accepted yet, so three hypotheses are created (change kind creation, before null) from the reports plus these readings. R0001 (LINE_058 @ 0.028 km, clearance 0.349 m, visible_fraction 1.0) is a positive clearance detection and a qualified threshold event: scope assessment FAIL for LINE_058 0.028\u20130.05 km; it is an urgent local hazard (HZ001) but does not by itself explain the outage. R0002 (LINE_064 @ 9.0 km, clearance 2.052 m, visible_fraction 0.7) is a qualified negative over LINE_064 8.8\u20139.5 km (scope assessment PASS). H-PROT-024 (protection event near LINE_024, which is precautionarily de-energized) is UNRESOLVED: the electrical candidate (LINE_024 out of service) was tested and returned diagnostic DX-r1-02 (dof 0, NOT_TESTABLE, indistinguishable from baseline), so no topology can be distinguished yet. Recommendations: urgent inspection of the LINE_058 span, extended clearance measurement on uninspected LINE_064 spans, and electrical measurements on LINE_024 to enable topology testing.",
+  "revisions": [
+   {
+    "hypothesis_id": "H-CLEAR-058",
+    "change_kinds": [
+     "creation"
+    ],
+    "before": null,
+    "after": {
+     "id": "H-CLEAR-058",
+     "claim": "Vegetation/obstacle clearance on LINE_058 is critically reduced near 0.028 km such that the conductor is close to or touching vegetation, posing an immediate fault and clearance hazard (verified locally; causal role in the outage not yet established).",
+     "scope": [
+      {
+       "segment_id": "LINE_058",
+       "start_km": 0.028,
+       "end_km": 0.05
+      }
+     ],
+     "predictions": [
+      {
+       "id": "P-CLEAR-058-1",
+       "statement": "Drone clearance measurement at LINE_058 0.028 km reports clearance below the vegetation threshold under adequate visibility.",
+       "measurement": "clearance",
+       "expected": "clearance well below the threshold, positive interpretation (measured 0.349 m with visible_fraction 1.0)",
+       "required_conditions": [
+        "visible_fraction at or near 1.0",
+        "clearance drone pass with unobstructed view of the span"
+       ]
+      },
+      {
+       "id": "P-CLEAR-058-2",
+       "statement": "If vegetation contact persists, current measurements near LINE_058 will show fault-indicative current when the line is energized or under test.",
+       "measurement": "current",
+       "expected": "fault or elevated current consistent with vegetation contact",
+       "required_conditions": [
+        "line energized or under test",
+        "measurable fault or load current"
+       ]
+      }
+     ],
+     "assessment": "SUPPORTED",
+     "priority": 5,
+     "lifecycle": "ACTIVE",
+     "supporting_evidence_ids": [
+      "R0001",
+      "EVT0002",
+      "SYN_REPORT_02",
+      "HZ001"
+     ],
+     "contradicting_evidence_ids": [],
+     "model_change": null
+    },
+    "finding_summary": "R0001 (trigger EVT0002) detected a positive threshold clearance event on LINE_058 @ 0.028 km: clearance 0.349 m under visible_fraction 1.0. The scope assessment returned FAIL for LINE_058 0.028\u20130.05 km (evidence R0001), and hazard HZ001 is registered in the snapshot. This is a detected local hazard requiring urgent inspection and mitigation; it does not by itself explain the outage.",
+    "update_reason": "The measurement-triggered turn supplied the first drone reading, and since no hypotheses were accepted yet the positive clearance detection directly motivates creation of this hypothesis as an urgent local hazard; the detection is the causal trigger for establishing the claim.",
+    "remaining_uncertainty": "The detection confirms a clearance violation locally but does not establish that vegetation contact caused the protection event or the outage; the causal origin of the outage remains undetermined.",
+    "trigger_kind": "measurement",
+    "trigger_event_ids": [
+     "EVT0002"
+    ],
+    "operator_event_id": null,
+    "contributing_evidence_ids": [
+     "SYN_REPORT_01",
+     "SYN_REPORT_02",
+     "SYN_REPORT_03",
+     "SYN_REPORT_04",
+     "SYN_REPORT_05",
+     "SYN_REPORT_06"
+    ],
+    "latest_measurement_ids": [
+     "R0001"
+    ],
+    "contrary_evidence_ids": [],
+    "diagnostic_ids": [],
+    "cited_values": [
+     {
+      "reading_id": "R0001",
+      "quantity": "clearance_m",
+      "value": 0.349,
+      "unit": "m",
+      "location": "LINE_058 @ 0.028 km",
+      "conditions": "visible_fraction 1.0; interpretation positive"
+     }
+    ]
+   },
+   {
+    "hypothesis_id": "H-VEG-064",
+    "change_kinds": [
+     "creation"
+    ],
+    "before": null,
+    "after": {
+     "id": "H-VEG-064",
+     "claim": "Vegetation contact with the LINE_064 conductor (caller-reported trees brushing an overhead route) could explain the outage; on the inspected span it is not supported, and it remains possible elsewhere on the corridor.",
+     "scope": [
+      {
+       "segment_id": "LINE_064",
+       "start_km": 8.8,
+       "end_km": 9.5
+      }
+     ],
+     "predictions": [
+      {
+       "id": "P-VEG-064-1",
+       "statement": "A clearance measurement on the inspected LINE_064 span shows clearance above the vegetation threshold under adequate visibility.",
+       "measurement": "clearance",
+       "expected": "clearance well above the threshold with a qualified-negative interpretation (measured 2.052 m)",
+       "required_conditions": [
+        "visible_fraction ~0.7 or better",
+        "clearance drone pass over the span"
+       ]
+      },
+      {
+       "id": "P-VEG-064-2",
+       "statement": "Additional clearance measurements on uninspected LINE_064 spans will show any vegetation-contact violation present on the corridor.",
+       "measurement": "clearance",
+       "expected": "clearance below threshold on any violating span, or continued qualified negatives elsewhere",
+       "required_conditions": [
+        "adequate visibility",
+        "drone pass over each candidate span"
+       ]
+      }
+     ],
+     "assessment": "UNLIKELY",
+     "priority": 2,
+     "lifecycle": "ACTIVE",
+     "supporting_evidence_ids": [
+      "SYN_REPORT_02"
+     ],
+     "contradicting_evidence_ids": [
+      "R0002",
+      "EVT0004"
+     ],
+     "model_change": null
+    },
+    "finding_summary": "R0002 (trigger EVT0004) recorded a qualified negative on LINE_064 @ 9.0 km: clearance 2.052 m under visible_fraction 0.7. The scope assessment returned PASS for LINE_064 8.8\u20139.5 km (evidence R0002). The caller report (SYN_REPORT_02) cannot be mapped to a specific line or span, so the qualified negative contradicts vegetation contact only within the inspected interval.",
+    "update_reason": "The measurement-triggered turn supplied the first reading on this corridor; since no hypotheses were accepted yet the hypothesis is created with the qualified negative recorded as contrary evidence, lowering confidence for vegetation contact on the inspected span while the caller report's broad scope leaves the rest of the corridor unresolved.",
+    "remaining_uncertainty": "No measurement exists for LINE_064 spans outside 8.8\u20139.5 km, so vegetation contact on the corridor cannot be ruled out; the caller report cannot be mapped to a specific asset.",
+    "trigger_kind": "measurement",
+    "trigger_event_ids": [
+     "EVT0004"
+    ],
+    "operator_event_id": null,
+    "contributing_evidence_ids": [
+     "SYN_REPORT_01",
+     "SYN_REPORT_02",
+     "SYN_REPORT_03",
+     "SYN_REPORT_04",
+     "SYN_REPORT_05",
+     "SYN_REPORT_06"
+    ],
+    "latest_measurement_ids": [
+     "R0002"
+    ],
+    "contrary_evidence_ids": [
+     "R0002",
+     "EVT0004"
+    ],
+    "diagnostic_ids": [],
+    "cited_values": [
+     {
+      "reading_id": "R0002",
+      "quantity": "clearance_m",
+      "value": 2.052,
+      "unit": "m",
+      "location": "LINE_064 @ 9.0 km",
+      "conditions": "visible_fraction 0.7; interpretation qualified_negative"
+     }
+    ]
+   },
+   {
+    "hypothesis_id": "H-PROT-024",
+    "change_kinds": [
+     "creation"
+    ],
+    "before": null,
+    "after": {
+     "id": "H-PROT-024",
+     "claim": "The protection event that led to the outage (dispatch log SYN_REPORT_03) originated on or near LINE_024, which was precautionarily de-energized (known_switching LINE_024 = 0); a fault on this corridor is the cause of the outage.",
+     "scope": [
+      {
+       "segment_id": "LINE_024",
+       "start_km": 0.0,
+       "end_km": 10.0
+      }
+     ],
+     "predictions": [
+      {
+       "id": "P-PROT-024-1",
+       "statement": "Voltage-presence measurement on LINE_024 shows the line de-energized as recorded in known_switching.",
+       "measurement": "voltage_presence",
+       "expected": "no voltage present on LINE_024, consistent with the precautionary de-energization",
+       "required_conditions": [
+        "access to a LINE_024 terminal or field measurement point"
+       ]
+      },
+      {
+       "id": "P-PROT-024-2",
+       "statement": "Current measurements on the LINE_024 corridor will show fault signatures consistent with a fault event that triggered the protection operation.",
+       "measurement": "current",
+       "expected": "elevated or fault-characteristic current during excitation if a fault is present on the corridor",
+       "required_conditions": [
+        "line energized or under test",
+        "measurable fault or load current"
+       ]
+      }
+     ],
+     "assessment": "UNRESOLVED",
+     "priority": 3,
+     "lifecycle": "ACTIVE",
+     "supporting_evidence_ids": [
+      "SYN_REPORT_03"
+     ],
+     "contradicting_evidence_ids": [],
+     "model_change": [
+      "LINE_024"
+     ]
+    },
+    "finding_summary": "SYN_REPORT_03 records one automatic protection event and attempted reclose in a broad service sector, with LINE_024 confirmed precautionarily de-energized (known_switching LINE_024 = 0); the reason for the protection event and its relation to the switching are unknown. The two latest drone readings (R0001, R0002) are clearance readings on other corridors and provide no electrical evidence in the LINE_024 scope.",
+    "update_reason": "Created from the reports in this measurement-triggered turn: the protection event is the only direct link to the outage cause in the snapshot and the de-energization of LINE_024 is the only confirmed switching action, making it a plausible but unverified fault origin. The candidate topology (LINE_024 out of service) was tested and returned diagnostic DX-r1-02 (dof 0, NOT_TESTABLE, indistinguishable from baseline), so it can be neither confirmed nor refuted.",
+    "remaining_uncertainty": "No electrical measurements exist in the LINE_024 scope; the consistency summary is NOT_TESTABLE (dof 0, prior-only) and candidate topology testing (DX-r1-02) is indistinguishable from baseline, so the hypothesis cannot be confirmed or refuted.",
+    "trigger_kind": "measurement",
+    "trigger_event_ids": [
+     "EVT0002",
+     "EVT0004"
+    ],
+    "operator_event_id": null,
+    "contributing_evidence_ids": [
+     "SYN_REPORT_01",
+     "SYN_REPORT_02",
+     "SYN_REPORT_03",
+     "SYN_REPORT_04",
+     "SYN_REPORT_05",
+     "SYN_REPORT_06"
+    ],
+    "latest_measurement_ids": [],
+    "contrary_evidence_ids": [],
+    "diagnostic_ids": [
+     "DX-r1-02"
+    ],
+    "cited_values": [
+     {
+      "reading_id": "R0001",
+      "quantity": "clearance_m",
+      "value": 0.349,
+      "unit": "m",
+      "location": "LINE_058 @ 0.028 km",
+      "conditions": "visible_fraction 1.0; interpretation positive"
+     },
+     {
+      "reading_id": "R0002",
+      "quantity": "clearance_m",
+      "value": 2.052,
+      "unit": "m",
+      "location": "LINE_064 @ 9.0 km",
+      "conditions": "visible_fraction 0.7; interpretation qualified_negative"
+     }
+    ]
+   }
+  ],
+  "unchanged": [],
+  "recommendations": [
+   {
+    "id": "REC-1",
+    "action_kind": "inspect",
+    "text": "Urgent hazard action: dispatch a drone to inspect and confirm the vegetation/obstacle contact at LINE_058 0.028\u20130.05 km and schedule vegetation clearance work on that span.",
+    "scope": {
+     "segment_id": "LINE_058",
+     "start_km": 0.028,
+     "end_km": 0.05
+    },
+    "urgency": 5,
+    "evidence_ids": [
+     "R0001",
+     "EVT0002",
+     "SYN_REPORT_02",
+     "HZ001"
+    ],
+    "rationale": "A positive clearance detection (0.349 m, visible_fraction 1.0) with a FAIL scope assessment is a confirmed local hazard (HZ001) requiring immediate inspection and mitigation, independent of whether it caused the outage.",
+    "uncertainty": "The hazard is confirmed locally; its causal role in the protection event/outage is not established."
+   },
+   {
+    "id": "REC-2",
+    "action_kind": "measure",
+    "text": "Extend vegetation-clearance measurement along LINE_064 outside the already-inspected 8.8\u20139.5 km interval, prioritizing spans near the caller-reported corridor.",
+    "scope": {
+     "segment_id": "LINE_064",
+     "start_km": 0.0,
+     "end_km": 8.8
+    },
+    "urgency": 3,
+    "evidence_ids": [
+     "R0002",
+     "EVT0004",
+     "SYN_REPORT_02"
+    ],
+    "rationale": "The qualified negative only covers the inspected span; the caller report cannot be mapped to a specific line, so the rest of the corridor remains uninspected.",
+    "uncertainty": "Whether any LINE_064 span outside 8.8\u20139.5 km has a clearance violation."
+   },
+   {
+    "id": "REC-3",
+    "action_kind": "measure",
+    "text": "Obtain voltage-presence and current measurements on the LINE_024 corridor to characterize the recorded protection event and enable topology testing before any re-energization decision.",
+    "scope": {
+     "segment_id": "LINE_024",
+     "start_km": 0.0,
+     "end_km": 10.0
+    },
+    "urgency": 3,
+    "evidence_ids": [
+     "SYN_REPORT_03",
+     "DX-r1-02"
+    ],
+    "rationale": "LINE_024 is confirmed precautionarily de-energized (known_switching = 0), but the reason for the protection event is unknown; electrical measurements are required because the candidate topology test (DX-r1-02) was NOT_TESTABLE with the current readings.",
+    "uncertainty": "No electrical measurements exist yet; the consistency summary is NOT_TESTABLE (prior-only) and candidate topology testing (DX-r1-02) is indistinguishable from baseline."
+   },
+   {
+    "id": "REC-4",
+    "action_kind": "monitor",
+    "text": "Monitor LINE_058 for conductor motion during qualifying gusts, alongside the clearance inspection, since a windstorm is active and the clearance hazard is on that corridor.",
+    "scope": null,
+    "urgency": 2,
+    "evidence_ids": [
+     "SYN_REPORT_01",
+     "SYN_REPORT_06",
+     "R0001"
+    ],
+    "rationale": "A windstorm is active and the clearance hazard is on the same corridor; motion negatives outside a gust are inconclusive, so monitoring should be gust-conditioned.",
+    "uncertainty": "The northeast motion report (SYN_REPORT_06) could not be mapped to a specific line or span."
+   }
+  ],
+  "untested_alternatives": [
+   "Vegetation contact on LINE_064 spans outside the inspected 8.8\u20139.5 km interval (unmappable caller report SYN_REPORT_02) \u2014 not distinguishable with current evidence.",
+   "A conductor-motion/galloping event in the broad northeast area (SYN_REPORT_06) \u2014 cannot be mapped to a specific line or span; no motion measurement under qualifying-gust conditions exists.",
+   "The orange flash near the industrial site (SYN_REPORT_04, possible backup-generator test) \u2014 no calibrated measurement or asset match available.",
+   "Thermal hotspot in the broad east-central area (SYN_REPORT_05) \u2014 no controlled or calibrated thermal reading exists, so it cannot be tested against any span.",
+   "Alternative electrical topologies for the protection event (e.g., faults on other lines) \u2014 the tested candidate (DX-r1-02) was NOT_TESTABLE (dof 0, indistinguishable from baseline) and no other topology can be distinguished without electrical measurements."
+  ]
+ },
+ "validation_errors": [],
+ "attempt_errors": [
+  [
+   "H-CLEAR-058: unchanged assessment for an unknown hypothesis",
+   "H-VEG-064: unchanged assessment for an unknown hypothesis",
+   "H-PROT-024: unchanged assessment for an unknown hypothesis",
+   "recommendation REC-1: evidence link DX-SCOPE-058 does not exist in snapshot r1",
+   "recommendation REC-1: a inspect recommendation must be scoped to a span",
+   "recommendation REC-2: a measure recommendation must be scoped to a span",
+   "recommendation REC-3: a measure recommendation must be scoped to a span"
+  ],
+  [
+   "revision H-CLEAR-058: startup trigger but drone measurements already exist",
+   "revision H-CLEAR-058: a startup revision must state that no drone measurements exist",
+   "revision H-VEG-064: startup trigger but drone measurements already exist",
+   "revision H-VEG-064: a startup revision must state that no drone measurements exist",
+   "revision H-PROT-024: startup trigger but drone measurements already exist",
+   "revision H-PROT-024: a startup revision must state that no drone measurements exist",
+   "revision H-PROT-024: an electrical candidate must cite a tested diagnostic"
+  ],
+  []
+ ],
+ "seconds": 199.2
+}

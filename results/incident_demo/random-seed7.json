@@ -1,0 +1,680 @@
+{
+  "mode": "incident_demo",
+  "policy": "random",
+  "seed": 7,
+  "batches": [
+    {
+      "sim_s": 60,
+      "readings": 0,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 0,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 0,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    },
+    {
+      "sim_s": 240,
+      "readings": 2,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 0,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 0,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    },
+    {
+      "sim_s": 600,
+      "readings": 3,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 0,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 0,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    },
+    {
+      "sim_s": 780,
+      "readings": 4,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": true,
+            "time_to_detection_s": 776,
+            "measurements_to_detection": 4
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 1,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 1,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    },
+    {
+      "sim_s": 840,
+      "readings": 5,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": true,
+            "time_to_detection_s": 776,
+            "measurements_to_detection": 4
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 1,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 1,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    },
+    {
+      "sim_s": 11340,
+      "readings": 6,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": true,
+            "time_to_detection_s": 776,
+            "measurements_to_detection": 4
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 1,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 1,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    },
+    {
+      "sim_s": 12000,
+      "readings": 7,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": true,
+            "time_to_detection_s": 776,
+            "measurements_to_detection": 4
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 1,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 1,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    },
+    {
+      "sim_s": 12180,
+      "readings": 8,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": true,
+            "time_to_detection_s": 776,
+            "measurements_to_detection": 4
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 1,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 1,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    },
+    {
+      "sim_s": 12840,
+      "readings": 9,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": true,
+            "time_to_detection_s": 776,
+            "measurements_to_detection": 4
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 1,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 1,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    },
+    {
+      "sim_s": 13200,
+      "readings": 10,
+      "incident": {
+        "causal_diagnosis": {
+          "status": "OPEN",
+          "concluded_s": null,
+          "statement": null
+        },
+        "material_alternatives": {
+          "hypotheses": 3,
+          "supported": 0,
+          "refuted": 0
+        },
+        "anomalies": [
+          {
+            "kind": "vegetation",
+            "segment": "LINE_058",
+            "detected": true,
+            "time_to_detection_s": 776,
+            "measurements_to_detection": 4
+          },
+          {
+            "kind": "hot_joint",
+            "segment": "LINE_029",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          },
+          {
+            "kind": "motion",
+            "segment": "LINE_054",
+            "detected": false,
+            "time_to_detection_s": null,
+            "measurements_to_detection": null
+          }
+        ],
+        "detected": 1,
+        "of": 3,
+        "scoped_actions": {
+          "hazards_raised": 1,
+          "false_hazards": 0
+        },
+        "post_completion_readings": 0
+      }
+    }
+  ],
+  "final": {
+    "sim_s": 14400,
+    "readings": 10,
+    "incident": {
+      "causal_diagnosis": {
+        "status": "OPEN",
+        "concluded_s": null,
+        "statement": null
+      },
+      "material_alternatives": {
+        "hypotheses": 3,
+        "supported": 0,
+        "refuted": 0
+      },
+      "anomalies": [
+        {
+          "kind": "vegetation",
+          "segment": "LINE_058",
+          "detected": true,
+          "time_to_detection_s": 776,
+          "measurements_to_detection": 4
+        },
+        {
+          "kind": "hot_joint",
+          "segment": "LINE_029",
+          "detected": false,
+          "time_to_detection_s": null,
+          "measurements_to_detection": null
+        },
+        {
+          "kind": "motion",
+          "segment": "LINE_054",
+          "detected": false,
+          "time_to_detection_s": null,
+          "measurements_to_detection": null
+        }
+      ],
+      "detected": 1,
+      "of": 3,
+      "scoped_actions": {
+        "hazards_raised": 1,
+        "false_hazards": 0
+      },
+      "post_completion_readings": 0
+    }
+  },
+  "operations": {
+    "minutes_in_phase": {
+      "DRONE_1": {
+        "ready": 2,
+        "flying": 33,
+        "measuring": 6,
+        "charging": 199
+      },
+      "DRONE_2": {
+        "measuring": 6,
+        "charging": 231,
+        "ready": 2,
+        "flying": 1
+      },
+      "DRONE_3": {
+        "flying": 45,
+        "measuring": 6,
+        "charging": 188,
+        "ready": 1
+      },
+      "DRONE_4": {
+        "measuring": 7,
+        "charging": 209,
+        "ready": 1,
+        "flying": 23
+      },
+      "DRONE_5": {
+        "flying": 18,
+        "measuring": 7,
+        "charging": 214,
+        "ready": 1
+      }
+    },
+    "readings": 10,
+    "repeats": 4,
+    "landing_failures": 0,
+    "urgent_unassigned": [],
+    "route_passes": 0,
+    "fallback_frequency": 0.0,
+    "latency": "no route passes measured",
+    "solver_bounds": [
+      {
+        "stage": "tier-3",
+        "status": "OPTIMAL",
+        "objective": 0,
+        "bound": 0
+      },
+      {
+        "stage": "tier-2",
+        "status": "OPTIMAL",
+        "objective": 0,
+        "bound": 0
+      },
+      {
+        "stage": "switching",
+        "status": "OPTIMAL",
+        "objective": 0,
+        "bound": 0
+      },
+      {
+        "stage": "tier-3",
+        "status": "INFEASIBLE",
+        "objective": null,
+        "bound": null
+      }
+    ],
+    "tiny_case_gap": "verified exact (gap 0) by tests/test_planning.py brute-force check"
+  },
+  "replay": {
+    "solver": "ortools 9.15.6755",
+    "budgets": {
+      "deterministic": 0.1,
+      "wall_cap_s": 1.5,
+      "response_budget_s": 2.0
+    },
+    "wall_watchdog_variability": "wall-clock caps and watchdog kills can change a plan between machines; deterministic-time limits are replayable, wall caps are not",
+    "manager_turns": [
+      {
+        "sim_s": 0,
+        "drone": "DRONE_2",
+        "tasks": [
+          "T0059"
+        ]
+      },
+      {
+        "sim_s": 0,
+        "drone": "DRONE_3",
+        "tasks": [
+          "T0026"
+        ]
+      },
+      {
+        "sim_s": 0,
+        "drone": "DRONE_4",
+        "tasks": [
+          "T0003"
+        ]
+      },
+      {
+        "sim_s": 0,
+        "drone": "DRONE_5",
+        "tasks": [
+          "T0038"
+        ]
+      },
+      {
+        "sim_s": 60,
+        "drone": "DRONE_1",
+        "tasks": [
+          "T0068"
+        ]
+      },
+      {
+        "sim_s": 11040,
+        "drone": "DRONE_4",
+        "tasks": [
+          "T0079"
+        ]
+      },
+      {
+        "sim_s": 11100,
+        "drone": "DRONE_2",
+        "tasks": [
+          "T0061"
+        ]
+      },
+      {
+        "sim_s": 11700,
+        "drone": "DRONE_5",
+        "tasks": [
+          "T0033"
+        ]
+      },
+      {
+        "sim_s": 12120,
+        "drone": "DRONE_1",
+        "tasks": [
+          "T0071"
+        ]
+      },
+      {
+        "sim_s": 12240,
+        "drone": "DRONE_3",
+        "tasks": [
+          "T0015"
+        ]
+      }
+    ],
+    "llm": false,
+    "model": null,
+    "wall_s": 3.86
+  },
+  "declared": {
+    "shared": [
+      "same scenario, seed, sensor model and observation-keyed noise",
+      "same accepted initial hypotheses (incident) or reconstruction needs (healthy)",
+      "same task set and attempt cap",
+      "same landing rule (uncertain endpoints permitted, hazards forbidden) and T+04:00 deadline",
+      "one decision per ready drone; routes validated by the independent validator"
+    ],
+    "differences": {
+      "random": "one random eligible task per sortie, landing at the drone's perch",
+      "greedy": "nearest eligible task per sortie, landing at the drone's perch",
+      "lookahead": "best two-task sortie by the joint scorer, landing at the drone's perch",
+      "agent": "scripted manager follow-ups, joint CP-SAT planner and reactive route passes (plus a route pass every 5 min while drones are idle and tasks are open)"
+    }
+  }
+}

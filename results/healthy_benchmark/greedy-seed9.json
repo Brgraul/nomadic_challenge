@@ -1,0 +1,784 @@
+{
+  "mode": "healthy_benchmark",
+  "policy": "greedy",
+  "seed": 9,
+  "batches": [
+    {
+      "sim_s": 60,
+      "readings": 0,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 26.37326672459839,
+          "mean_observed": null,
+          "max": 132.6914942519865
+        },
+        "observability": {
+          "observable": 0,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 52,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "0 of 64 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": false,
+            "detail": "global test NOT_TESTABLE"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "0 of 0 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0001",
+          "T0002",
+          "T0003",
+          "T0004",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012"
+        ]
+      }
+    },
+    {
+      "sim_s": 180,
+      "readings": 1,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 26.157406378828473,
+          "mean_observed": 6.565889596382725,
+          "max": 131.36967699175642
+        },
+        "observability": {
+          "observable": 1,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 51,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "1 of 64 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": false,
+            "detail": "global test NOT_TESTABLE"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "0 of 1 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0001",
+          "T0003",
+          "T0004",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012",
+          "T0013",
+          "T0015",
+          "T0016"
+        ]
+      }
+    },
+    {
+      "sim_s": 360,
+      "readings": 2,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 28.274632980703366,
+          "mean_observed": 25.50256161783178,
+          "max": 127.4990900515831
+        },
+        "observability": {
+          "observable": 8,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 47,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "8 of 64 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": false,
+            "detail": "global test NOT_TESTABLE"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "0 of 2 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0003",
+          "T0004",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012",
+          "T0013",
+          "T0016",
+          "T0017",
+          "T0018"
+        ]
+      }
+    },
+    {
+      "sim_s": 780,
+      "readings": 3,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 20.355619412325858,
+          "mean_observed": 26.274829127008925,
+          "max": 69.97021571342015
+        },
+        "observability": {
+          "observable": 13,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 51,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "13 of 64 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": false,
+            "detail": "global test NOT_TESTABLE"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "0 of 3 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0003",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012",
+          "T0016",
+          "T0018",
+          "T0019"
+        ]
+      }
+    },
+    {
+      "sim_s": 900,
+      "readings": 4,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 19.65253164646638,
+          "mean_observed": 24.415673404958763,
+          "max": 69.95868000179513
+        },
+        "observability": {
+          "observable": 14,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 51,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "14 of 64 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": false,
+            "detail": "global test NOT_TESTABLE"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "0 of 4 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0003",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012",
+          "T0018",
+          "T0019",
+          "T0020"
+        ]
+      }
+    },
+    {
+      "sim_s": 11280,
+      "readings": 5,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 16.798072630670955,
+          "mean_observed": 17.31798426328379,
+          "max": 69.90203619832477
+        },
+        "observability": {
+          "observable": 21,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 51,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "21 of 64 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": false,
+            "detail": "global test NOT_TESTABLE"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "0 of 5 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0003",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012",
+          "T0018",
+          "T0020",
+          "T0022"
+        ]
+      }
+    },
+    {
+      "sim_s": 11640,
+      "readings": 6,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 17.271353780967004,
+          "mean_observed": 15.266172143374055,
+          "max": 69.86527600593394
+        },
+        "observability": {
+          "observable": 24,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 51,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "24 of 64 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": false,
+            "detail": "global test NOT_TESTABLE"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "0 of 6 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0003",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012",
+          "T0018",
+          "T0022",
+          "T0023",
+          "T0025"
+        ]
+      }
+    },
+    {
+      "sim_s": 12240,
+      "readings": 7,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 16.919206138855678,
+          "mean_observed": 14.806238203496429,
+          "max": 69.85219582411167
+        },
+        "observability": {
+          "observable": 25,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 51,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "25 of 64 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": false,
+            "detail": "global test NOT_TESTABLE"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "0 of 7 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0003",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012",
+          "T0018",
+          "T0025",
+          "T0026",
+          "T0027"
+        ]
+      }
+    },
+    {
+      "sim_s": 12360,
+      "readings": 8,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 16.927700579349903,
+          "mean_observed": 13.16216559960736,
+          "max": 69.85223478209349
+        },
+        "observability": {
+          "observable": 29,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 51,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "29 of 64 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": false,
+            "detail": "global test NOT_TESTABLE"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "0 of 8 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0003",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012",
+          "T0018",
+          "T0026",
+          "T0027",
+          "T0029"
+        ]
+      }
+    },
+    {
+      "sim_s": 12600,
+      "readings": 9,
+      "healthy": {
+        "flow_error_mw": {
+          "mean_all": 16.83964097382272,
+          "mean_observed": 13.088433976142394,
+          "max": 69.85328434408888
+        },
+        "observability": {
+          "observable": 29,
+          "flows": 64
+        },
+        "calibration": {
+          "intervals_supported": 55,
+          "truth_inside_95": 51,
+          "unsupported_intervals": 9
+        },
+        "benchmark_checks": [
+          {
+            "name": "observability",
+            "met": false,
+            "detail": "29 of 63 flows pinned"
+          },
+          {
+            "name": "uncertainty",
+            "met": false,
+            "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+          },
+          {
+            "name": "consistency",
+            "met": true,
+            "detail": "global test NOT_REFUTED"
+          },
+          {
+            "name": "detectability",
+            "met": false,
+            "detail": "2 of 9 real rows are testable"
+          }
+        ],
+        "unresolved_work": [
+          "T0003",
+          "T0005",
+          "T0006",
+          "T0007",
+          "T0008",
+          "T0009",
+          "T0010",
+          "T0011",
+          "T0012",
+          "T0018",
+          "T0027",
+          "T0029"
+        ]
+      }
+    }
+  ],
+  "final": {
+    "sim_s": 14400,
+    "readings": 9,
+    "healthy": {
+      "flow_error_mw": {
+        "mean_all": 16.83964097382272,
+        "mean_observed": 13.088433976142394,
+        "max": 69.85328434408888
+      },
+      "observability": {
+        "observable": 29,
+        "flows": 64
+      },
+      "calibration": {
+        "intervals_supported": 55,
+        "truth_inside_95": 51,
+        "unsupported_intervals": 9
+      },
+      "benchmark_checks": [
+        {
+          "name": "observability",
+          "met": false,
+          "detail": "29 of 63 flows pinned"
+        },
+        {
+          "name": "uncertainty",
+          "met": false,
+          "detail": "55 of 64 flows have a published 95% radius (unsupported ones cannot satisfy completion)"
+        },
+        {
+          "name": "consistency",
+          "met": true,
+          "detail": "global test NOT_REFUTED"
+        },
+        {
+          "name": "detectability",
+          "met": false,
+          "detail": "2 of 9 real rows are testable"
+        }
+      ],
+      "unresolved_work": [
+        "T0003",
+        "T0005",
+        "T0006",
+        "T0007",
+        "T0008",
+        "T0009",
+        "T0010",
+        "T0011",
+        "T0012",
+        "T0018",
+        "T0027",
+        "T0029"
+      ]
+    }
+  },
+  "operations": {
+    "minutes_in_phase": {
+      "DRONE_1": {
+        "ready": 188,
+        "flying": 26,
+        "measuring": 2,
+        "charging": 24
+      },
+      "DRONE_2": {
+        "ready": 4,
+        "flying": 18,
+        "measuring": 3,
+        "charging": 215
+      },
+      "DRONE_3": {
+        "ready": 2,
+        "flying": 27,
+        "measuring": 4,
+        "charging": 207
+      },
+      "DRONE_4": {
+        "ready": 2,
+        "measuring": 3,
+        "charging": 230,
+        "flying": 5
+      },
+      "DRONE_5": {
+        "ready": 2,
+        "flying": 11,
+        "measuring": 4,
+        "charging": 223
+      }
+    },
+    "readings": 9,
+    "repeats": 0,
+    "landing_failures": 0,
+    "urgent_unassigned": [],
+    "route_passes": 0,
+    "fallback_frequency": 0.0,
+    "latency": "no route passes measured",
+    "solver_bounds": [
+      {
+        "stage": "tier-1",
+        "status": "OPTIMAL",
+        "objective": 0,
+        "bound": 0
+      },
+      {
+        "stage": "switching",
+        "status": "OPTIMAL",
+        "objective": 0,
+        "bound": 0
+      },
+      {
+        "stage": "tier-1",
+        "status": "INFEASIBLE",
+        "objective": null,
+        "bound": null
+      }
+    ],
+    "tiny_case_gap": "verified exact (gap 0) by tests/test_planning.py brute-force check"
+  },
+  "replay": {
+    "solver": "ortools 9.15.6755",
+    "budgets": {
+      "deterministic": 0.1,
+      "wall_cap_s": 1.5,
+      "response_budget_s": 2.0
+    },
+    "wall_watchdog_variability": "wall-clock caps and watchdog kills can change a plan between machines; deterministic-time limits are replayable, wall caps are not",
+    "manager_turns": [
+      {
+        "sim_s": 60,
+        "drone": "DRONE_3",
+        "tasks": [
+          "T0004"
+        ]
+      },
+      {
+        "sim_s": 60,
+        "drone": "DRONE_4",
+        "tasks": [
+          "T0002"
+        ]
+      },
+      {
+        "sim_s": 60,
+        "drone": "DRONE_5",
+        "tasks": [
+          "T0001"
+        ]
+      },
+      {
+        "sim_s": 180,
+        "drone": "DRONE_2",
+        "tasks": [
+          "T0016"
+        ]
+      },
+      {
+        "sim_s": 10980,
+        "drone": "DRONE_4",
+        "tasks": [
+          "T0019"
+        ]
+      },
+      {
+        "sim_s": 11280,
+        "drone": "DRONE_1",
+        "tasks": [
+          "T0022"
+        ]
+      },
+      {
+        "sim_s": 11280,
+        "drone": "DRONE_5",
+        "tasks": [
+          "T0020"
+        ]
+      },
+      {
+        "sim_s": 12180,
+        "drone": "DRONE_3",
+        "tasks": [
+          "T0022"
+        ]
+      },
+      {
+        "sim_s": 12240,
+        "drone": "DRONE_2",
+        "tasks": [
+          "T0025"
+        ]
+      }
+    ],
+    "llm": false,
+    "model": null,
+    "wall_s": 4.34
+  },
+  "declared": {
+    "shared": [
+      "same scenario, seed, sensor model and observation-keyed noise",
+      "same accepted initial hypotheses (incident) or reconstruction needs (healthy)",
+      "same task set and attempt cap",
+      "same landing rule (uncertain endpoints permitted, hazards forbidden) and T+04:00 deadline",
+      "one decision per ready drone; routes validated by the independent validator"
+    ],
+    "differences": {
+      "random": "one random eligible task per sortie, landing at the drone's perch",
+      "greedy": "nearest eligible task per sortie, landing at the drone's perch",
+      "lookahead": "best two-task sortie by the joint scorer, landing at the drone's perch",
+      "agent": "scripted manager follow-ups, joint CP-SAT planner and reactive route passes (plus a route pass every 5 min while drones are idle and tasks are open)"
+    }
+  }
+}

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid Ops – Architecture Overview</title>
+<style>
+  :root {
+    --bg:#f6f7f9; --card:#fff; --ink:#14181f; --muted:#5b6472; --line:#d5dae2;
+    --c-in:#64748b; --c-ev:#0e7490; --c-dx:#15803d; --c-ai:#7c3aed; --c-opt:#c2410c; --c-fly:#1d4ed8; --c-out:#be123c;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#0e1116;--card:#171b22;--ink:#e8ebf0;--muted:#98a2b3;--line:#2c3340;
+      --c-in:#94a3b8;--c-ev:#22d3ee;--c-dx:#4ade80;--c-ai:#a78bfa;--c-opt:#fb923c;--c-fly:#60a5fa;--c-out:#fb7185;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;padding:32px 16px 56px}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 28px;max-width:760px}
+  .layout{display:grid;grid-template-columns:1fr 230px;gap:20px}
+  @media(max-width:860px){.layout{grid-template-columns:1fr}}
+  .stack{display:flex;flex-direction:column}
+  .layer{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:10px;padding:14px 16px}
+  .layer h2{margin:0 0 10px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--c)}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+  .box{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--bg)}
+  .box b{display:block;font-size:14px;margin-bottom:2px}
+  .box span{color:var(--muted);font-size:13px}
+  .arrow{align-self:center;color:var(--muted);font-size:12px;text-align:center;padding:5px 0;line-height:1.2}
+  .arrow:before{content:"↓";display:block;font-size:20px;color:var(--ink)}
+  .in{--c:var(--c-in)} .ev{--c:var(--c-ev)} .dx{--c:var(--c-dx)} .ai{--c:var(--c-ai)}
+  .opt{--c:var(--c-opt)} .fly{--c:var(--c-fly)} .out{--c:var(--c-out)}
+  .side{display:flex;flex-direction:column;gap:14px}
+  .note{background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:14px}
+  .note h3{margin:0 0 6px;font-size:13px}
+  .note p{margin:0;color:var(--muted);font-size:13px}
+  .loop{border:2px dashed var(--c-fly);border-radius:10px;padding:12px;text-align:center;color:var(--c-fly);font-weight:600;font-size:13px}
+  .facts{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .facts div{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;color:var(--muted)}
+  .facts b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Grid Ops: evidence-driven outage investigation</h1>
+  <p class="sub">After a storm, we diagnose <em>why</em> the power went out. Five drones gather measurements, three analysis engines turn them into evidence, two LLM agents form and test root-cause hypotheses, and an optimizer re-routes the fleet every time something new is learned. The loop stops once the cause is supported.</p>
+
+  <div class="layout">
+    <div class="stack">
+
+      <div class="layer in" style="--c:var(--c-in)">
+        <h2>1 · Inputs</h2>
+        <div class="row">
+          <div class="box"><b>Storm reports</b><span>Six incomplete, possibly misleading hints on where to start</span></div>
+          <div class="box"><b>Grid map &amp; topology</b><span>Real Bavarian overhead lines, substations, circuits</span></div>
+          <div class="box"><b>Operator console</b><span>Manual dispatch, scenario choice, approvals</span></div>
+        </div>
+      </div>
+      <div class="arrow">seed hypotheses + network model</div>
+
+      <div class="layer ev" style="--c:var(--c-ev)">
+        <h2>2 · Shared evidence (single source of truth)</h2>
+        <div class="row">
+          <div class="box"><b>Drone readings</b><span>Voltage / current / power, line clearance, temperature, conductor motion</span></div>
+          <div class="box"><b>Charging observations</b><span>Which lines are live (a drone can only recharge on an energized line)</span></div>
+          <div class="box"><b>Public world state</b><span>Immutable snapshots; one writer; hidden truth never enters</span></div>
+        </div>
+      </div>
+      <div class="arrow">every new reading triggers re-analysis</div>
+
+      <div class="layer dx" style="--c:var(--c-dx)">
+        <h2>3 · Diagnostic engines (deterministic)</h2>
+        <div class="row">
+          <div class="box"><b>Power-flow estimation</b><span>Reduced DC model fitted to readings; reports what is and isn't observable</span></div>
+          <div class="box"><b>Consistency checks</b><span>Do readings fit the assumed topology? Flags bad data and unsupported claims</span></div>
+          <div class="box"><b>Hazard &amp; coverage</b><span>Vegetation, sag, heat, wind near each line; what has been inspected vs. still unknown</span></div>
+        </div>
+      </div>
+      <div class="arrow">diagnostics + uncertainty</div>
+
+      <div class="layer ai" style="--c:var(--c-ai)">
+        <h2>4 · Reasoning (LLM agents, async)</h2>
+        <div class="row">
+          <div class="box"><b>Manager</b><span>Ranks root-cause hypotheses, explains every revision with evidence, recommends the operator action, decides when to stop</span></div>
+          <div class="box"><b>Planner</b><span>Turns open questions into measurement needs: what to measure, where, and how it could change the diagnosis</span></div>
+        </div>
+      </div>
+      <div class="arrow">measurement needs + candidate sites</div>
+
+      <div class="layer opt" style="--c:var(--c-opt)">
+        <h2>5 · Route optimization</h2>
+        <div class="row">
+          <div class="box"><b>Multi-drone route solver</b><span>CP-SAT; picks stops per drone to maximize unique evidence, reroutes airborne drones in &lt;1 s</span></div>
+          <div class="box"><b>Route validator</b><span>Battery, dwell time, deadline, and a guaranteed recharge landing on a live line</span></div>
+        </div>
+      </div>
+      <div class="arrow">validated routes (or safe landing fallback)</div>
+
+      <div class="layer fly" style="--c:var(--c-fly)">
+        <h2>6 · Fleet execution</h2>
+        <div class="row">
+          <div class="box"><b>5 drones</b><span>Fly to points on the lines, measure, land on live circuits to recharge</span></div>
+          <div class="box"><b>Simulation clock</b><span>Advances time, applies state changes, publishes new readings</span></div>
+        </div>
+      </div>
+      <div class="arrow">new readings → back to layer 2</div>
+
+      <div class="layer out" style="--c:var(--c-out)">
+        <h2>Output</h2>
+        <div class="row">
+          <div class="box"><b>Root cause + recommended action</b><span>Evidence-linked, with remaining uncertainty stated</span></div>
+          <div class="box"><b>Live map &amp; explanation log</b><span>Hypotheses, readings, coverage and routes for the operator</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="loop">↻ Closed loop<br><span style="font-weight:400">Layers 2 → 6 repeat on every reading until the cause is supported</span></div>
+      <div class="note">
+        <h3>Hidden synthetic grid</h3>
+        <p>A full AC power-flow simulator (pandapower) plays "reality". Our system only ever sees its sensor readings, never the answer.</p>
+      </div>
+      <div class="note">
+        <h3>Isolated evaluation</h3>
+        <p>Scores the diagnosis against the hidden truth. Never feeds back into the agents.</p>
+      </div>
+      <div class="note">
+        <h3>Why not just reconstruct all flows?</h3>
+        <p>Measure only what could change the diagnosis. Full flow reconstruction is a separate benchmark mode.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="facts">
+    <div><b>5</b> drones</div>
+    <div><b>30 min</b> airtime, <b>60 km/h</b></div>
+    <div><b>3 h</b> recharge, live lines only</div>
+    <div><b>4 h</b> deadline</div>
+    <div>Python · LangChain · pandapower · SciPy · OR-Tools · Streamlit</div>
+  </div>
+</div>
+</body>
+</html>

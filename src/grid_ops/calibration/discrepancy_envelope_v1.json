@@ -1,0 +1,351 @@
+{
+ "bounds": {
+  "LINE_001": {
+   "bound_mw": 46.3474,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_002": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_003": {
+   "bound_mw": 1.003,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_004": {
+   "bound_mw": 2.0647,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_005": {
+   "bound_mw": 0.0002,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_006": {
+   "bound_mw": 0.0002,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_007": {
+   "bound_mw": 0.9292,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_008": {
+   "bound_mw": 0.0001,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_009": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_010": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 0.625,
+   "sample_count": 12
+  },
+  "LINE_011": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 0.75,
+   "sample_count": 12
+  },
+  "LINE_012": {
+   "bound_mw": 0.0002,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_013": {
+   "bound_mw": 0.9292,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_014": {
+   "bound_mw": 92.2397,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_015": {
+   "bound_mw": 0.0147,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_016": {
+   "bound_mw": 2.8137,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_017": {
+   "bound_mw": 101.7073,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_018": {
+   "bound_mw": 101.9686,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_019": {
+   "bound_mw": 1.6125,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_020": {
+   "bound_mw": 56.0437,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_021": {
+   "bound_mw": 0.1524,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_022": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_023": {
+   "bound_mw": 44.0876,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_024": {
+   "bound_mw": 1.9516,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_025": {
+   "bound_mw": 0.8469,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_026": {
+   "bound_mw": 1.5626,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_027": {
+   "bound_mw": 0.098,
+   "empirical_coverage": 0.75,
+   "sample_count": 12
+  },
+  "LINE_028": {
+   "bound_mw": 0.9265,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_029": {
+   "bound_mw": 0.0034,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_030": {
+   "bound_mw": 1.5418,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_031": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_032": {
+   "bound_mw": 0.004,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_033": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_034": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_035": {
+   "bound_mw": 0.0398,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_036": {
+   "bound_mw": 1.6016,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_037": {
+   "bound_mw": 0.0617,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_038": {
+   "bound_mw": 0.0973,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_039": {
+   "bound_mw": 0.96,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_040": {
+   "bound_mw": 0.0035,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_041": {
+   "bound_mw": 0.1496,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_042": {
+   "bound_mw": 0.012,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_043": {
+   "bound_mw": 93.7621,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_044": {
+   "bound_mw": 49.2575,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_045": {
+   "bound_mw": 53.2376,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_046": {
+   "bound_mw": 0.1938,
+   "empirical_coverage": 0.625,
+   "sample_count": 12
+  },
+  "LINE_047": {
+   "bound_mw": 48.4373,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_048": {
+   "bound_mw": 2.8563,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_049": {
+   "bound_mw": 0.1939,
+   "empirical_coverage": 0.625,
+   "sample_count": 12
+  },
+  "LINE_050": {
+   "bound_mw": 2.7992,
+   "empirical_coverage": 0.75,
+   "sample_count": 12
+  },
+  "LINE_051": {
+   "bound_mw": 2.3244,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_052": {
+   "bound_mw": 1.1588,
+   "empirical_coverage": 0.625,
+   "sample_count": 12
+  },
+  "LINE_053": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_054": {
+   "bound_mw": 0.8325,
+   "empirical_coverage": 0.75,
+   "sample_count": 12
+  },
+  "LINE_055": {
+   "bound_mw": 0.8325,
+   "empirical_coverage": 0.75,
+   "sample_count": 12
+  },
+  "LINE_056": {
+   "bound_mw": 1.1103,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_057": {
+   "bound_mw": 0.0135,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_058": {
+   "bound_mw": 0.8471,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_059": {
+   "bound_mw": 0.0005,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_060": {
+   "bound_mw": 0.8373,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_061": {
+   "bound_mw": 1.1024,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_062": {
+   "bound_mw": 0.0238,
+   "empirical_coverage": 0.875,
+   "sample_count": 12
+  },
+  "LINE_063": {
+   "bound_mw": 0.0,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  },
+  "LINE_064": {
+   "bound_mw": 1.5549,
+   "empirical_coverage": 1.0,
+   "sample_count": 12
+  }
+ },
+ "calibration_seeds": [
+  100,
+  101,
+  102,
+  103,
+  104,
+  105,
+  106,
+  107,
+  108,
+  109,
+  110,
+  111
+ ],
+ "domain": "healthy_benchmark operating family: all circuits in service, epoch E0, seeded loads 10-60 MW, generation 5-40 MW, boundary exchanges +-15 MW",
+ "quantile": 0.95,
+ "validation_seeds": [
+  112,
+  113,
+  114,
+  115,
+  116,
+  117,
+  118,
+  119
+ ],
+ "version": "discrepancy-v1"
+}
