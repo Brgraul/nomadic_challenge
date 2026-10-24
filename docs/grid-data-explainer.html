@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Augsburg Grid Data Primer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a field-briefing sheet. Narrow reading column for prose, full-width bands for the map and the calculators. */
+:root {
+  --bg: #eef2f1;
+  --surface: #ffffff;
+  --sunk: #e3e9e7;
+  --ink: #15201e;
+  --muted: #586864;
+  --rule: #cfd8d5;
+  --kv110: #1f6aa5;
+  --kv380: #c2452a;
+  --multi: #7a4da6;
+  --storm: #e3962a;
+  --report: #b23a5a;
+  --hi: #d49a00;
+  --ok: #2f7d4f;
+  --warn: #b5541c;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --font-body: "Barlow", "Helvetica Neue", Arial, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1413; --surface: #161f1d; --sunk: #1d2826; --ink: #e2ebe8; --muted: #93a49f; --rule: #2b3836;
+    --kv110: #5ea9e2; --kv380: #f0805f; --multi: #b48de2; --storm: #e9a23b; --report: #e57d99; --hi: #ffcc33;
+    --ok: #6cc28f; --warn: #f0a070; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1413; --surface: #161f1d; --sunk: #1d2826; --ink: #e2ebe8; --muted: #93a49f; --rule: #2b3836;
+  --kv110: #5ea9e2; --kv380: #f0805f; --multi: #b48de2; --storm: #e9a23b; --report: #e57d99; --hi: #ffcc33;
+  --ok: #6cc28f; --warn: #f0a070; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 64px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; }
+.prose { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.1; margin: 0; }
+h1 { font-size: clamp(2.4rem, 6vw, 3.8rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.7rem, 3.4vw, 2.3rem); font-weight: 600; }
+h3 { font-size: 1.25rem; font-weight: 600; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-data); font-size: 0.86em; }
+code { background: var(--sunk); padding: 0.05em 0.35em; border-radius: 3px; }
+.eyebrow { font-family: var(--font-data); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+section { padding-block: 56px 0; display: grid; gap: 20px; }
+a { color: var(--kv110); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+
+/* header */
+header { padding-block: 48px 8px; display: grid; gap: 18px; border-bottom: 1px solid var(--rule); padding-bottom: 32px; }
+.lede { font-size: 1.15rem; max-width: 62ch; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 28px; font-family: var(--font-data); font-size: 0.85rem; color: var(--muted); }
+.facts b { color: var(--ink); font-weight: 500; font-size: 1.05rem; }
+.stamp { display: inline-block; border: 1.5px solid var(--report); color: var(--report); font-family: var(--font-data); font-size: 0.72rem; letter-spacing: 0.1em; padding: 3px 8px; transform: rotate(-1.5deg); justify-self: start; }
+
+/* map */
+.mapgrid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .mapgrid { grid-template-columns: 1fr; } }
+.mapbox { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.maptools { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border-bottom: 1px solid var(--rule); align-items: center; }
+.maptools .lbl { font-family: var(--font-data); font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+.chip { border: 1px solid var(--rule); background: var(--bg); border-radius: 999px; padding: 3px 10px; font-size: 0.8rem; cursor: pointer; font-family: var(--font-data); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip:hover { border-color: var(--ink); }
+svg#map { display: block; width: 100%; height: auto; touch-action: manipulation; }
+#map .seg { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+#map .seg.k110 { stroke: var(--kv110); stroke-width: 2.4; }
+#map .seg.k380 { stroke: var(--kv380); stroke-width: 3.6; }
+#map .seg.multi { stroke: var(--multi); stroke-width: 3; stroke-dasharray: 9 6; }
+#map .seg.dim { opacity: 0.18; }
+#map .seg.lit { stroke: var(--hi); stroke-width: 5; opacity: 1; }
+#map .seg.sel { stroke: var(--hi); stroke-width: 7; }
+#map .hit { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; }
+#map .storm { fill: var(--storm); fill-opacity: 0.13; stroke: var(--storm); stroke-width: 1.5; stroke-dasharray: 4 4; }
+#map .rep { fill: var(--report); fill-opacity: 0.05; stroke: var(--report); stroke-opacity: 0.45; stroke-width: 1; }
+#map .rep.on { fill-opacity: 0.16; stroke-opacity: 1; stroke-width: 2; }
+#map .replbl { font-family: var(--font-data); font-size: 15px; fill: var(--report); font-weight: 500; }
+#map .sub { fill: var(--surface); stroke: var(--ink); stroke-width: 2; cursor: pointer; }
+#map .sub.sel { fill: var(--hi); }
+#map .sublbl { font-family: var(--font-data); font-size: 13px; fill: var(--ink); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; pointer-events: none; }
+#map .bnd { fill: var(--surface); stroke: var(--muted); stroke-width: 1.5; }
+#map .pt { fill: var(--muted); }
+#map .frame { fill: none; stroke: var(--rule); stroke-width: 1; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px; border-top: 1px solid var(--rule); font-size: 0.8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 22px; height: 0; border-top: 3px solid; display: inline-block; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 18px; display: grid; gap: 12px; min-width: 0; }
+.panel h3 { font-size: 1.5rem; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 0.9rem; }
+.kv dt { color: var(--muted); font-family: var(--font-data); font-size: 0.78rem; padding-top: 2px; }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.flag { display: inline-block; font-family: var(--font-data); font-size: 0.72rem; padding: 2px 7px; border-radius: 3px; background: var(--sunk); margin: 0 4px 4px 0; }
+.flag.crit { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.flag.off { background: color-mix(in srgb, var(--report) 18%, transparent); color: var(--report); }
+.flag.multi { background: color-mix(in srgb, var(--hi) 22%, transparent); }
+.linkbtn { background: none; border: none; padding: 0; color: var(--kv110); cursor: pointer; font-family: var(--font-data); font-size: 0.85rem; text-decoration: underline; text-underline-offset: 2px; }
+
+/* timeline */
+.timeline { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 18px 18px 8px; overflow-x: auto; }
+.timeline svg { display: block; min-width: 640px; width: 100%; height: auto; }
+.timeline text { font-family: var(--font-data); fill: var(--muted); font-size: 11px; }
+.timeline .tl-dot { fill: var(--report); cursor: pointer; }
+.timeline .tl-name { fill: var(--ink); font-size: 12px; }
+
+/* files */
+.files { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.file { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.file .fname { font-family: var(--font-data); font-size: 0.9rem; font-weight: 500; }
+.file .sample { font-family: var(--font-data); font-size: 0.74rem; background: var(--sunk); padding: 8px 10px; border-radius: 4px; overflow-x: auto; white-space: pre; color: var(--muted); }
+
+/* tables */
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--font-data); font-weight: 500; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--sunk); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-data); font-size: 0.82rem; }
+tr:last-child td { border-bottom: none; }
+tbody tr.clickable { cursor: pointer; }
+tbody tr.clickable:hover { background: var(--sunk); }
+.bar { height: 8px; background: var(--sunk); border-radius: 2px; min-width: 80px; }
+.bar i { display: block; height: 100%; background: var(--ink); border-radius: 2px; }
+
+/* calc blocks */
+.calcs { display: grid; gap: 14px; }
+.calc { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 20px; display: grid; gap: 12px; }
+.calc .head { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+.calc .q { font-family: var(--font-display); font-size: 1.35rem; font-weight: 600; }
+.calc .uses { font-family: var(--font-data); font-size: 0.74rem; color: var(--muted); }
+.calc p { max-width: 75ch; }
+.result { border-left: 3px solid var(--kv110); padding: 4px 0 4px 14px; max-width: 75ch; }
+.controls { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: end; }
+.controls label { display: grid; gap: 4px; font-size: 0.8rem; color: var(--muted); font-family: var(--font-data); }
+.controls input[type=range] { width: 160px; accent-color: var(--kv110); }
+.controls input[type=number] { width: 90px; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); color: var(--ink); font-family: var(--font-data); }
+.out { display: flex; flex-wrap: wrap; gap: 10px 32px; }
+.out div { display: grid; }
+.out b { font-family: var(--font-display); font-size: 2rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.out span { font-size: 0.78rem; color: var(--muted); font-family: var(--font-data); }
+.gauge { display: grid; gap: 6px; }
+.gauge .row { display: grid; grid-template-columns: 170px 1fr 70px; gap: 10px; align-items: center; font-size: 0.82rem; }
+@media (max-width: 560px) { .gauge .row { grid-template-columns: 110px 1fr 60px; } }
+.gauge .track { height: 14px; background: var(--sunk); border-radius: 2px; position: relative; overflow: hidden; }
+.gauge .fill { position: absolute; inset: 0 auto 0 0; background: var(--kv110); }
+.gauge .fill.over { background: var(--warn); }
+
+/* field guide */
+.fieldfile { display: grid; gap: 10px; }
+.fieldfile + .fieldfile { margin-top: 18px; }
+.fieldfile .fhead { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.fieldfile .fhead .fname { font-family: var(--font-data); font-size: 1rem; font-weight: 500; }
+table.fields { min-width: 820px; }
+table.fields td:first-child { font-family: var(--font-data); font-size: 0.8rem; white-space: nowrap; font-weight: 500; }
+table.fields td.ex { font-family: var(--font-data); font-size: 0.76rem; color: var(--muted); max-width: 190px; overflow-wrap: anywhere; }
+table.fields td.mean { min-width: 260px; }
+table.fields td.help { min-width: 260px; }
+.use { display: inline-block; font-family: var(--font-data); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; }
+.use.key { background: var(--kv110); color: var(--surface); }
+.use.mid { background: var(--sunk); color: var(--ink); border: 1px solid var(--rule); }
+.use.lo { color: var(--muted); border: 1px dashed var(--rule); }
+.uselegend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.85rem; color: var(--muted); }
+
+/* caveats */
+.caveats { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0; border-top: 1px solid var(--rule); }
+.cav { padding: 16px 16px 16px 0; border-bottom: 1px solid var(--rule); display: grid; gap: 4px; }
+.cav b { font-family: var(--font-display); font-size: 1.1rem; font-weight: 600; }
+footer { padding-top: 56px; font-size: 0.8rem; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { #map .seg, #map .rep { transition: opacity .15s, stroke-width .15s, fill-opacity .15s; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header>
+  <span class="stamp">SYNTHETIC EXERCISE · SYN_BAVARIA_WIND_01</span>
+  <span class="eyebrow">Hackathon data package · south-west of Augsburg, Bavaria</span>
+  <h1>Augsburg Grid Data Primer</h1>
+  <p class="lede">The package gives you <strong>real power-line locations</strong> from OpenStreetMap and a <strong>made-up windstorm</strong> on top of them. A storm hit, six vague reports came in over two hours, and somewhere in the network there are hidden faults. Your drones have to find them. This page shows what the data contains, what it cannot tell you, and what is worth calculating from it.</p>
+  <div class="facts">
+    <span><b>64</b> line sections</span>
+    <span><b>198 km</b> of overhead line</span>
+    <span><b>59</b> points, incl. <b>15</b> substations</span>
+    <span><b>6</b> public reports</span>
+    <span><b>4 h</b> scenario window</span>
+    <span><b>110 / 380 kV</b> only</span>
+  </div>
+</header>
+
+<section id="map-section">
+  <div class="prose" style="display:grid;gap:8px">
+    <span class="eyebrow">The network</span>
+    <h2>Everything on one map</h2>
+    <p>Tap a line or a substation to see its fields. Pick a report to see which lines sit inside its area. The orange dashed shape is the storm footprint.</p>
+  </div>
+  <div class="mapgrid">
+    <div class="mapbox">
+      <div class="maptools" id="reportChips"><span class="lbl">Report</span></div>
+      <div class="maptools"><span class="lbl">View</span>
+        <button class="chip" id="zoomAll" aria-pressed="true">Whole area</button>
+        <button class="chip" id="zoomHub" aria-pressed="false">Oberottmarshausen hub</button>
+      </div>
+      <svg id="map" role="img" aria-label="Map of the mapped 110 kV and 380 kV lines, substations, storm footprint and report areas"></svg>
+      <div class="legend">
+        <span><i class="sw" style="border-color:var(--kv110)"></i>110 kV</span>
+        <span><i class="sw" style="border-color:var(--kv380);border-top-width:4px"></i>380 kV</span>
+        <span><i class="sw" style="border-color:var(--multi);border-top-style:dashed"></i>several voltages tagged</span>
+        <span><svg width="12" height="12" aria-hidden="true"><rect x="1" y="1" width="10" height="10" fill="var(--surface)" stroke="var(--ink)" stroke-width="2"/></svg>substation</span>
+        <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="var(--surface)" stroke="var(--muted)" stroke-width="1.5"/></svg>cut at map edge</span>
+        <span><svg width="14" height="12" aria-hidden="true"><rect x="1" y="1" width="12" height="10" fill="var(--storm)" fill-opacity=".25" stroke="var(--storm)" stroke-dasharray="3 2"/></svg>storm footprint</span>
+        <span><svg width="14" height="12" aria-hidden="true"><rect x="1" y="1" width="12" height="10" fill="var(--report)" fill-opacity=".15" stroke="var(--report)"/></svg>report area</span>
+      </div>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </div>
+</section>
+
+<section>
+  <div class="prose" style="display:grid;gap:8px">
+    <span class="eyebrow">The storm, minute by minute</span>
+    <h2>Six reports in under two hours</h2>
+    <p>Only <code>initial_information.csv</code> describes events. Every report points at a <em>rough box</em>, never at a specific line. One fact is certain: <strong>LINE_024 was switched off on purpose</strong> (SYN_REPORT_03).</p>
+  </div>
+  <div class="timeline"><svg id="tl" viewBox="0 0 1000 150" aria-label="Timeline of the six reports across the four-hour window"></svg></div>
+</section>
+
+<section>
+  <div class="prose" style="display:grid;gap:8px">
+    <span class="eyebrow">What's in the folder</span>
+    <h2>Six files, three kinds of thing</h2>
+    <p>Lines and points are the grid. Reports and areas are the storm. The CSV and GeoJSON files hold the same rows; use CSV in a spreadsheet and GeoJSON in a map tool or code. Every column is explained in the <a href="#fields">field guide</a> below.</p>
+  </div>
+  <div class="files">
+    <div class="file">
+      <span class="eyebrow">Grid · lines</span>
+      <span class="fname">grid_segments.csv / .geojson</span>
+      <p>64 line sections. Each has two ends (<code>from_node</code>, <code>to_node</code>), a voltage, a length and the full path shape. All are overhead lines.</p>
+      <div class="sample">LINE_024  SUBSTATION_07 → SUBSTATION_01
+110 kV · 26.84 km · circuits 1 · cables 3</div>
+      <p class="muted" style="font-size:.85rem">Useful fields: <code>voltage_kv</code>, <code>voltages_kv</code>, <code>length_km</code>, <code>circuits</code>, <code>cables</code>, <code>geometry_wkt</code>, <code>source_data_quality</code> (what is missing).</p>
+    </div>
+    <div class="file">
+      <span class="eyebrow">Grid · points</span>
+      <span class="fname">grid_nodes.csv / .geojson</span>
+      <p>59 points where lines end or meet. <code>node_type</code> tells you what the point is:</p>
+      <div class="sample">junction             20  several line ends meet
+boundary_endpoint    19  line cut at map edge
+abstract_substation  15  substation area
+intermediate          4  two lines join end to end
+terminal              1  line just ends</div>
+      <p class="muted" style="font-size:.85rem"><code>connected_segments</code> lists the lines that touch the point.</p>
+    </div>
+    <div class="file">
+      <span class="eyebrow">Storm · reports</span>
+      <span class="fname">initial_information.csv</span>
+      <p>Six fictional reports: weather alert, a fallen branch, a protection trip, a flash, ticking and warmth, a swinging span. Each has a time (<code>T+01:03</code>), a confidence and a free-text description.</p>
+      <div class="sample">SYN_REPORT_04  visual_flash_report  T+01:03
+"brief orange flash near a private industrial site"</div>
+    </div>
+    <div class="file">
+      <span class="eyebrow">Storm · areas</span>
+      <span class="fname">scenario_context.geojson</span>
+      <p>The storm footprint polygon plus one box per report. These are the only locations the reports give you.</p>
+    </div>
+    <div class="file">
+      <span class="eyebrow">Storm · settings</span>
+      <span class="fname">scenario_public_config.json</span>
+      <p>The same reports and areas in one JSON file, plus the study box (10.45–10.88 E, 48.09–48.38 N) and the 4-hour window. Easiest file to load in code.</p>
+    </div>
+    <div class="file">
+      <span class="eyebrow">Overview</span>
+      <span class="fname">network_map.png</span>
+      <p>A printable A3 version of the map above. Handy on the wall; not a data source.</p>
+    </div>
+  </div>
+</section>
+
+<section id="fields">
+  <div class="prose" style="display:grid;gap:8px">
+    <span class="eyebrow">Field guide</span>
+    <h2>Every column, in plain words</h2>
+    <p>For each file, here is every field: an example value from the data, what it means, and how it helps a drone inspection team. The tag tells you how much to care.</p>
+  </div>
+  <div class="uselegend">
+    <span><span class="use key">key</span>you will use this all the time</span>
+    <span><span class="use mid">useful</span>handy for some calculations or the story</span>
+    <span><span class="use lo">skip</span>read once, then ignore</span>
+  </div>
+
+  <div class="fieldfile">
+    <div class="fhead"><span class="fname">grid_segments.csv / .geojson</span><span class="muted">one row per line section · 64 rows</span></div>
+    <div class="tablewrap"><table class="fields">
+      <thead><tr><th>Field</th><th>Example</th><th>What it means</th><th>How it helps us</th></tr></thead>
+      <tbody>
+        <tr><td>segment_id</td><td class="ex">LINE_024</td><td class="mean">The name tag of this stretch of line. Every other file refers to lines by this ID.</td><td class="help"><span class="use key">key</span>The ID you put on a drone mission ("inspect LINE_026") and on a fault report.</td></tr>
+        <tr><td>component_id</td><td class="ex">COMPONENT_01</td><td class="mean">Which group of joined-up lines this one belongs to. Lines in the same group link to each other through shared end points on this map. There are 7 groups; COMPONENT_01 holds 54 of the 64 lines.</td><td class="help"><span class="use mid">useful</span>Tells you which lines a drone can follow one after another without jumping across empty land. It does not mean "these lines lose power together".</td></tr>
+        <tr><td>from_node<br>to_node</td><td class="ex">SUBSTATION_07 → SUBSTATION_01</td><td class="mean">The two end points of the line, as IDs from <code>grid_nodes</code>. The order means nothing; it is not the direction power flows.</td><td class="help"><span class="use key">key</span>This is how you build the network: points are stops, lines are roads between them. You need it to find neighbouring lines, critical links and where a flight along the line starts and ends.</td></tr>
+        <tr><td>voltage_kv</td><td class="ex">110</td><td class="mean">The highest voltage recorded for the line, in kilovolts. Here it is always 110 (regional lines) or 380 (the big national backbone).</td><td class="help"><span class="use key">key</span>380 kV lines have taller towers, more wires and need a bigger safety gap for the drone. A fault there usually matters more. It does <em>not</em> prove the line is switched on.</td></tr>
+        <tr><td>voltages_kv</td><td class="ex">380;110;110</td><td class="mean">Every voltage recorded for the line. More than one value means the same towers carry several circuits at different voltages. Semicolon-separated in CSV, a list in GeoJSON.</td><td class="help"><span class="use mid">useful</span>5 lines carry mixed voltages (dashed on the map). One damaged tower there hits both systems at once.</td></tr>
+        <tr><td>circuits</td><td class="ex">2</td><td class="mean">How many separate electrical circuits the line carries, according to the mapper. Blank on 21 lines, which means "not given", not zero.</td><td class="help"><span class="use mid">useful</span>More circuits means more backup if one fails, and more to lose if the tower falls. It is not a capacity figure.</td></tr>
+        <tr><td>cables</td><td class="ex">6</td><td class="mean">How many conductors (wires, not counting the earth wire on top) the mapper counted. Three-phase power uses 3 wires per circuit, so 6 usually means 2 circuits.</td><td class="help"><span class="use mid">useful</span>Tells the drone operator what they should see. A count that doesn't match can flag a broken or missing wire. You can also estimate <code>circuits</code> as cables ÷ 3 when circuits is blank.</td></tr>
+        <tr><td>length_km</td><td class="ex">26.84</td><td class="mean">How long the line is inside the study area, in kilometres. Lines go from 0.04 km to 26.8 km.</td><td class="help"><span class="use key">key</span>Your flight distance. It drives flight time, battery count and how many lines fit into the 4 hours.</td></tr>
+        <tr><td>asset_type</td><td class="ex">overhead_power_line</td><td class="mean">What kind of thing this is. All 64 are overhead lines.</td><td class="help"><span class="use lo">skip</span>Good news: there are no underground cables, so every line is visible from the air.</td></tr>
+        <tr><td>source_data_quality</td><td class="ex">circuits missing; name missing; start_date missing</td><td class="mean">The list of things the mapper left out for this line.</td><td class="help"><span class="use mid">useful</span>Tells you which fields to distrust for a given line before you build a calculation on them.</td></tr>
+        <tr><td>notes</td><td class="ex">Source geometry clipped to study bounds…</td><td class="mean">The same sentence on every line: the shape was cut at the edge of the study box, and lines that cross are not treated as connected.</td><td class="help"><span class="use lo">skip</span>Read it once. It is a reminder, not data.</td></tr>
+        <tr><td>source_fid<br>source_id</td><td class="ex">1201110<br>28871549</td><td class="mean">The line's ID in the original OpenInfrastructureMap / OpenStreetMap export. <code>source_id</code> is the OpenStreetMap ID.</td><td class="help"><span class="use lo">skip</span>Only for looking the line up on openstreetmap.org, for example to see tower tags or photos.</td></tr>
+        <tr><td>from_connection_lon<br>from_connection_lat<br>to_connection_lon<br>to_connection_lat</td><td class="ex">10.8380, 48.2370</td><td class="mean">The exact position of each end of the wire. At a substation this differs from the substation point, because that point sits in the middle of the station.</td><td class="help"><span class="use mid">useful</span>Use these as the start and end waypoints of a line inspection, not the substation marker.</td></tr>
+        <tr><td>geometry_wkt</td><td class="ex">LINESTRING (10.8414 48.1849, 10.8437 48.1893, …)</td><td class="mean">The full path of the line as a chain of longitude/latitude points, written as text (WKT). In OpenStreetMap the bend points are often towers, but that is not guaranteed. The GeoJSON holds the same path as its geometry.</td><td class="help"><span class="use key">key</span>This is the flight path. Clip it against the storm and report areas to see which lines are affected, and follow its points as waypoints.</td></tr>
+        <tr><td>source_operator <span class="muted">(GeoJSON only)</span></td><td class="ex">Lechwerke</td><td class="mean">The company that runs the line, according to OpenStreetMap. Amprion runs the 380 kV national lines, Lechwerke (LEW) the regional 110 kV lines, DB Energie the railway's own power lines. Blank on 28 lines.</td><td class="help"><span class="use mid">useful</span>Who you would call with a finding. Good detail for the demo and the fault report.</td></tr>
+        <tr><td>source_location <span class="muted">(GeoJSON only)</span></td><td class="ex">overhead</td><td class="mean">Above or below ground. Always "overhead" here.</td><td class="help"><span class="use lo">skip</span>Same story as <code>asset_type</code>.</td></tr>
+        <tr><td>source_construction<br>source_disused <span class="muted">(GeoJSON only)</span></td><td class="ex">0</td><td class="mean">1 would mean "still being built" or "abandoned". Every line has 0.</td><td class="help"><span class="use lo">skip</span>Every line is in service on paper.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="fieldfile">
+    <div class="fhead"><span class="fname">grid_nodes.csv / .geojson</span><span class="muted">one row per point · 59 rows</span></div>
+    <div class="tablewrap"><table class="fields">
+      <thead><tr><th>Field</th><th>Example</th><th>What it means</th><th>How it helps us</th></tr></thead>
+      <tbody>
+        <tr><td>node_id</td><td class="ex">SUBSTATION_07<br>NODE_027</td><td class="mean">The name tag of the point. The prefix tells you if it is a substation or a plain line point.</td><td class="help"><span class="use key">key</span>Links back to <code>from_node</code> / <code>to_node</code> on the lines.</td></tr>
+        <tr><td>component_id</td><td class="ex">COMPONENT_01</td><td class="mean">The group of joined lines this point belongs to. Same meaning as on the lines.</td><td class="help"><span class="use mid">useful</span>Same use as on the lines.</td></tr>
+        <tr><td>node_type</td><td class="ex">junction</td><td class="mean">What the point is. <code>abstract_substation</code> (15): a substation area. <code>junction</code> (20): 3–4 line ends meet. <code>intermediate</code> (4): two lines join end to end. <code>terminal</code> (1): a line just ends. <code>boundary_endpoint</code> (19): the study box cut the line here.</td><td class="help"><span class="use key">key</span>Separates real infrastructure from map artefacts. Never report a boundary endpoint as a broken line end, and never plan to land there expecting a station.</td></tr>
+        <tr><td>name</td><td class="ex">Umspannwerk Bobingen</td><td class="mean">The substation's name from OpenStreetMap. "Umspannwerk" or "UW" means substation, "Übernahmestelle" is a handover point between two companies. Only substations have names, and only 11 of the 15.</td><td class="help"><span class="use mid">useful</span>Human-friendly labels for the map, the mission plan and the demo.</td></tr>
+        <tr><td>voltage_kv<br>voltages_kv</td><td class="ex">110;380</td><td class="mean">The voltages of the lines touching this point. They are copied from the lines and do not prove the lines connect inside.</td><td class="help"><span class="use mid">useful</span>A point with both 110 and 380 (SUBSTATION_07) is where the national grid feeds the regional one, so it is the most important place on the map.</td></tr>
+        <tr><td>connected_segments</td><td class="ex">LINE_024;LINE_040;LINE_041;LINE_064</td><td class="mean">The lines that end at this point.</td><td class="help"><span class="use key">key</span>The count tells you how much depends on this point. SUBSTATION_07 has 14 lines, the next busiest has 4. It is also how you hop from one line to the next when planning a route.</td></tr>
+        <tr><td>lon, lat<br>longitude, latitude</td><td class="ex">10.4937, 48.2475</td><td class="mean">Where the point is, in degrees. The two pairs hold identical numbers.</td><td class="help"><span class="use key">key</span>Waypoints and possible launch or landing sites. Use one pair and ignore the other.</td></tr>
+        <tr><td>is_boundary</td><td class="ex">False</td><td class="mean">True when the point is only where the study box cut a line. Same as <code>node_type = boundary_endpoint</code>.</td><td class="help"><span class="use mid">useful</span>Quick filter to drop the 19 fake line ends from any analysis.</td></tr>
+        <tr><td>source_data_quality</td><td class="ex">Endpoint lies within a mapped ≥50 kV substation polygon…</td><td class="mean">How the point was made: either exact matching line ends, or a line ending inside a substation's outline.</td><td class="help"><span class="use lo">skip</span>Read once. It is the reason substation connections are "probable", not proven.</td></tr>
+        <tr><td>notes</td><td class="ex">Node point is polygon representative point…</td><td class="mean">For substations: the point is the middle of the station outline. For boundary points: the line was cut here.</td><td class="help"><span class="use lo">skip</span>Read once.</td></tr>
+        <tr><td>source_substation_fid<br>source_substation_id</td><td class="ex">251630<br>87350976</td><td class="mean">The ID of the substation outline in the original export. Filled only for substations.</td><td class="help"><span class="use lo">skip</span>Only for looking the station up on OpenStreetMap to see its real outline and fence line.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="fieldfile">
+    <div class="fhead"><span class="fname">initial_information.csv</span><span class="muted">one row per report · 6 rows</span></div>
+    <div class="tablewrap"><table class="fields">
+      <thead><tr><th>Field</th><th>Example</th><th>What it means</th><th>How it helps us</th></tr></thead>
+      <tbody>
+        <tr><td>information_id</td><td class="ex">SYN_REPORT_03</td><td class="mean">The report's name tag. The same ID names its area in <code>scenario_context.geojson</code>.</td><td class="help"><span class="use key">key</span>Joins the report text to its area on the map.</td></tr>
+        <tr><td>information_type</td><td class="ex">sound_and_warmth_report</td><td class="mean">What kind of report it is. <code>weather_alert</code>: forecast of strong wind. <code>vegetation_and_access_report</code>: branches or trees near a line. <code>protection_event_summary</code>: the grid's own safety gear switched a line off and tried to switch it back on ("reclose"). <code>visual_flash_report</code>: someone saw a flash, which can be an electrical arc. <code>sound_and_warmth_report</code>: ticking plus a warm spot, which can point to a loose or overheating joint. <code>conductor_motion_report</code>: a wire swinging more than its neighbours, which can mean a loose clamp or damaged fitting.</td><td class="help"><span class="use key">key</span>Tells you which sensor to send. Warmth → thermal camera. Vegetation → visual camera and clearance check. Swinging wire → video of the span and its clamps. Flash → look for burn marks on insulators.</td></tr>
+        <tr><td>location_or_asset</td><td class="ex">Broad east-central field area…</td><td class="mean">Where it happened, in words. Always vague on purpose.</td><td class="help"><span class="use mid">useful</span>Context only. Use the area polygon for maths.</td></tr>
+        <tr><td>description</td><td class="ex">…intermittent ticking and a handheld thermal contrast…</td><td class="mean">What was seen or heard, and what is <em>not</em> known (no photo, no line ID, conditions not controlled).</td><td class="help"><span class="use key">key</span>The clues. Read the "what is missing" part too: it tells you what your drone has to confirm.</td></tr>
+        <tr><td>timestamp_relative_to_storm</td><td class="ex">T+01:27</td><td class="mean">Hours and minutes after the storm started. There is no real clock time.</td><td class="help"><span class="use mid">useful</span>Puts reports in order inside the 4-hour window. Later reports may describe damage that grew worse.</td></tr>
+        <tr><td>confidence</td><td class="ex">low to medium</td><td class="mean">How much to believe the report, in words. Some split it: high that something happened, low on where.</td><td class="help"><span class="use key">key</span>Turn it into a number (for example low = 0.3, low to medium = 0.5) and use it as a weight when you rank lines.</td></tr>
+        <tr><td>source</td><td class="ex">Synthetic field observer note</td><td class="mean">Who reported it: weather desk, hotline caller, dispatch console, resident, field observer, roadside observer.</td><td class="help"><span class="use mid">useful</span>A control-room log is more reliable than a passer-by. Helps you judge confidence yourself.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="fieldfile">
+    <div class="fhead"><span class="fname">scenario_context.geojson</span><span class="muted">one shape per row · 7 shapes</span></div>
+    <div class="tablewrap"><table class="fields">
+      <thead><tr><th>Field</th><th>Example</th><th>What it means</th><th>How it helps us</th></tr></thead>
+      <tbody>
+        <tr><td>geometry</td><td class="ex">Polygon</td><td class="mean">The outline of the shape, in longitude/latitude.</td><td class="help"><span class="use key">key</span>The only location information the storm gives you. Clip lines against it.</td></tr>
+        <tr><td>context_id</td><td class="ex">SYN_CONTEXT_STORM<br>SYN_REPORT_02</td><td class="mean">The shape's ID. Report areas reuse the report ID.</td><td class="help"><span class="use key">key</span>Joins the shape to its report.</td></tr>
+        <tr><td>context_kind</td><td class="ex">synthetic_report_area</td><td class="mean">Either the storm footprint (1 shape) or a report area (6 shapes).</td><td class="help"><span class="use mid">useful</span>Filter on it to separate the storm from the reports.</td></tr>
+        <tr><td>label</td><td class="ex">SYN_REPORT_02</td><td class="mean">Short text to print on a map.</td><td class="help"><span class="use lo">skip</span>Display only.</td></tr>
+        <tr><td>description<br>confidence</td><td class="ex">medium</td><td class="mean">Only on the storm shape: it is an illustration, and its outline has medium confidence.</td><td class="help"><span class="use mid">useful</span>The storm edge is fuzzy, so treat lines just outside it as maybe affected too.</td></tr>
+        <tr><td>information_id<br>information_type<br>source</td><td class="ex">SYN_REPORT_02</td><td class="mean">Copies of the report fields, on report shapes only.</td><td class="help"><span class="use lo">skip</span>Already in <code>initial_information.csv</code>.</td></tr>
+        <tr><td>synthetic</td><td class="ex">true</td><td class="mean">Always true: the shape is invented for the exercise.</td><td class="help"><span class="use lo">skip</span>Reminder only.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="fieldfile">
+    <div class="fhead"><span class="fname">scenario_public_config.json</span><span class="muted">one JSON object</span></div>
+    <div class="tablewrap"><table class="fields">
+      <thead><tr><th>Field</th><th>Example</th><th>What it means</th><th>How it helps us</th></tr></thead>
+      <tbody>
+        <tr><td>scenario_id<br>title<br>label</td><td class="ex">SYN_BAVARIA_WIND_01</td><td class="mean">The scenario's name and its "exercise only" warning.</td><td class="help"><span class="use lo">skip</span>Put it on your demo title slide.</td></tr>
+        <tr><td>crs</td><td class="ex">OGC:CRS84</td><td class="mean">How coordinates are written: longitude first, then latitude, in degrees (same as GPS / WGS84).</td><td class="help"><span class="use mid">useful</span>Stops the classic bug of swapping lat and lon, which drops your lines in the wrong country.</td></tr>
+        <tr><td>scenario_window_hours</td><td class="ex">4</td><td class="mean">How long the exercise lasts.</td><td class="help"><span class="use key">key</span>Your total time budget for flights, battery swaps and analysis.</td></tr>
+        <tr><td>study_bounds_west_south_east_north</td><td class="ex">[10.45, 48.09, 10.88, 48.38]</td><td class="mean">The study box: about 32 km × 32 km south-west of Augsburg. Nothing outside it is in the data.</td><td class="help"><span class="use mid">useful</span>The edge of your flight area, and the reason lines stop at the edge.</td></tr>
+        <tr><td>public_context.storm_footprint</td><td class="ex">coordinates, confidence: medium</td><td class="mean">The storm outline, the same shape as in the GeoJSON.</td><td class="help"><span class="use key">key</span>Same use as the storm polygon in the GeoJSON.</td></tr>
+        <tr><td>public_context.reports[]</td><td class="ex">6 objects</td><td class="mean">The six reports with every CSV field, plus two extras below.</td><td class="help"><span class="use key">key</span>The simplest file to load in code: reports and their areas together.</td></tr>
+        <tr><td>…location_area_coordinates</td><td class="ex">[[10.56, 48.18], …]</td><td class="mean">The report's area as a list of corner points.</td><td class="help"><span class="use key">key</span>Same as the report shape in the GeoJSON.</td></tr>
+        <tr><td>…asset_reference</td><td class="ex">LINE_024</td><td class="mean">A line named directly by the report. Only SYN_REPORT_03 has one.</td><td class="help"><span class="use key">key</span>The one hard fact: LINE_024 is switched off, so you can't recharge from it and a dead reading there is expected.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="prose" style="display:grid;gap:8px">
+    <span class="eyebrow">Before you trust it</span>
+    <h2>What the data cannot tell you</h2>
+  </div>
+  <div class="caveats">
+    <div class="cav"><b>Where the faults are</b><span>The organisers keep the real fault list. You only get vague reports.</span></div>
+    <div class="cav"><b>Whether a line is live</b><span>A voltage value is what the line is built for, not proof it is energised. Your sensors can only recharge on a live line.</span></div>
+    <div class="cav"><b>Who gets power from what</b><span>No power flow, no customers. A gap between lines is not an outage.</span></div>
+    <div class="cav"><b>Inside a substation</b><span>Lines entering the same substation are not proven to connect. The square marks the station area, not the wire ends.</span></div>
+    <div class="cav"><b>Crossings</b><span>Two lines crossing on the map are not joined. Only exact shared end points count as connections.</span></div>
+    <div class="cav"><b>Edges of the map</b><span>19 points are just where the study box cut a line. The line keeps going in reality.</span></div>
+    <div class="cav"><b>Exact report locations</b><span>Each report box is approximate and may be wrong. Several lines sit in every box.</span></div>
+    <div class="cav"><b>Complete attributes</b><span>All 64 lines lack a start date, 60 lack a name, 28 lack an operator and 21 lack a circuit count.</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="prose" style="display:grid;gap:8px">
+    <span class="eyebrow">What to calculate</span>
+    <h2>Six numbers that turn the data into a flight plan</h2>
+    <p>Each card names the question, the fields it uses and the answer from this dataset. The last two are interactive: change the weights or the drone specs and the numbers update.</p>
+  </div>
+  <div class="calcs">
+
+    <div class="calc">
+      <div class="head"><span class="q">1 · Which lines could each report be about?</span><span class="uses">report polygon × segment geometry</span></div>
+      <p>Clip every line to every report box. This turns "somewhere in the east-central area" into a short list of candidate lines and the kilometres you would have to fly.</p>
+      <div class="tablewrap"><table id="repTable"><thead><tr><th>Report</th><th>Time</th><th>What was seen</th><th>Confidence</th><th class="num">Lines</th><th class="num">km to check</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div class="calc">
+      <div class="head"><span class="q">2 · Where do reports overlap?</span><span class="uses">result of #1, grouped by line</span></div>
+      <p>A line that sits inside two independent report areas has more evidence against it than a line in one.</p>
+      <div class="result" id="overlapOut"></div>
+    </div>
+
+    <div class="calc">
+      <div class="head"><span class="q">3 · Which lines hold the network together?</span><span class="uses">from_node, to_node → graph</span></div>
+      <p>Build a graph: points are nodes, lines are edges. A line is a <em>bridge</em> if removing it splits the graph. When both sides still contain substations, losing it would separate parts of the mapped network, so a fault there matters more. Remember these are mapped connections only.</p>
+      <div class="result" id="bridgeOut"></div>
+    </div>
+
+    <div class="calc">
+      <div class="head"><span class="q">4 · How exposed was each line to the storm?</span><span class="uses">storm polygon × segment geometry</span></div>
+      <p>Measure how many km of each line run inside the storm footprint. Long, fully exposed lines are more likely to have taken damage.</p>
+      <div class="result" id="stormOut"></div>
+    </div>
+
+    <div class="calc">
+      <div class="head"><span class="q">5 · Which line do we fly first?</span><span class="uses">combines #1–#4</span></div>
+      <p>A starting score per line: <strong>evidence</strong> (each report's confidence split across its candidate lines by km), <strong>exposure</strong> (share of the line inside the storm) and <strong>importance</strong> (critical bridge = 1, other bridge = 0.4). It is a heuristic to tune, not a truth.</p>
+      <div class="controls">
+        <label for="wE">Evidence weight <input type="range" id="wE" min="0" max="10" value="6"></label>
+        <label for="wS">Exposure weight <input type="range" id="wS" min="0" max="10" value="2"></label>
+        <label for="wC">Importance weight <input type="range" id="wC" min="0" max="10" value="2"></label>
+      </div>
+      <div class="tablewrap"><table id="rankTable"><thead><tr><th class="num">#</th><th>Line</th><th>kV</th><th class="num">km</th><th>Score</th><th>Why</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div class="calc">
+      <div class="head"><span class="q">6 · Can we cover it in four hours?</span><span class="uses">length_km × your drone specs</span></div>
+      <p>Compare what your fleet can inspect in the window with how much line there is. Transit to the first line and battery swaps eat into it. These drone numbers are placeholders; put in your own.</p>
+      <div class="controls">
+        <label for="dN">Drones <input type="number" id="dN" min="1" max="50" value="2"></label>
+        <label for="dV">Inspection speed, km/h <input type="number" id="dV" min="1" max="120" value="20"></label>
+        <label for="dF">Flight per battery, min <input type="number" id="dF" min="1" max="300" value="30"></label>
+        <label for="dT">Swap / recharge, min <input type="number" id="dT" min="0" max="300" value="10"></label>
+      </div>
+      <div class="out" id="covOut"></div>
+      <div class="gauge" id="gauge"></div>
+      <p class="muted" style="font-size:.85rem">Recharging on the lines: in the scenario a sensor can only recharge from a line that is live and can supply enough power. LINE_024 is confirmed off, so it is ruled out. For every other line, being live is unknown until you check.</p>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  <p>Grid data © OpenStreetMap contributors, ODbL 1.0, via an OpenInfrastructureMap extract. The storm, reports and faults are fictional and created for this exercise. Do not use this data to plan real flights or work near power lines. Numbers on this page were computed from the files in <code>data/</code>; km-inside-area values are sampled every 20 m.</p>
+</footer>
+</div>
+
+<script>
+const DATA = {"segments":[{"id":"LINE_001","c":"COMPONENT_01","f":"SUBSTATION_07","t":"NODE_027","kv":380.0,"kvs":[380.0],"circ":null,"cab":"3","km":0.15,"op":"Amprion","q":"circuits missing; name missing; start_date missing","storm":0.15,"rep":{"SYN_REPORT_05":0.15},"bridge":false,"critical":false,"g":[[10.83802,48.237],[10.83853,48.23566]]},{"id":"LINE_002","c":"COMPONENT_01","f":"SUBSTATION_06","t":"NODE_022","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":3.77,"op":null,"q":"operator missing; name missing; start_date missing","storm":3.77,"rep":{"SYN_REPORT_05":2.53},"bridge":true,"critical":true,"g":[[10.84137,48.18485],[10.84373,48.1893],[10.84216,48.19181],[10.84064,48.19423],[10.83915,48.1966],[10.83765,48.199],[10.83614,48.20141],[10.83468,48.20374],[10.83315,48.20621],[10.83163,48.20862],[10.83037,48.21064],[10.82934,48.21228],[10.82814,48.21417],[10.82685,48.21623]]},{"id":"LINE_003","c":"COMPONENT_01","f":"NODE_021","t":"NODE_023","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":6.81,"op":"Lechwerke","q":"name missing; start_date missing","storm":6.81,"rep":{"SYN_REPORT_06":3.6},"bridge":false,"critical":false,"g":[[10.8071,48.26404],[10.80348,48.26579],[10.80455,48.26754],[10.80576,48.26887],[10.80785,48.27126],[10.80938,48.27304],[10.81117,48.2751],[10.81199,48.27738],[10.81269,48.27926],[10.81349,48.28145],[10.81444,48.28406],[10.81541,48.28668],[10.81634,48.2892],[10.81735,48.29196],[10.81816,48.29416],[10.81926,48.29711],[10.81995,48.29901],[10.82082,48.3014],[10.8217,48.30379],[10.82246,48.30585],[10.82345,48.30855],[10.82435,48.31099],[10.8253,48.3136],[10.82627,48.31615],[10.82707,48.31838],[10.82839,48.31999],[10.8293,48.32107]]},{"id":"LINE_004","c":"COMPONENT_01","f":"NODE_026","t":"NODE_019","kv":380.0,"kvs":[380.0,110.0,110.0],"circ":null,"cab":"9","km":16.43,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":15.42,"rep":{"SYN_REPORT_05":7.75},"bridge":true,"critical":true,"g":[[10.83556,48.23829],[10.83288,48.23775],[10.82881,48.23708],[10.82368,48.23625],[10.82156,48.23356],[10.81908,48.23048],[10.8166,48.22733],[10.81403,48.22406],[10.81143,48.22077],[10.80888,48.21756],[10.80699,48.21512],[10.80484,48.21241],[10.8019,48.20868],[10.79933,48.20538],[10.79733,48.20285],[10.79498,48.1999],[10.79417,48.19758],[10.79317,48.19478],[10.79193,48.19154],[10.7909,48.18868],[10.7894,48.1845],[10.78803,48.18071],[10.78683,48.17726],[10.78543,48.17348],[10.78412,48.16996],[10.78288,48.16657],[10.7816,48.16302],[10.78025,48.15931],[10.77891,48.15562],[10.77779,48.15255],[10.77651,48.14901],[10.77516,48.14529],[10.77382,48.14155],[10.77233,48.13752],[10.77093,48.13372],[10.76986,48.1308],[10.76854,48.12715],[10.76745,48.12391],[10.7663,48.12061],[10.76528,48.11815],[10.76404,48.11483],[10.7629,48.11157],[10.76167,48.10808],[10.76028,48.10422]]},{"id":"LINE_005","c":"COMPONENT_03","f":"SUBSTATION_10","t":"NODE_044","kv":110.0,"kvs":[110.0],"circ":2,"cab":"9","km":0.2,"op":null,"q":"operator missing; name missing; start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.87893,48.32643],[10.88,48.32805]]},{"id":"LINE_006","c":"COMPONENT_03","f":"SUBSTATION_10","t":"NODE_043","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.12,"op":null,"q":"operator missing; name missing; start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.87893,48.32643],[10.87964,48.32589],[10.88,48.32562]]},{"id":"LINE_007","c":"COMPONENT_01","f":"SUBSTATION_13","t":"NODE_025","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.41,"op":null,"q":"operator missing; name missing; start_date missing","storm":0,"rep":{},"bridge":false,"critical":false,"g":[[10.83966,48.37738],[10.8372,48.37824],[10.83472,48.37911]]},{"id":"LINE_008","c":"COMPONENT_01","f":"NODE_025","t":"NODE_024","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.13,"op":null,"q":"operator missing; name missing; start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.83472,48.37911],[10.83351,48.38]]},{"id":"LINE_009","c":"COMPONENT_04","f":"NODE_004","t":"NODE_003","kv":110.0,"kvs":[110.0],"circ":2,"cab":"4","km":1.3,"op":"DB Energie","q":"start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.46655,48.38],[10.46382,48.37932],[10.4605,48.3785],[10.45752,48.37739],[10.45468,48.37707],[10.45228,48.3768],[10.45,48.37654]]},{"id":"LINE_010","c":"COMPONENT_05","f":"NODE_008","t":"NODE_007","kv":110.0,"kvs":[110.0],"circ":2,"cab":"4","km":1.04,"op":"DB Energie","q":"start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.5483,48.38],[10.54811,48.37999],[10.54704,48.37994],[10.54406,48.37981],[10.54137,48.3797],[10.53614,48.37974],[10.53431,48.38]]},{"id":"LINE_011","c":"COMPONENT_06","f":"NODE_020","t":"NODE_018","kv":110.0,"kvs":[110.0],"circ":2,"cab":"4","km":1.49,"op":"DB Energie","q":"start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.77782,48.38],[10.77461,48.37967],[10.76984,48.379],[10.76648,48.37866],[10.76325,48.37833],[10.76031,48.37939],[10.75858,48.38]]},{"id":"LINE_012","c":"COMPONENT_01","f":"NODE_033","t":"NODE_032","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.23,"op":"Lechwerke","q":"name missing; start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.84402,48.37794],[10.84392,48.3786],[10.84373,48.37977],[10.84369,48.38]]},{"id":"LINE_013","c":"COMPONENT_01","f":"SUBSTATION_13","t":"NODE_033","kv":110.0,"kvs":[110.0],"circ":null,"cab":"6","km":0.29,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0,"rep":{},"bridge":false,"critical":false,"g":[[10.84026,48.37711],[10.8418,48.37744],[10.8425,48.3776],[10.84402,48.37794]]},{"id":"LINE_014","c":"COMPONENT_01","f":"SUBSTATION_07","t":"NODE_026","kv":380.0,"kvs":[380.0],"circ":null,"cab":"3","km":0.35,"op":"Amprion","q":"circuits missing; name missing; start_date missing","storm":0.35,"rep":{"SYN_REPORT_05":0.35},"bridge":false,"critical":false,"g":[[10.83838,48.23813],[10.83919,48.23854],[10.83556,48.23829]]},{"id":"LINE_015","c":"COMPONENT_01","f":"NODE_013","t":"NODE_016","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":11.13,"op":null,"q":"operator missing; name missing; start_date missing","storm":11.12,"rep":{"SYN_REPORT_03":5.98},"bridge":true,"critical":true,"g":[[10.6482,48.11243],[10.65126,48.11529],[10.65374,48.11765],[10.65625,48.11998],[10.65858,48.12216],[10.66163,48.12502],[10.66426,48.1275],[10.66658,48.12968],[10.66944,48.13239],[10.67264,48.13535],[10.67556,48.1381],[10.67868,48.14101],[10.68151,48.14367],[10.68366,48.1457],[10.68654,48.14829],[10.68931,48.15081],[10.69201,48.15323],[10.69567,48.15655],[10.69864,48.15921],[10.70151,48.16186],[10.70439,48.16444],[10.70692,48.16686],[10.70949,48.16902],[10.71178,48.1711],[10.71429,48.17336],[10.71697,48.1758],[10.71968,48.17827],[10.72224,48.18033],[10.72572,48.1832],[10.72866,48.18563],[10.73189,48.18828],[10.73508,48.19089],[10.73736,48.19278]]},{"id":"LINE_016","c":"COMPONENT_01","f":"NODE_019","t":"NODE_017","kv":380.0,"kvs":[380.0,110.0,110.0],"circ":null,"cab":"9","km":1.63,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.76028,48.10422],[10.75894,48.10052],[10.75764,48.09693],[10.75651,48.0938],[10.75543,48.09084],[10.7557,48.09]]},{"id":"LINE_017","c":"COMPONENT_01","f":"NODE_030","t":"NODE_031","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.48,"op":"Lechwerke","q":"name missing; start_date missing","storm":0.48,"rep":{},"bridge":false,"critical":false,"g":[[10.84029,48.23356],[10.84238,48.23588],[10.84343,48.23735]]},{"id":"LINE_018","c":"COMPONENT_01","f":"NODE_027","t":"NODE_030","kv":380.0,"kvs":[380.0],"circ":2,"cab":"6","km":0.27,"op":"Amprion","q":"name missing; start_date missing","storm":0.27,"rep":{"SYN_REPORT_05":0.23},"bridge":false,"critical":false,"g":[[10.83853,48.23566],[10.84029,48.23356]]},{"id":"LINE_019","c":"COMPONENT_01","f":"NODE_022","t":"NODE_034","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":2.71,"op":"Lechwerke","q":"name missing; start_date missing","storm":2.71,"rep":{"SYN_REPORT_05":2.05},"bridge":false,"critical":false,"g":[[10.82685,48.21623],[10.8285,48.21828],[10.83033,48.22052],[10.83223,48.22291],[10.83421,48.22536],[10.83592,48.22757],[10.83794,48.23004],[10.83968,48.23215],[10.84114,48.23401],[10.84263,48.23588],[10.84406,48.2377]]},{"id":"LINE_020","c":"COMPONENT_01","f":"NODE_027","t":"SUBSTATION_07","kv":380.0,"kvs":[380.0],"circ":null,"cab":"3","km":0.13,"op":"Amprion","q":"circuits missing; name missing; start_date missing","storm":0.13,"rep":{"SYN_REPORT_05":0.13},"bridge":false,"critical":false,"g":[[10.83853,48.23566],[10.83878,48.23681]]},{"id":"LINE_021","c":"COMPONENT_01","f":"NODE_030","t":"NODE_041","kv":380.0,"kvs":[380.0,110.0],"circ":4,"cab":"12","km":3.05,"op":"Lechwerke","q":"name missing; start_date missing","storm":1.51,"rep":{},"bridge":true,"critical":false,"g":[[10.84029,48.23356],[10.84418,48.23244],[10.84756,48.23152],[10.851,48.23056],[10.85585,48.23109],[10.86051,48.23161],[10.86521,48.23217],[10.8698,48.2327],[10.87443,48.23325],[10.87888,48.23376],[10.88,48.23389]]},{"id":"LINE_022","c":"COMPONENT_01","f":"NODE_042","t":"NODE_035","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":5.87,"op":"Lechwerke","q":"name missing; start_date missing","storm":2.93,"rep":{},"bridge":true,"critical":false,"g":[[10.88,48.2833],[10.87599,48.28318],[10.87543,48.27985],[10.87429,48.27671],[10.87312,48.27353],[10.87211,48.27069],[10.87111,48.26796],[10.86923,48.26584],[10.86699,48.26338],[10.86461,48.26067],[10.86241,48.25823],[10.86032,48.25588],[10.85841,48.25376],[10.8562,48.25129],[10.854,48.2488],[10.85205,48.24663],[10.85016,48.24451],[10.84797,48.24208],[10.84636,48.24027],[10.84463,48.23835]]},{"id":"LINE_023","c":"COMPONENT_01","f":"SUBSTATION_07","t":"NODE_028","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":0.23,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0.23,"rep":{"SYN_REPORT_05":0.02},"bridge":false,"critical":false,"g":[[10.84247,48.23829],[10.84237,48.23832],[10.84227,48.23834],[10.84198,48.23842],[10.84115,48.23864],[10.84073,48.23874],[10.84053,48.23879],[10.84022,48.23887],[10.8396,48.23884]]},{"id":"LINE_024","c":"COMPONENT_01","f":"SUBSTATION_07","t":"SUBSTATION_01","kv":110.0,"kvs":[110.0],"circ":1,"cab":"3","km":26.84,"op":"Lechwerke;Amprion","q":"name missing; start_date missing","storm":26.76,"rep":{"SYN_REPORT_05":3.94},"bridge":false,"critical":false,"g":[[10.84227,48.2391],[10.83987,48.23928],[10.8368,48.23885],[10.83283,48.23834],[10.82949,48.23789],[10.82525,48.23733],[10.82189,48.2369],[10.81896,48.2365],[10.8147,48.23595],[10.8112,48.2355],[10.80746,48.235],[10.8036,48.23449],[10.8001,48.23587],[10.79684,48.23712],[10.79059,48.23958],[10.78734,48.24083],[10.7845,48.24193],[10.78105,48.24328],[10.77741,48.24469],[10.77367,48.24612],[10.77056,48.24735],[10.7672,48.24865],[10.76365,48.25003],[10.75975,48.25156],[10.75733,48.25249],[10.75319,48.25269],[10.74886,48.2529],[10.74507,48.25308],[10.74077,48.25329],[10.73706,48.25348],[10.73343,48.25365],[10.72917,48.25385],[10.72481,48.25406],[10.72042,48.25426],[10.71576,48.25449],[10.71034,48.25476],[10.70688,48.2547],[10.70288,48.25465],[10.69904,48.2546],[10.69428,48.25452],[10.68889,48.25443],[10.68567,48.25439],[10.68084,48.25433],[10.6768,48.25426],[10.67316,48.25421],[10.6682,48.25413],[10.66418,48.25406],[10.66029,48.254],[10.65575,48.25393],[10.65158,48.25385],[10.64627,48.25376],[10.64155,48.25369],[10.6366,48.25361],[10.63156,48.25353],[10.62662,48.25345],[10.62234,48.25338],[10.61854,48.25331],[10.61423,48.25323],[10.61108,48.25319],[10.60614,48.25158],[10.60259,48.25042],[10.59716,48.24865],[10.59411,48.24767],[10.59068,48.24654],[10.58739,48.24548],[10.58334,48.24411],[10.58069,48.24327],[10.57775,48.24231],[10.57475,48.24136],[10.57096,48.24157],[10.56769,48.24175],[10.56493,48.2419],[10.56138,48.2421],[10.55817,48.24228],[10.55477,48.24245],[10.55131,48.24264],[10.54762,48.24285],[10.54415,48.24304],[10.53952,48.2433],[10.53576,48.2435],[10.53175,48.24371],[10.52783,48.24393],[10.5226,48.2446],[10.51733,48.24531],[10.51318,48.24584],[10.50935,48.24635],[10.50546,48.24687],[10.50131,48.24741],[10.49635,48.24806],[10.49391,48.24793]]},{"id":"LINE_025","c":"COMPONENT_01","f":"NODE_009","t":"SUBSTATION_05","kv":110.0,"kvs":[110.0],"circ":1,"cab":"3","km":0.06,"op":null,"q":"operator missing; name missing; start_date missing","storm":0.06,"rep":{"SYN_REPORT_02":0.06},"bridge":false,"critical":false,"g":[[10.59922,48.21016],[10.59922,48.21066]]},{"id":"LINE_026","c":"COMPONENT_01","f":"NODE_009","t":"SUBSTATION_15","kv":110.0,"kvs":[110.0],"circ":1,"cab":"4","km":10.84,"op":null,"q":"operator missing; name missing; start_date missing","storm":10.82,"rep":{"SYN_REPORT_02":6.4,"SYN_REPORT_03":10.76},"bridge":false,"critical":false,"g":[[10.59922,48.21016],[10.60225,48.21019],[10.60523,48.21022],[10.60791,48.21023],[10.61096,48.21026],[10.6146,48.21029],[10.61783,48.21032],[10.62082,48.21034],[10.62433,48.21037],[10.62797,48.21039],[10.63153,48.21043],[10.63338,48.21045],[10.63622,48.21047],[10.6398,48.2105],[10.64282,48.21139],[10.64499,48.21203],[10.64805,48.21292],[10.65097,48.21379],[10.65405,48.21468],[10.65693,48.21476],[10.66022,48.21484],[10.66356,48.21494],[10.66639,48.21502],[10.66946,48.21509],[10.67129,48.21388],[10.67344,48.21246],[10.67578,48.21089],[10.67832,48.20921],[10.68059,48.20771],[10.68269,48.2063],[10.68482,48.2049],[10.68781,48.20376],[10.69065,48.20267],[10.69309,48.20173],[10.69316,48.2017],[10.69521,48.20091],[10.69834,48.19973],[10.70115,48.19865],[10.70409,48.19753],[10.70704,48.19641],[10.70939,48.19549],[10.71238,48.19435],[10.71504,48.19333],[10.71867,48.1931],[10.72228,48.19286],[10.72552,48.19265],[10.72897,48.19243],[10.73204,48.19223],[10.73282,48.19232]]},{"id":"LINE_027","c":"COMPONENT_01","f":"NODE_019","t":"SUBSTATION_02","kv":110.0,"kvs":[110.0],"circ":1,"cab":"6","km":4.83,"op":"Lechwerke","q":"start_date missing","storm":0,"rep":{},"bridge":true,"critical":true,"g":[[10.76028,48.10422],[10.75582,48.10435],[10.75219,48.10446],[10.74841,48.10457],[10.74345,48.10472],[10.73795,48.10488],[10.73349,48.10501],[10.72935,48.10514],[10.72399,48.1053],[10.71926,48.10543],[10.71518,48.10555],[10.71,48.10421],[10.70491,48.1029],[10.70069,48.10179],[10.69927,48.09913]]},{"id":"LINE_028","c":"COMPONENT_01","f":"SUBSTATION_12","t":"NODE_025","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":4.06,"op":null,"q":"operator missing; name missing; start_date missing","storm":0,"rep":{"SYN_REPORT_06":1.89},"bridge":false,"critical":false,"g":[[10.84697,48.34504],[10.84767,48.34852],[10.84825,48.35125],[10.84689,48.35252],[10.84636,48.35302],[10.8447,48.35461],[10.843,48.3562],[10.84237,48.35679],[10.83993,48.35903],[10.83751,48.3614],[10.83711,48.36362],[10.83685,48.36561],[10.83625,48.36939],[10.83567,48.37319],[10.83521,48.37597],[10.83472,48.37911]]},{"id":"LINE_029","c":"COMPONENT_01","f":"NODE_006","t":"NODE_002","kv":110.0,"kvs":[110.0,110.0],"circ":null,"cab":"3;3","km":3.43,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":1.92,"rep":{},"bridge":true,"critical":false,"g":[[10.492,48.24766],[10.48881,48.24943],[10.48539,48.25129],[10.48175,48.25328],[10.47882,48.25487],[10.47497,48.25529],[10.47137,48.25568],[10.46752,48.25609],[10.46395,48.25648],[10.46008,48.2569],[10.45609,48.25733],[10.45212,48.25777],[10.45,48.258]]},{"id":"LINE_030","c":"COMPONENT_01","f":"NODE_015","t":"NODE_016","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.23,"op":null,"q":"operator missing; name missing; start_date missing","storm":0.22,"rep":{"SYN_REPORT_03":0.22},"bridge":false,"critical":false,"g":[[10.73449,48.19215],[10.73736,48.19278]]},{"id":"LINE_031","c":"COMPONENT_01","f":"SUBSTATION_09","t":"NODE_012","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":7.81,"op":null,"q":"operator missing; name missing; start_date missing","storm":7.43,"rep":{},"bridge":true,"critical":true,"g":[[10.72543,48.33329],[10.72069,48.33346],[10.71798,48.33577],[10.71542,48.33791],[10.7127,48.34022],[10.70946,48.34297],[10.7067,48.34525],[10.70457,48.34704],[10.70163,48.34951],[10.69987,48.35103],[10.69689,48.35232],[10.69308,48.35398],[10.68919,48.35566],[10.6851,48.35581],[10.68114,48.35595],[10.6777,48.35706],[10.67287,48.35862],[10.66816,48.36013],[10.66433,48.36137],[10.65929,48.36284],[10.65514,48.36406],[10.65103,48.36526],[10.64619,48.36668],[10.64249,48.36776],[10.63902,48.36875]]},{"id":"LINE_032","c":"COMPONENT_01","f":"NODE_012","t":"NODE_014","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":1.72,"op":null,"q":"operator missing; circuits missing; name missing; start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.63902,48.36875],[10.6419,48.37074],[10.64426,48.37238],[10.64693,48.37426],[10.64953,48.37606],[10.65179,48.37763],[10.65438,48.37944],[10.65502,48.38]]},{"id":"LINE_033","c":"COMPONENT_07","f":"NODE_036","t":"SUBSTATION_03","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.25,"op":"Lechwerke","q":"name missing; start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.85829,48.11407],[10.85862,48.11409],[10.86044,48.11425],[10.86079,48.11405],[10.86133,48.11375],[10.86139,48.11372]]},{"id":"LINE_034","c":"COMPONENT_02","f":"SUBSTATION_04","t":"NODE_039","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.8,"op":null,"q":"operator missing; name missing; start_date missing","storm":0,"rep":{"SYN_REPORT_04":0.8},"bridge":true,"critical":false,"g":[[10.8678,48.14875],[10.86787,48.14873],[10.86824,48.14858],[10.87097,48.14726],[10.87367,48.14594],[10.87657,48.14454]]},{"id":"LINE_035","c":"COMPONENT_01","f":"NODE_010","t":"NODE_005","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":14.08,"op":null,"q":"operator missing; circuits missing; name missing; start_date missing","storm":14.06,"rep":{},"bridge":true,"critical":true,"g":[[10.60508,48.34538],[10.60187,48.34311],[10.59891,48.34109],[10.59759,48.34019],[10.59628,48.33943],[10.59496,48.33874],[10.59305,48.33774],[10.59041,48.33641],[10.58775,48.3351],[10.58524,48.33382],[10.58236,48.33234],[10.5802,48.33126],[10.57761,48.32991],[10.57504,48.32861],[10.57213,48.32714],[10.56996,48.32515],[10.56777,48.32293],[10.56549,48.32073],[10.56297,48.31833],[10.5607,48.31614],[10.55813,48.31369],[10.55611,48.31175],[10.55408,48.3098],[10.55217,48.30785],[10.54882,48.30643],[10.54612,48.30523],[10.54307,48.30386],[10.54017,48.30262],[10.53744,48.30141],[10.53453,48.30013],[10.53156,48.29882],[10.52883,48.29768],[10.52511,48.29601],[10.52143,48.29442],[10.51883,48.2933],[10.51782,48.29141],[10.51642,48.2888],[10.51544,48.28697],[10.51439,48.285],[10.51336,48.28308],[10.51203,48.2806],[10.51046,48.27768],[10.50732,48.27549],[10.50483,48.27377],[10.50207,48.27186],[10.5,48.27042],[10.49691,48.26828],[10.49395,48.26622],[10.49157,48.26457],[10.48895,48.26275],[10.48685,48.26129],[10.4844,48.25961],[10.48281,48.25817],[10.48089,48.25634],[10.47885,48.25451]]},{"id":"LINE_036","c":"COMPONENT_01","f":"NODE_016","t":"NODE_022","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":7.16,"op":null,"q":"operator missing; name missing; start_date missing","storm":7.14,"rep":{"SYN_REPORT_03":0.99,"SYN_REPORT_05":6.16},"bridge":false,"critical":false,"g":[[10.73736,48.19278],[10.74149,48.19368],[10.74526,48.19454],[10.74917,48.19537],[10.753,48.19621],[10.7568,48.19705],[10.76025,48.1978],[10.76338,48.19848],[10.76679,48.19924],[10.77073,48.20011],[10.77459,48.20095],[10.7783,48.20175],[10.78171,48.20249],[10.78497,48.20321],[10.78777,48.20384],[10.79042,48.20441],[10.79379,48.20545],[10.79732,48.20664],[10.80074,48.20776],[10.80437,48.20893],[10.80781,48.21006],[10.81119,48.21115],[10.81466,48.21227],[10.81803,48.21336],[10.82084,48.21429],[10.82426,48.21536],[10.82685,48.21623]]},{"id":"LINE_037","c":"COMPONENT_02","f":"NODE_037","t":"NODE_039","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":3.82,"op":"Lechwerke","q":"name missing; start_date missing","storm":0,"rep":{"SYN_REPORT_04":1.99},"bridge":true,"critical":false,"g":[[10.85862,48.11409],[10.8582,48.1162],[10.85783,48.11817],[10.85746,48.12005],[10.85791,48.12219],[10.8581,48.12324],[10.8583,48.12425],[10.85876,48.1264],[10.85921,48.12859],[10.8607,48.13007],[10.86261,48.13181],[10.86464,48.13365],[10.86683,48.13567],[10.86862,48.13728],[10.87044,48.13894],[10.87228,48.14063],[10.87432,48.14249],[10.87657,48.14454]]},{"id":"LINE_038","c":"COMPONENT_02","f":"NODE_038","t":"NODE_037","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":2.7,"op":"Lechwerke","q":"name missing; start_date missing","storm":0,"rep":{},"bridge":true,"critical":false,"g":[[10.86328,48.09],[10.86295,48.09174],[10.86277,48.09264],[10.86276,48.0927],[10.8627,48.09305],[10.86269,48.09307],[10.8625,48.09406],[10.86208,48.09629],[10.86165,48.09856],[10.86126,48.10057],[10.86081,48.10294],[10.8604,48.10511],[10.85993,48.10751],[10.85942,48.10997],[10.85905,48.11189],[10.85862,48.11409]]},{"id":"LINE_039","c":"COMPONENT_01","f":"NODE_023","t":"NODE_033","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":6.69,"op":"Lechwerke","q":"name missing; start_date missing","storm":0.66,"rep":{"SYN_REPORT_06":4.6},"bridge":false,"critical":false,"g":[[10.8293,48.32107],[10.83054,48.32252],[10.83221,48.32454],[10.83404,48.32674],[10.83559,48.32861],[10.83669,48.3307],[10.83799,48.33325],[10.83935,48.33585],[10.84067,48.33831],[10.84209,48.341],[10.84342,48.34357],[10.84477,48.34618],[10.84545,48.34751],[10.84598,48.34854],[10.84674,48.35082],[10.84764,48.35344],[10.84846,48.35597],[10.84922,48.35825],[10.84998,48.36067],[10.85046,48.36212],[10.85082,48.3632],[10.8496,48.36572],[10.84857,48.36788],[10.84741,48.37051],[10.84652,48.37244],[10.84541,48.37491],[10.84506,48.37569],[10.84469,48.3765],[10.84402,48.37794]]},{"id":"LINE_040","c":"COMPONENT_01","f":"SUBSTATION_01","t":"NODE_006","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.1,"op":"LEW","q":"name missing; start_date missing","storm":0.1,"rep":{},"bridge":true,"critical":false,"g":[[10.4933,48.24761],[10.492,48.24766]]},{"id":"LINE_041","c":"COMPONENT_01","f":"SUBSTATION_01","t":"NODE_005","kv":110.0,"kvs":[110.0],"circ":null,"cab":"6","km":1.36,"op":null,"q":"operator missing; circuits missing; name missing; start_date missing","storm":1.36,"rep":{},"bridge":true,"critical":true,"g":[[10.49331,48.2471],[10.49216,48.24723],[10.48854,48.24919],[10.4847,48.25132],[10.48126,48.25319],[10.47885,48.25451]]},{"id":"LINE_042","c":"COMPONENT_01","f":"NODE_005","t":"NODE_001","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":5.49,"op":null,"q":"operator missing; circuits missing; name missing; start_date missing","storm":1.14,"rep":{},"bridge":true,"critical":false,"g":[[10.47885,48.25451],[10.47687,48.25265],[10.4748,48.25068],[10.47292,48.24891],[10.4703,48.24645],[10.46809,48.24429],[10.46707,48.2424],[10.46602,48.24034],[10.46473,48.23789],[10.46357,48.23565],[10.46235,48.23329],[10.46112,48.23092],[10.45972,48.22825],[10.45836,48.22566],[10.45709,48.22315],[10.45574,48.22054],[10.45465,48.21843],[10.45361,48.21643],[10.45213,48.21358],[10.45079,48.21099],[10.45,48.20948]]},{"id":"LINE_043","c":"COMPONENT_01","f":"NODE_028","t":"NODE_026","kv":110.0,"kvs":[110.0,110.0],"circ":null,"cab":"6","km":0.31,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0.31,"rep":{"SYN_REPORT_05":0.31},"bridge":false,"critical":false,"g":[[10.8396,48.23884],[10.83556,48.23829]]},{"id":"LINE_044","c":"COMPONENT_01","f":"SUBSTATION_07","t":"NODE_028","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":0.2,"op":null,"q":"operator missing; circuits missing; name missing; start_date missing","storm":0.2,"rep":{"SYN_REPORT_05":0.02},"bridge":false,"critical":false,"g":[[10.84227,48.2391],[10.8396,48.23884]]},{"id":"LINE_045","c":"COMPONENT_01","f":"NODE_031","t":"SUBSTATION_07","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":0.12,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0.12,"rep":{},"bridge":false,"critical":false,"g":[[10.84343,48.23735],[10.84241,48.23756],[10.84211,48.23764],[10.842,48.23766],[10.8419,48.23769]]},{"id":"LINE_046","c":"COMPONENT_01","f":"NODE_035","t":"SUBSTATION_07","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":0.13,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0.13,"rep":{},"bridge":false,"critical":false,"g":[[10.84463,48.23835],[10.84289,48.23868]]},{"id":"LINE_047","c":"COMPONENT_01","f":"NODE_031","t":"SUBSTATION_07","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":0.12,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0.12,"rep":{},"bridge":false,"critical":false,"g":[[10.84343,48.23735],[10.84246,48.23764],[10.84215,48.23772],[10.84205,48.23774],[10.84194,48.23777]]},{"id":"LINE_048","c":"COMPONENT_01","f":"NODE_034","t":"SUBSTATION_07","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":0.15,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0.15,"rep":{},"bridge":false,"critical":false,"g":[[10.84406,48.2377],[10.84262,48.23815],[10.84242,48.2382],[10.84232,48.23823],[10.84221,48.23825]]},{"id":"LINE_049","c":"COMPONENT_01","f":"NODE_035","t":"SUBSTATION_07","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":0.14,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0.14,"rep":{},"bridge":false,"critical":false,"g":[[10.84463,48.23835],[10.84307,48.23902]]},{"id":"LINE_050","c":"COMPONENT_01","f":"NODE_034","t":"SUBSTATION_07","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":0.15,"op":"Lechwerke","q":"circuits missing; name missing; start_date missing","storm":0.15,"rep":{},"bridge":false,"critical":false,"g":[[10.84406,48.2377],[10.84254,48.23799],[10.84233,48.23804],[10.84223,48.23806],[10.84212,48.23809]]},{"id":"LINE_051","c":"COMPONENT_01","f":"SUBSTATION_15","t":"NODE_015","kv":110.0,"kvs":[110.0],"circ":1,"cab":"3","km":0.1,"op":null,"q":"operator missing; name missing; start_date missing","storm":0.1,"rep":{"SYN_REPORT_03":0.1},"bridge":false,"critical":false,"g":[[10.73316,48.19196],[10.73449,48.19215]]},{"id":"LINE_052","c":"COMPONENT_01","f":"SUBSTATION_15","t":"NODE_015","kv":110.0,"kvs":[110.0],"circ":1,"cab":"3","km":0.1,"op":null,"q":"operator missing; name missing; start_date missing","storm":0.1,"rep":{"SYN_REPORT_03":0.1},"bridge":false,"critical":false,"g":[[10.73321,48.19204],[10.73449,48.19215]]},{"id":"LINE_053","c":"COMPONENT_01","f":"SUBSTATION_11","t":"NODE_010","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.36,"op":null,"q":"operator missing; name missing; start_date missing","storm":0.36,"rep":{},"bridge":true,"critical":true,"g":[[10.60323,48.34838],[10.60508,48.34538]]},{"id":"LINE_054","c":"COMPONENT_01","f":"NODE_029","t":"SUBSTATION_12","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":13.26,"op":"Lechwerke","q":"name missing; start_date missing","storm":9.01,"rep":{"SYN_REPORT_05":0.06,"SYN_REPORT_06":7.08},"bridge":false,"critical":false,"g":[[10.84003,48.23957],[10.83859,48.24072],[10.8406,48.24386],[10.84244,48.24678],[10.84446,48.24997],[10.84645,48.25309],[10.84845,48.25624],[10.85054,48.25951],[10.85225,48.26223],[10.85377,48.26463],[10.85533,48.26704],[10.85696,48.26995],[10.85844,48.2726],[10.85996,48.27532],[10.86187,48.2786],[10.86354,48.28151],[10.86537,48.28468],[10.867,48.28752],[10.86884,48.29082],[10.87032,48.29356],[10.86657,48.29579],[10.86246,48.29821],[10.85842,48.30068],[10.8547,48.30283],[10.85096,48.3053],[10.84818,48.30696],[10.844,48.30929],[10.84017,48.31155],[10.84104,48.31522],[10.84158,48.31856],[10.84222,48.3218],[10.84306,48.32568],[10.84354,48.3284],[10.84419,48.33155],[10.84488,48.33502],[10.84562,48.33842],[10.8463,48.34174],[10.84697,48.34504]]},{"id":"LINE_055","c":"COMPONENT_01","f":"NODE_029","t":"SUBSTATION_07","kv":110.0,"kvs":[110.0],"circ":2,"cab":"3","km":0.18,"op":null,"q":"operator missing; name missing; start_date missing","storm":0.18,"rep":{},"bridge":false,"critical":false,"g":[[10.84003,48.23957],[10.84241,48.23933]]},{"id":"LINE_056","c":"COMPONENT_01","f":"SUBSTATION_07","t":"SUBSTATION_08","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":4.28,"op":"Lechwerke","q":"name missing; start_date missing","storm":4.27,"rep":{},"bridge":false,"critical":false,"g":[[10.84249,48.23949],[10.84046,48.24025],[10.83712,48.24178],[10.83374,48.24333],[10.8303,48.24493],[10.82696,48.24644],[10.82345,48.24804],[10.82089,48.24924],[10.81789,48.25063],[10.81483,48.25204],[10.81225,48.25368],[10.8099,48.25521],[10.80725,48.25689],[10.80523,48.25817],[10.8024,48.25997],[10.80454,48.26141],[10.80667,48.26284],[10.80684,48.26346]]},{"id":"LINE_057","c":"COMPONENT_01","f":"NODE_013","t":"SUBSTATION_14","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.99,"op":null,"q":"operator missing; name missing; start_date missing","storm":0.99,"rep":{},"bridge":true,"critical":true,"g":[[10.6482,48.11243],[10.65092,48.11202],[10.65432,48.11151],[10.65767,48.111],[10.66114,48.11048]]},{"id":"LINE_058","c":"COMPONENT_01","f":"SUBSTATION_05","t":"NODE_009","kv":110.0,"kvs":[110.0],"circ":1,"cab":"3","km":0.06,"op":null,"q":"operator missing; name missing; start_date missing","storm":0.06,"rep":{"SYN_REPORT_02":0.06},"bridge":false,"critical":false,"g":[[10.59902,48.21065],[10.59922,48.21016]]},{"id":"LINE_059","c":"COMPONENT_02","f":"NODE_039","t":"NODE_040","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":0.43,"op":"LEW","q":"name missing; start_date missing","storm":0,"rep":{"SYN_REPORT_04":0.43},"bridge":true,"critical":false,"g":[[10.87657,48.14454],[10.87856,48.1464],[10.88,48.1477]]},{"id":"LINE_060","c":"COMPONENT_01","f":"SUBSTATION_08","t":"NODE_021","kv":110.0,"kvs":[110.0],"circ":1,"cab":"3","km":0.07,"op":"Lechwerke","q":"name missing; start_date missing","storm":0.07,"rep":{},"bridge":false,"critical":false,"g":[[10.80684,48.26346],[10.8071,48.26404]]},{"id":"LINE_061","c":"COMPONENT_01","f":"SUBSTATION_08","t":"NODE_021","kv":110.0,"kvs":[110.0],"circ":1,"cab":"3","km":0.04,"op":null,"q":"operator missing; name missing; start_date missing","storm":0.04,"rep":{},"bridge":false,"critical":false,"g":[[10.80665,48.2638],[10.80673,48.26385],[10.8069,48.26396],[10.8071,48.26404]]},{"id":"LINE_062","c":"COMPONENT_01","f":"NODE_012","t":"NODE_010","kv":110.0,"kvs":[110.0],"circ":null,"cab":"3","km":3.62,"op":null,"q":"operator missing; circuits missing; name missing; start_date missing","storm":3.45,"rep":{},"bridge":true,"critical":true,"g":[[10.63902,48.36875],[10.63653,48.3671],[10.63388,48.36521],[10.6311,48.36334],[10.62851,48.36156],[10.62585,48.35969],[10.62321,48.35785],[10.62053,48.35601],[10.61784,48.35415],[10.61518,48.35233],[10.61254,48.35051],[10.61013,48.34885],[10.60734,48.3469],[10.60508,48.34538]]},{"id":"LINE_063","c":"COMPONENT_01","f":"NODE_011","t":"NODE_013","kv":110.0,"kvs":[110.0],"circ":2,"cab":"6","km":2.78,"op":null,"q":"operator missing; name missing; start_date missing","storm":1.43,"rep":{},"bridge":true,"critical":false,"g":[[10.63382,48.09],[10.63411,48.09069],[10.63537,48.09372],[10.63663,48.09675],[10.63768,48.09928],[10.63883,48.10205],[10.6401,48.10509],[10.6411,48.1075],[10.64488,48.11011],[10.6482,48.11243]]},{"id":"LINE_064","c":"COMPONENT_01","f":"SUBSTATION_01","t":"NODE_009","kv":110.0,"kvs":[110.0],"circ":1,"cab":"4","km":10.07,"op":null,"q":"operator missing; name missing; start_date missing","storm":10.05,"rep":{"SYN_REPORT_02":2.96},"bridge":false,"critical":false,"g":[[10.49399,48.24727],[10.49551,48.24738],[10.49861,48.24669],[10.50149,48.24607],[10.50433,48.24544],[10.50714,48.24482],[10.51028,48.24414],[10.5137,48.24339],[10.51627,48.24282],[10.519,48.24223],[10.52073,48.24031],[10.52221,48.23864],[10.52386,48.23679],[10.52565,48.2348],[10.52736,48.23287],[10.52909,48.23093],[10.53088,48.22893],[10.53203,48.22761],[10.53356,48.22591],[10.53529,48.22397],[10.53697,48.22209],[10.53834,48.22057],[10.54007,48.21862],[10.54194,48.21653],[10.54375,48.21451],[10.54559,48.21245],[10.54723,48.21059],[10.54856,48.2091],[10.55212,48.20878],[10.5552,48.20852],[10.55837,48.20824],[10.56115,48.20799],[10.56372,48.20776],[10.56721,48.20746],[10.56993,48.20722],[10.57356,48.2069],[10.57717,48.20657],[10.57999,48.20703],[10.5835,48.2076],[10.58702,48.20818],[10.59054,48.20876],[10.5937,48.20927],[10.59631,48.2097],[10.59922,48.21016]]}],"nodes":[{"id":"SUBSTATION_01","type":"abstract_substation","name":"UW Balzhausen","kv":[110.0],"segs":["LINE_024","LINE_040","LINE_041","LINE_064"],"c":"COMPONENT_01","g":[10.49372,48.24746]},{"id":"SUBSTATION_02","type":"abstract_substation","name":"Umspannwerk Gennach","kv":[110.0],"segs":["LINE_027"],"c":"COMPONENT_01","g":[10.69938,48.09893]},{"id":"SUBSTATION_03","type":"abstract_substation","name":null,"kv":[110.0],"segs":["LINE_033"],"c":"COMPONENT_07","g":[10.86146,48.11384]},{"id":"SUBSTATION_04","type":"abstract_substation","name":"Umspannwerk","kv":[110.0],"segs":["LINE_034"],"c":"COMPONENT_02","g":[10.86778,48.14862]},{"id":"SUBSTATION_05","type":"abstract_substation","name":"Umspannwerk Walkertshofen","kv":[110.0],"segs":["LINE_025","LINE_058"],"c":"COMPONENT_01","g":[10.59903,48.21069]},{"id":"SUBSTATION_06","type":"abstract_substation","name":"Umspannwerk Lagerlechfeld","kv":[110.0],"segs":["LINE_002"],"c":"COMPONENT_01","g":[10.84112,48.1848]},{"id":"SUBSTATION_07","type":"abstract_substation","name":"Umspannwerk Oberottmarshausen","kv":[110.0,380.0],"segs":["LINE_001","LINE_014","LINE_020","LINE_023","LINE_024","LINE_044","LINE_045","LINE_046","LINE_047","LINE_048","LINE_049","LINE_050","LINE_055","LINE_056"],"c":"COMPONENT_01","g":[10.84026,48.2378]},{"id":"SUBSTATION_08","type":"abstract_substation","name":"Umspannwerk Bobingen","kv":[110.0],"segs":["LINE_056","LINE_060","LINE_061"],"c":"COMPONENT_01","g":[10.80685,48.26368]},{"id":"SUBSTATION_09","type":"abstract_substation","name":null,"kv":[110.0],"segs":["LINE_031"],"c":"COMPONENT_01","g":[10.72582,48.33315]},{"id":"SUBSTATION_10","type":"abstract_substation","name":"Übernahmestelle Göggingen;Umspannwerk Göggingen","kv":[110.0],"segs":["LINE_005","LINE_006"],"c":"COMPONENT_03","g":[10.87928,48.32627]},{"id":"SUBSTATION_11","type":"abstract_substation","name":null,"kv":[110.0],"segs":["LINE_053"],"c":"COMPONENT_01","g":[10.6032,48.34852]},{"id":"SUBSTATION_12","type":"abstract_substation","name":"Umspannwerk Leitershofen","kv":[110.0],"segs":["LINE_028","LINE_054"],"c":"COMPONENT_01","g":[10.84719,48.3451]},{"id":"SUBSTATION_13","type":"abstract_substation","name":"Umspannwerk Stadtbergen","kv":[110.0],"segs":["LINE_007","LINE_013"],"c":"COMPONENT_01","g":[10.83995,48.37736]},{"id":"SUBSTATION_14","type":"abstract_substation","name":null,"kv":[110.0],"segs":["LINE_057"],"c":"COMPONENT_01","g":[10.66123,48.11056]},{"id":"SUBSTATION_15","type":"abstract_substation","name":"Umspannwerk Schwabmünchen","kv":[110.0],"segs":["LINE_026","LINE_051","LINE_052"],"c":"COMPONENT_01","g":[10.73308,48.19211]},{"id":"NODE_001","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_042"],"c":"COMPONENT_01","g":[10.45,48.20948]},{"id":"NODE_002","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_029"],"c":"COMPONENT_01","g":[10.45,48.258]},{"id":"NODE_003","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_009"],"c":"COMPONENT_04","g":[10.45,48.37654]},{"id":"NODE_004","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_009"],"c":"COMPONENT_04","g":[10.46655,48.38]},{"id":"NODE_005","type":"junction","name":null,"kv":[110.0],"segs":["LINE_035","LINE_041","LINE_042"],"c":"COMPONENT_01","g":[10.47885,48.25451]},{"id":"NODE_006","type":"intermediate","name":null,"kv":[110.0],"segs":["LINE_029","LINE_040"],"c":"COMPONENT_01","g":[10.492,48.24766]},{"id":"NODE_007","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_010"],"c":"COMPONENT_05","g":[10.53431,48.38]},{"id":"NODE_008","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_010"],"c":"COMPONENT_05","g":[10.5483,48.38]},{"id":"NODE_009","type":"junction","name":null,"kv":[110.0],"segs":["LINE_025","LINE_026","LINE_058","LINE_064"],"c":"COMPONENT_01","g":[10.59922,48.21016]},{"id":"NODE_010","type":"junction","name":null,"kv":[110.0],"segs":["LINE_035","LINE_053","LINE_062"],"c":"COMPONENT_01","g":[10.60508,48.34538]},{"id":"NODE_011","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_063"],"c":"COMPONENT_01","g":[10.63382,48.09]},{"id":"NODE_012","type":"junction","name":null,"kv":[110.0],"segs":["LINE_031","LINE_032","LINE_062"],"c":"COMPONENT_01","g":[10.63902,48.36875]},{"id":"NODE_013","type":"junction","name":null,"kv":[110.0],"segs":["LINE_015","LINE_057","LINE_063"],"c":"COMPONENT_01","g":[10.6482,48.11243]},{"id":"NODE_014","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_032"],"c":"COMPONENT_01","g":[10.65502,48.38]},{"id":"NODE_015","type":"junction","name":null,"kv":[110.0],"segs":["LINE_030","LINE_051","LINE_052"],"c":"COMPONENT_01","g":[10.73449,48.19215]},{"id":"NODE_016","type":"junction","name":null,"kv":[110.0],"segs":["LINE_015","LINE_030","LINE_036"],"c":"COMPONENT_01","g":[10.73736,48.19278]},{"id":"NODE_017","type":"boundary_endpoint","name":null,"kv":[380.0],"segs":["LINE_016"],"c":"COMPONENT_01","g":[10.7557,48.09]},{"id":"NODE_018","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_011"],"c":"COMPONENT_06","g":[10.75858,48.38]},{"id":"NODE_019","type":"junction","name":null,"kv":[110.0,380.0],"segs":["LINE_004","LINE_016","LINE_027"],"c":"COMPONENT_01","g":[10.76028,48.10422]},{"id":"NODE_020","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_011"],"c":"COMPONENT_06","g":[10.77782,48.38]},{"id":"NODE_021","type":"junction","name":null,"kv":[110.0],"segs":["LINE_003","LINE_060","LINE_061"],"c":"COMPONENT_01","g":[10.8071,48.26404]},{"id":"NODE_022","type":"junction","name":null,"kv":[110.0],"segs":["LINE_002","LINE_019","LINE_036"],"c":"COMPONENT_01","g":[10.82685,48.21623]},{"id":"NODE_023","type":"intermediate","name":null,"kv":[110.0],"segs":["LINE_003","LINE_039"],"c":"COMPONENT_01","g":[10.8293,48.32107]},{"id":"NODE_024","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_008"],"c":"COMPONENT_01","g":[10.83351,48.38]},{"id":"NODE_025","type":"junction","name":null,"kv":[110.0],"segs":["LINE_007","LINE_008","LINE_028"],"c":"COMPONENT_01","g":[10.83472,48.37911]},{"id":"NODE_026","type":"junction","name":null,"kv":[110.0,380.0],"segs":["LINE_004","LINE_014","LINE_043"],"c":"COMPONENT_01","g":[10.83556,48.23829]},{"id":"NODE_027","type":"junction","name":null,"kv":[380.0],"segs":["LINE_001","LINE_018","LINE_020"],"c":"COMPONENT_01","g":[10.83853,48.23566]},{"id":"NODE_028","type":"junction","name":null,"kv":[110.0],"segs":["LINE_023","LINE_043","LINE_044"],"c":"COMPONENT_01","g":[10.8396,48.23884]},{"id":"NODE_029","type":"intermediate","name":null,"kv":[110.0],"segs":["LINE_054","LINE_055"],"c":"COMPONENT_01","g":[10.84003,48.23957]},{"id":"NODE_030","type":"junction","name":null,"kv":[110.0,380.0],"segs":["LINE_017","LINE_018","LINE_021"],"c":"COMPONENT_01","g":[10.84029,48.23356]},{"id":"NODE_031","type":"junction","name":null,"kv":[110.0],"segs":["LINE_017","LINE_045","LINE_047"],"c":"COMPONENT_01","g":[10.84343,48.23735]},{"id":"NODE_032","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_012"],"c":"COMPONENT_01","g":[10.84369,48.38]},{"id":"NODE_033","type":"junction","name":null,"kv":[110.0],"segs":["LINE_012","LINE_013","LINE_039"],"c":"COMPONENT_01","g":[10.84402,48.37794]},{"id":"NODE_034","type":"junction","name":null,"kv":[110.0],"segs":["LINE_019","LINE_048","LINE_050"],"c":"COMPONENT_01","g":[10.84406,48.2377]},{"id":"NODE_035","type":"junction","name":null,"kv":[110.0],"segs":["LINE_022","LINE_046","LINE_049"],"c":"COMPONENT_01","g":[10.84463,48.23835]},{"id":"NODE_036","type":"terminal","name":null,"kv":[110.0],"segs":["LINE_033"],"c":"COMPONENT_07","g":[10.85829,48.11407]},{"id":"NODE_037","type":"intermediate","name":null,"kv":[110.0],"segs":["LINE_037","LINE_038"],"c":"COMPONENT_02","g":[10.85862,48.11409]},{"id":"NODE_038","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_038"],"c":"COMPONENT_02","g":[10.86328,48.09]},{"id":"NODE_039","type":"junction","name":null,"kv":[110.0],"segs":["LINE_034","LINE_037","LINE_059"],"c":"COMPONENT_02","g":[10.87657,48.14454]},{"id":"NODE_040","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_059"],"c":"COMPONENT_02","g":[10.88,48.1477]},{"id":"NODE_041","type":"boundary_endpoint","name":null,"kv":[380.0],"segs":["LINE_021"],"c":"COMPONENT_01","g":[10.88,48.23389]},{"id":"NODE_042","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_022"],"c":"COMPONENT_01","g":[10.88,48.2833]},{"id":"NODE_043","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_006"],"c":"COMPONENT_03","g":[10.88,48.32562]},{"id":"NODE_044","type":"boundary_endpoint","name":null,"kv":[110.0],"segs":["LINE_005"],"c":"COMPONENT_03","g":[10.88,48.32805]}],"reports":[{"id":"SYN_REPORT_01","type":"weather_alert","t":"T+00:12","conf":"high for the exercise forecast; low for any asset-level implication","src":"Synthetic exercise weather desk","where":"Broad study area; approximate storm footprint in scenario_context.geojson","desc":"SYNTHETIC exercise weather desk estimates strong, gusty winds across much of the study area. The estimate is broad and does not identify damaged infrastructure.","poly":[[10.45,48.09],[10.88,48.09],[10.88,48.38],[10.45,48.38],[10.45,48.09]],"asset":null},{"id":"SYN_REPORT_02","type":"vegetation_and_access_report","t":"T+00:31","conf":"low to medium","src":"Synthetic municipal hotline caller","where":"Broad west-central rural witness area; multiple mapped lines are within the area polygon in scenario_context.geojson","desc":"SYNTHETIC caller reports a fallen branch across a rural access track and says nearby trees are brushing an overhead route somewhere in a broad area. No photograph, line identifier, or confirmed contact with a conductor is available; the report could refer to non-grid vegetation or any of several nearby corridors.","poly":[[10.56,48.18],[10.68,48.18],[10.68,48.24],[10.56,48.24],[10.56,48.18]],"asset":null},{"id":"SYN_REPORT_03","type":"protection_event_summary","t":"T+00:44","conf":"high that an exercise event was logged; low for its location and interpretation","src":"Synthetic dispatch console summary","where":"Broad southwest service sector; see approximate area polygon in scenario_context.geojson","desc":"SYNTHETIC dispatch summary records one automatic protection event and attempted reclose somewhere in a broad service sector. A separate status check confirms LINE_024 was precautionarily switched to de-energized; its status is known, but the reason for the protection event and any relationship to that switching action are not. Telemetry is delayed, and this report does not establish customer or asset connectivity.","poly":[[10.6,48.15],[10.75,48.15],[10.75,48.23],[10.6,48.23],[10.6,48.15]],"asset":"LINE_024"},{"id":"SYN_REPORT_04","type":"visual_flash_report","t":"T+01:03","conf":"low to medium","src":"Synthetic resident call and site-attendant comment","where":"Southeast industrial witness area; multiple mapped lines are nearby in scenario_context.geojson","desc":"SYNTHETIC resident reports a brief orange flash near a private industrial site during a gust. A site attendant mentions a backup-generator test around the same time, but the log has not yet been checked. The distant view cannot distinguish that activity from lightning, a vehicle, or a grid event.","poly":[[10.85,48.13],[10.88,48.13],[10.88,48.18],[10.85,48.18],[10.85,48.13]],"asset":null},{"id":"SYN_REPORT_05","type":"sound_and_warmth_report","t":"T+01:27","conf":"low to medium","src":"Synthetic field observer note","where":"Broad east-central field area; multiple mapped lines are inside the approximate polygon in scenario_context.geojson","desc":"SYNTHETIC field observer reports intermittent ticking and a handheld thermal contrast somewhere in a broad east-central area containing multiple overhead corridors. Wind, sun-warmed surfaces, load, distance, and viewing angle were not controlled; no calibrated reading or asset match exists.","poly":[[10.75,48.18],[10.84,48.18],[10.84,48.24],[10.75,48.24],[10.75,48.18]],"asset":null},{"id":"SYN_REPORT_06","type":"conductor_motion_report","t":"T+01:51","conf":"low","src":"Synthetic roadside observer note","where":"Broad northeast witness area; several mapped spans are inside the approximate polygon in scenario_context.geojson","desc":"SYNTHETIC observer says a span somewhere in a broad northeast area appeared to move more than nearby spans during a gust. Several mapped lines cross the area. No baseline video, measured clearance, support inspection, or confirmed conductor identity is available.","poly":[[10.79,48.29],[10.87,48.29],[10.87,48.36],[10.79,48.36],[10.79,48.29]],"asset":null}],"storm":[[10.47,48.12],[10.62,48.1],[10.84,48.12],[10.87,48.29],[10.8,48.36],[10.59,48.37],[10.47,48.29],[10.47,48.12]],"bounds":[10.45,48.09,10.88,48.38]};
+const SEG = DATA.segments, NODES = DATA.nodes, REPS = DATA.reports;
+const segById = Object.fromEntries(SEG.map(s => [s.id, s]));
+const nodeById = Object.fromEntries(NODES.map(n => [n.id, n]));
+const repById = Object.fromEntries(REPS.map(r => [r.id, r]));
+const short = id => id.replace('SYN_REPORT_', 'R').replace('SUBSTATION_', 'S').replace('LINE_', 'L').replace('NODE_', 'N');
+const fmt = (x, d = 1) => Number(x).toFixed(d);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const OFF = 'LINE_024';
+const REPORT_LABEL = {
+  weather_alert: 'Strong gusty wind',
+  vegetation_and_access_report: 'Fallen branch, trees brushing a line',
+  protection_event_summary: 'Protection trip + reclose; LINE_024 switched off',
+  visual_flash_report: 'Orange flash near industrial site',
+  sound_and_warmth_report: 'Ticking sound, warm spot',
+  conductor_motion_report: 'One span swinging more than others',
+};
+const CONF_W = { SYN_REPORT_02: 0.5, SYN_REPORT_03: 0.3, SYN_REPORT_04: 0.5, SYN_REPORT_05: 0.5, SYN_REPORT_06: 0.3 };
+const CONF_SHORT = { SYN_REPORT_01: 'high (area-wide only)', SYN_REPORT_02: 'low–medium', SYN_REPORT_03: 'high event, low location', SYN_REPORT_04: 'low–medium', SYN_REPORT_05: 'low–medium', SYN_REPORT_06: 'low' };
+const isMulti = s => new Set(s.kvs).size > 1;
+
+/* ---------- map ---------- */
+const [W, S, E, N] = DATA.bounds;
+const K = Math.cos((S + N) / 2 * Math.PI / 180);
+const VW = 1000, VH = Math.round(VW * (N - S) / ((E - W) * K));
+const P = ([lon, lat]) => [((lon - W) / (E - W)) * VW, ((N - lat) / (N - S)) * VH];
+const pathOf = pts => 'M' + pts.map(p => P(p).map(v => v.toFixed(1)).join(',')).join('L');
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('map');
+const FULL = `-10 -10 ${VW + 20} ${VH + 20}`;
+svg.setAttribute('viewBox', FULL);
+const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
+el('rect', { class: 'frame', x: 0, y: 0, width: VW, height: VH }, svg);
+el('path', { class: 'storm', d: pathOf(DATA.storm) + 'Z' }, svg);
+const repLayer = el('g', {}, svg);
+const repEls = {};
+for (const r of REPS) {
+  if (r.id === 'SYN_REPORT_01') continue;
+  repEls[r.id] = el('path', { class: 'rep', d: pathOf(r.poly) + 'Z' }, repLayer);
+  const [x, y] = P(r.poly[3]);
+  const t = el('text', { class: 'replbl', x: x + 6, y: y + 18 }, repLayer); t.textContent = short(r.id);
+}
+const segLayer = el('g', {}, svg), hitLayer = el('g', {}, svg), nodeLayer = el('g', {}, svg);
+const segEls = {};
+for (const s of SEG) {
+  const d = pathOf(s.g);
+  const cls = isMulti(s) ? 'multi' : (s.kv >= 380 ? 'k380' : 'k110');
+  segEls[s.id] = el('path', { class: `seg ${cls}`, d }, segLayer);
+  const h = el('path', { class: 'hit', d, tabindex: 0, role: 'button', 'aria-label': s.id }, hitLayer);
+  h.addEventListener('click', () => selectSeg(s.id));
+  h.addEventListener('keydown', e => { if (e.key === 'Enter') selectSeg(s.id); });
+}
+const nodeEls = {};
+for (const n of NODES) {
+  const [x, y] = P(n.g);
+  if (n.type === 'abstract_substation') {
+    const r = el('rect', { class: 'sub', x: x - 7, y: y - 7, width: 14, height: 14, tabindex: 0, role: 'button', 'aria-label': n.id }, nodeLayer);
+    r.addEventListener('click', () => selectNode(n.id));
+    r.addEventListener('keydown', e => { if (e.key === 'Enter') selectNode(n.id); });
+    nodeEls[n.id] = r;
+    const t = el('text', { class: 'sublbl', x: x + 10, y: y - 8 }, nodeLayer); t.textContent = short(n.id);
+  } else if (n.type === 'boundary_endpoint') {
+    el('circle', { class: 'bnd', cx: x, cy: y, r: 4 }, nodeLayer);
+  } else {
+    el('circle', { class: 'pt', cx: x, cy: y, r: 2.6 }, nodeLayer);
+  }
+}
+
+/* zoom */
+const hub = P(nodeById.SUBSTATION_07.g);
+const HUB = `${(hub[0] - 110).toFixed(0)} ${(hub[1] - 110).toFixed(0)} 220 220`;
+const zAll = document.getElementById('zoomAll'), zHub = document.getElementById('zoomHub');
+function zoom(hubOn) { svg.setAttribute('viewBox', hubOn ? HUB : FULL); zAll.setAttribute('aria-pressed', !hubOn); zHub.setAttribute('aria-pressed', hubOn); }
+zAll.onclick = () => zoom(false); zHub.onclick = () => zoom(true);
+
+/* report chips */
+const chipBox = document.getElementById('reportChips');
+const chips = {};
+for (const r of REPS) {
+  if (r.id === 'SYN_REPORT_01') continue;
+  const b = document.createElement('button');
+  b.className = 'chip'; b.textContent = short(r.id) + ' ' + r.t; b.setAttribute('aria-pressed', 'false');
+  b.onclick = () => (state.rep === r.id ? clearSel() : selectRep(r.id));
+  chipBox.appendChild(b); chips[r.id] = b;
+}
+
+/* selection */
+const state = { seg: null, node: null, rep: null };
+const panel = document.getElementById('panel');
+function paint() {
+  const lit = state.rep ? new Set(SEG.filter(s => s.rep[state.rep] || (repById[state.rep].asset === s.id)).map(s => s.id)) : null;
+  const nodeSegs = state.node ? new Set(nodeById[state.node].segs) : null;
+  for (const s of SEG) {
+    const e = segEls[s.id];
+    e.classList.toggle('sel', state.seg === s.id);
+    e.classList.toggle('lit', !!(lit && lit.has(s.id)) || !!(nodeSegs && nodeSegs.has(s.id)));
+    e.classList.toggle('dim', (!!lit && !lit.has(s.id)) || (!!nodeSegs && !nodeSegs.has(s.id)));
+  }
+  for (const id in repEls) repEls[id].classList.toggle('on', state.rep === id);
+  for (const id in chips) chips[id].setAttribute('aria-pressed', state.rep === id);
+  for (const id in nodeEls) nodeEls[id].classList.toggle('sel', state.node === id);
+}
+function clearSel() { state.seg = state.node = state.rep = null; paint(); renderIntro(); }
+function selectSeg(id) { state.seg = id; state.node = null; state.rep = null; paint(); renderSeg(segById[id]); }
+function selectNode(id) { state.node = id; state.seg = null; state.rep = null; paint(); renderNode(nodeById[id]); }
+function selectRep(id) { state.rep = id; state.seg = state.node = null; paint(); renderRep(repById[id]); }
+window.goSeg = id => { selectSeg(id); document.getElementById('map-section').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+window.goNode = id => selectNode(id);
+window.goRep = id => { selectRep(id); document.getElementById('map-section').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+const segBtn = id => `<button class="linkbtn" onclick="goSeg('${id}')">${id}</button>`;
+const nodeRef = id => {
+  const n = nodeById[id];
+  const label = n.name ? `${id} <span class="muted">${esc(n.name.split(';')[0])}</span>` : id;
+  return n.type === 'abstract_substation' ? `<button class="linkbtn" onclick="goNode('${id}')">${id}</button>${n.name ? ' <span class="muted">' + esc(n.name.split(';')[0]) + '</span>' : ''}` : label + (n.type === 'boundary_endpoint' ? ' <span class="muted">(map edge)</span>' : '');
+};
+
+function renderIntro() {
+  panel.innerHTML = `
+    <span class="eyebrow">Nothing selected</span>
+    <h3>Tap anything on the map</h3>
+    <p>Lines show their voltage, length, ends, storm exposure and which reports cover them. Squares are substations.</p>
+    <p class="muted" style="font-size:.9rem">Most lines meet at <button class="linkbtn" onclick="goNode('SUBSTATION_07')">SUBSTATION_07</button> (Oberottmarshausen): 14 of 64 lines touch it. Use “Oberottmarshausen hub” to zoom in.</p>
+    <p class="muted" style="font-size:.9rem">Start with a report chip above the map to see the candidate lines for that report.</p>`;
+}
+function flagsFor(s) {
+  const f = [];
+  if (s.id === OFF) f.push('<span class="flag off">switched off · no recharge</span>');
+  if (s.critical) f.push('<span class="flag crit">critical bridge</span>');
+  else if (s.bridge) f.push('<span class="flag">bridge</span>');
+  const nr = Object.keys(s.rep).length + (s.id === OFF && !s.rep.SYN_REPORT_03 ? 1 : 0);
+  if (nr > 1) f.push(`<span class="flag multi">${nr} reports</span>`);
+  if (isMulti(s)) f.push('<span class="flag">mixed voltage tags</span>');
+  return f.join('');
+}
+function renderSeg(s) {
+  const reps = Object.entries(s.rep).map(([r, km]) => `<button class="linkbtn" onclick="goRep('${r}')">${short(r)}</button> ${fmt(km, 2)} km`);
+  if (s.id === OFF && !s.rep.SYN_REPORT_03) reps.push(`<button class="linkbtn" onclick="goRep('SYN_REPORT_03')">R03</button> named directly`);
+  panel.innerHTML = `
+    <span class="eyebrow">Line section · ${s.c}</span>
+    <h3>${s.id}</h3>
+    <div>${flagsFor(s)}</div>
+    <dl class="kv">
+      <dt>voltage</dt><dd>${s.kv} kV${isMulti(s) ? ` <span class="muted">(tags: ${s.kvs.join(', ')})</span>` : ''}</dd>
+      <dt>length</dt><dd>${fmt(s.km, 2)} km</dd>
+      <dt>from</dt><dd>${nodeRef(s.f)}</dd>
+      <dt>to</dt><dd>${nodeRef(s.t)}</dd>
+      <dt>in storm</dt><dd>${fmt(s.storm, 2)} km (${Math.round(100 * s.storm / s.km)}%)</dd>
+      <dt>reports</dt><dd>${reps.length ? reps.join('<br>') : '<span class="muted">none (besides the area-wide R01)</span>'}</dd>
+      <dt>circuits</dt><dd>${s.circ ?? '<span class="muted">blank</span>'}</dd>
+      <dt>cables</dt><dd>${s.cab ?? '<span class="muted">blank</span>'}</dd>
+      <dt>operator</dt><dd>${esc(s.op) || '<span class="muted">blank</span>'}</dd>
+      <dt>missing</dt><dd class="muted">${esc(s.q)}</dd>
+    </dl>
+    ${s.id === OFF ? '<p class="muted" style="font-size:.9rem">SYN_REPORT_03 confirms this line was switched off as a precaution. Its status is known; why the nearby protection trip happened is not.</p>' : ''}`;
+}
+const TYPE_TEXT = {
+  abstract_substation: 'Substation area. The square is the middle of the station, not where wires end. Lines entering it are not proven to connect inside.',
+  junction: 'Point where several mapped line ends meet exactly.',
+  intermediate: 'Two lines joined end to end.',
+  terminal: 'A line simply ends here inside the study area.',
+  boundary_endpoint: 'Where the study box cut the line. The real line continues.',
+};
+function renderNode(n) {
+  panel.innerHTML = `
+    <span class="eyebrow">${n.type.replace(/_/g, ' ')} · ${n.c}</span>
+    <h3>${n.id}</h3>
+    ${n.name ? `<p><strong>${esc(n.name.replace(/;/g, ' / '))}</strong></p>` : ''}
+    <p class="muted" style="font-size:.9rem">${TYPE_TEXT[n.type]}</p>
+    <dl class="kv">
+      <dt>voltages</dt><dd>${n.kv.join(', ')} kV</dd>
+      <dt>lines (${n.segs.length})</dt><dd>${n.segs.map(segBtn).join(', ')}</dd>
+      <dt>position</dt><dd class="mono">${n.g[1].toFixed(4)} N, ${n.g[0].toFixed(4)} E</dd>
+    </dl>`;
+}
+function renderRep(r) {
+  const cand = SEG.filter(s => s.rep[r.id]).sort((a, b) => b.rep[r.id] - a.rep[r.id]);
+  const subs = NODES.filter(n => n.type === 'abstract_substation' && inPoly(n.g, r.poly));
+  panel.innerHTML = `
+    <span class="eyebrow">${r.id} · ${r.t} · ${r.type.replace(/_/g, ' ')}</span>
+    <h3>${esc(REPORT_LABEL[r.type])}</h3>
+    <p style="font-size:.92rem">${esc(r.desc)}</p>
+    <dl class="kv">
+      <dt>source</dt><dd>${esc(r.src)}</dd>
+      <dt>confidence</dt><dd>${esc(r.conf)}</dd>
+      ${r.asset ? `<dt>named line</dt><dd>${segBtn(r.asset)}</dd>` : ''}
+      <dt>substations</dt><dd>${subs.length ? subs.map(n => nodeRef(n.id)).join('<br>') : '<span class="muted">none in the box</span>'}</dd>
+    </dl>
+    <div><span class="eyebrow">${cand.length} candidate lines · km inside the box</span></div>
+    <table><tbody>${cand.map(s => `<tr><td>${segBtn(s.id)}</td><td class="muted">${s.kv} kV</td><td class="num">${fmt(s.rep[r.id], 2)}</td></tr>`).join('')}</tbody></table>`;
+}
+function inPoly([x, y], poly) {
+  let c = false;
+  for (let i = 0; i < poly.length - 1; i++) {
+    const [x1, y1] = poly[i], [x2, y2] = poly[i + 1];
+    if ((y1 > y) !== (y2 > y) && x < (x2 - x1) * (y - y1) / (y2 - y1) + x1) c = !c;
+  }
+  return c;
+}
+
+/* ---------- timeline ---------- */
+(function timeline() {
+  const tl = document.getElementById('tl');
+  const x = m => 40 + (m / 240) * 920;
+  const mins = t => { const [h, m] = t.slice(2).split(':').map(Number); return h * 60 + m; };
+  const g = (tag, a, txt) => { const e = el(tag, a, tl); if (txt != null) e.textContent = txt; return e; };
+  g('line', { x1: x(0), x2: x(240), y1: 110, y2: 110, stroke: 'var(--rule)', 'stroke-width': 2 });
+  for (let m = 0; m <= 240; m += 30) {
+    g('line', { x1: x(m), x2: x(m), y1: 104, y2: 116, stroke: 'var(--muted)' });
+    g('text', { x: x(m), y: 134, 'text-anchor': 'middle' }, `T+${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+  }
+  REPS.forEach((r, i) => {
+    const xm = x(mins(r.t)), y = 20 + (i % 3) * 26;
+    g('line', { x1: xm, x2: xm, y1: y + 4, y2: 110, stroke: 'var(--report)', 'stroke-opacity': 0.5 });
+    const d = g('circle', { class: 'tl-dot', cx: xm, cy: 110, r: 6, tabindex: 0, role: 'button', 'aria-label': r.id });
+    const t = g('text', { class: 'tl-name', x: xm + 6, y }, `${short(r.id)} ${REPORT_LABEL[r.type]}`);
+    if (r.id !== 'SYN_REPORT_01') { d.addEventListener('click', () => goRep(r.id)); t.style.cursor = 'pointer'; t.addEventListener('click', () => goRep(r.id)); }
+  });
+  g('text', { x: x(240), y: 96, 'text-anchor': 'end' }, 'scenario window ends');
+})();
+
+/* ---------- calc 1: report table ---------- */
+const repKm = {};
+(function repTable() {
+  const tb = document.querySelector('#repTable tbody');
+  tb.innerHTML = REPS.map(r => {
+    const isAll = r.id === 'SYN_REPORT_01';
+    const cand = isAll ? SEG : SEG.filter(s => s.rep[r.id]);
+    const km = isAll ? SEG.reduce((a, s) => a + s.km, 0) : cand.reduce((a, s) => a + s.rep[r.id], 0);
+    repKm[r.id] = km;
+    return `<tr class="${isAll ? '' : 'clickable'}" ${isAll ? '' : `onclick="goRep('${r.id}')"`}><td class="mono">${r.id}</td><td class="mono">${r.t}</td><td>${esc(REPORT_LABEL[r.type])}</td><td>${CONF_SHORT[r.id]}</td><td class="num">${cand.length}</td><td class="num">${fmt(km)}</td></tr>`;
+  }).join('');
+})();
+
+/* ---------- calc 2: overlaps ---------- */
+(function overlaps() {
+  const multi = SEG.map(s => ({ s, reps: Object.keys(s.rep).concat(s.id === OFF && !s.rep.SYN_REPORT_03 ? ['SYN_REPORT_03'] : []) })).filter(x => x.reps.length > 1);
+  document.getElementById('overlapOut').innerHTML = `<p>${multi.length} lines are covered by two reports: ` +
+    multi.map(({ s, reps }) => `${segBtn(s.id)} (${reps.map(short).join(' + ')})`).join(', ') +
+    `. LINE_024 counts because R03 names it directly and it also runs through the R05 box. Since it is already known to be off, the other three are the more interesting leads.</p>`;
+})();
+
+/* ---------- calc 3: bridges ---------- */
+(function bridges() {
+  const br = SEG.filter(s => s.bridge), cr = SEG.filter(s => s.critical);
+  document.getElementById('bridgeOut').innerHTML = `<p><strong>${br.length} of 64</strong> lines are bridges, but most just lead to a map edge or a dead end. <strong>${cr.length}</strong> are critical: they are the only mapped link between substations on each side: ${cr.map(s => segBtn(s.id)).join(', ')}. The network also splits into 7 mapped groups (<code>component_id</code>); COMPONENT_01 holds 54 of the 64 lines.</p>`;
+})();
+
+/* ---------- calc 4: storm exposure ---------- */
+(function exposure() {
+  const total = SEG.reduce((a, s) => a + s.km, 0), inS = SEG.reduce((a, s) => a + s.storm, 0);
+  const touched = SEG.filter(s => s.storm > 0.01).length;
+  const top = [...SEG].sort((a, b) => b.storm - a.storm).slice(0, 5);
+  document.getElementById('stormOut').innerHTML = `<p><strong>${fmt(inS)} of ${fmt(total)} km</strong> (${Math.round(100 * inS / total)}%) run inside the storm footprint, across ${touched} lines and 9 of 15 substations. The longest exposed runs: ${top.map(s => `${segBtn(s.id)} ${fmt(s.storm)} km`).join(', ')}.</p>`;
+})();
+
+/* ---------- calc 5: ranking ---------- */
+const evidence = {};
+for (const s of SEG) {
+  let e = 0;
+  for (const [r, km] of Object.entries(s.rep)) e += (CONF_W[r] || 0) * km / repKm[r];
+  evidence[s.id] = e;
+}
+const maxEv = Math.max(...Object.values(evidence));
+function rank() {
+  const wE = +document.getElementById('wE').value, wS = +document.getElementById('wS').value, wC = +document.getElementById('wC').value;
+  const sum = wE + wS + wC || 1;
+  const rows = SEG.map(s => {
+    const ev = evidence[s.id] / maxEv, ex = s.storm / s.km, im = s.critical ? 1 : s.bridge ? 0.4 : 0;
+    return { s, ev, ex, im, score: (wE * ev + wS * ex + wC * im) / sum };
+  }).sort((a, b) => b.score - a.score).slice(0, 12);
+  document.querySelector('#rankTable tbody').innerHTML = rows.map((r, i) => {
+    const why = [];
+    if (r.ev > 0.05) why.push(`reports ${Object.keys(r.s.rep).map(short).join('+')}`);
+    if (r.ex > 0.5) why.push(`${Math.round(r.ex * 100)}% in storm`);
+    if (r.s.critical) why.push('critical bridge');
+    if (r.s.id === OFF) why.push('already known off');
+    return `<tr class="clickable" onclick="goSeg('${r.s.id}')"><td class="num">${i + 1}</td><td class="mono">${r.s.id}</td><td class="mono">${r.s.kv}</td><td class="num">${fmt(r.s.km)}</td><td><div class="bar"><i style="width:${(r.score * 100).toFixed(0)}%"></i></div></td><td class="muted" style="font-size:.82rem">${why.join(' · ')}</td></tr>`;
+  }).join('');
+  window.TOP_KM = rows.slice(0, 10).reduce((a, r) => a + r.s.km, 0);
+  coverage();
+}
+['wE', 'wS', 'wC'].forEach(id => document.getElementById(id).addEventListener('input', rank));
+
+/* ---------- calc 6: coverage ---------- */
+const unionRepKm = SEG.reduce((a, s) => a + Math.max(0, ...Object.values(s.rep)), 0);
+function coverage() {
+  const n = Math.max(1, +document.getElementById('dN').value || 1), v = Math.max(1, +document.getElementById('dV').value || 1);
+  const f = Math.max(1, +document.getElementById('dF').value || 1), t = Math.max(0, +document.getElementById('dT').value || 0);
+  const airMin = 240 * f / (f + t);
+  const cap = n * v * airMin / 60;
+  const targets = [
+    ['Top 10 ranked lines', window.TOP_KM || 0],
+    ['Lines in report boxes', unionRepKm],
+    ['All line in storm', SEG.reduce((a, s) => a + s.storm, 0)],
+    ['Whole network', SEG.reduce((a, s) => a + s.km, 0)],
+  ];
+  document.getElementById('covOut').innerHTML = `
+    <div><b>${fmt(cap, 0)} km</b><span>your fleet can inspect in 4 h</span></div>
+    <div><b>${fmt(airMin / 60, 1)} h</b><span>airborne per drone</span></div>
+    <div><b>${Math.ceil(240 / (f + t))}</b><span>battery cycles per drone</span></div>`;
+  const max = Math.max(cap, ...targets.map(x => x[1]));
+  document.getElementById('gauge').innerHTML = targets.map(([label, km]) => {
+    const share = Math.min(1, cap / km);
+    return `<div class="row"><span>${label}</span><div class="track"><div class="fill ${cap < km ? 'over' : ''}" style="width:${(100 * km / max).toFixed(1)}%;opacity:.25"></div><div class="fill ${cap < km ? 'over' : ''}" style="width:${(100 * Math.min(km, cap) / max).toFixed(1)}%"></div></div><span class="mono" style="font-size:.78rem;text-align:right">${fmt(km, 0)} km · ${Math.round(share * 100)}%</span></div>`;
+  }).join('') + '<p class="muted" style="font-size:.78rem">Light bar: km of line. Solid bar: the part your fleet covers. Orange: not enough time.</p>';
+}
+['dN', 'dV', 'dF', 'dT'].forEach(id => document.getElementById(id).addEventListener('input', coverage));
+
+renderIntro();
+rank();
+</script>
+</body>
+</html>

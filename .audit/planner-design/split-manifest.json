@@ -1,0 +1,340 @@
+{
+  "source_sha256": "e92deba8a9da4e407433e00afa400f450bd181f686a3a53eaf72c429001440ba",
+  "sections": {
+    "premises": {
+      "title": "Premises",
+      "chapter": "docs/planner/overview.md"
+    },
+    "architecture": {
+      "title": "Architecture",
+      "chapter": "docs/planner/overview.md"
+    },
+    "agentic-workflow": {
+      "title": "Agentic workflow",
+      "chapter": "docs/planner/workflow.md"
+    },
+    "events-and-invalidation": {
+      "title": "Events and invalidation",
+      "chapter": "docs/planner/workflow.md"
+    },
+    "failure-policy": {
+      "title": "Failure policy",
+      "chapter": "docs/planner/workflow.md"
+    },
+    "simulation-and-decision-transaction": {
+      "title": "Simulation and decision transaction",
+      "chapter": "docs/planner/workflow.md"
+    },
+    "agent-tools": {
+      "title": "Agent tools",
+      "chapter": "docs/planner/workflow.md"
+    },
+    "validation-contract": {
+      "title": "Validation contract",
+      "chapter": "docs/planner/validation.md"
+    },
+    "completion-and-operator-actions": {
+      "title": "Completion and operator actions",
+      "chapter": "docs/planner/validation.md"
+    },
+    "hypotheses-and-physical-predictions": {
+      "title": "Hypotheses and physical predictions",
+      "chapter": "docs/planner/hypotheses.md"
+    },
+    "explained-hypothesis-revisions": {
+      "title": "Explained hypothesis revisions",
+      "chapter": "docs/planner/hypotheses.md"
+    },
+    "example-request": {
+      "title": "Example request",
+      "chapter": "docs/planner/hypotheses.md"
+    },
+    "replanning-rules": {
+      "title": "Replanning rules",
+      "chapter": "docs/planner/tasks-and-routes.md"
+    },
+    "task-and-observation-lifecycle": {
+      "title": "Task and observation lifecycle",
+      "chapter": "docs/planner/tasks-and-routes.md"
+    },
+    "route-acceptance-invariants": {
+      "title": "Route acceptance invariants",
+      "chapter": "docs/planner/tasks-and-routes.md"
+    },
+    "data-shape": {
+      "title": "Data shape",
+      "chapter": "docs/planner/domain-types.md"
+    },
+    "world-and-ground-truth": {
+      "title": "World and ground truth",
+      "chapter": "docs/planner/domain-types.md"
+    },
+    "positions-on-the-line": {
+      "title": "Positions on the line",
+      "chapter": "docs/planner/geometry-and-sensing.md"
+    },
+    "local-coverage-and-negative-evidence": {
+      "title": "Local coverage and negative evidence",
+      "chapter": "docs/planner/geometry-and-sensing.md"
+    },
+    "sensing": {
+      "title": "Sensing",
+      "chapter": "docs/planner/geometry-and-sensing.md"
+    },
+    "electrical-observation-abstraction": {
+      "title": "Electrical observation abstraction",
+      "chapter": "docs/planner/geometry-and-sensing.md"
+    },
+    "noise-and-detection-conditions": {
+      "title": "Noise and detection conditions",
+      "chapter": "docs/planner/geometry-and-sensing.md"
+    },
+    "state-model": {
+      "title": "State model",
+      "chapter": "docs/planner/drone-state.md"
+    },
+    "drone-state-machine": {
+      "title": "Drone state machine",
+      "chapter": "docs/planner/drone-state.md"
+    },
+    "energization-chargeability-and-inspection-state": {
+      "title": "Energization, chargeability and inspection state",
+      "chapter": "docs/planner/drone-state.md"
+    },
+    "time-and-simultaneous-transitions": {
+      "title": "Time and simultaneous transitions",
+      "chapter": "docs/planner/drone-state.md"
+    },
+    "power-flow-ground-truth-and-scenarios": {
+      "title": "Power flow ground truth and scenarios",
+      "chapter": "docs/planner/electrical-model.md"
+    },
+    "local-incident-fixtures": {
+      "title": "Local incident fixtures",
+      "chapter": "docs/planner/electrical-model.md"
+    },
+    "explicit-electrical-reduction": {
+      "title": "Explicit electrical reduction",
+      "chapter": "docs/planner/electrical-model.md"
+    },
+    "minimum-sampling": {
+      "title": "Minimum sampling",
+      "chapter": "docs/planner/electrical-model.md"
+    },
+    "state-estimation": {
+      "title": "State estimation",
+      "chapter": "docs/planner/estimation.md"
+    },
+    "conditional-uncertainty-and-model-discrepancy": {
+      "title": "Conditional uncertainty and model discrepancy",
+      "chapter": "docs/planner/estimation.md"
+    },
+    "bad-data-interpretation": {
+      "title": "Bad-data interpretation",
+      "chapter": "docs/planner/estimation.md"
+    },
+    "optimization-model-and-objective": {
+      "title": "Optimization model and objective",
+      "chapter": "docs/planner/optimization.md"
+    },
+    "benefit-ownership": {
+      "title": "Benefit ownership",
+      "chapter": "docs/planner/optimization.md"
+    },
+    "reward-order": {
+      "title": "Reward order",
+      "chapter": "docs/planner/optimization.md"
+    },
+    "routing-constraints": {
+      "title": "Routing constraints",
+      "chapter": "docs/planner/optimization.md"
+    },
+    "solver-guarantees-and-search-budget": {
+      "title": "Solver guarantees and search budget",
+      "chapter": "docs/planner/optimization.md"
+    },
+    "example-sortie": {
+      "title": "Example sortie",
+      "chapter": "docs/planner/optimization.md"
+    },
+    "evaluation": {
+      "title": "Evaluation",
+      "chapter": "docs/planner/evaluation.md"
+    },
+    "implementation-scope-and-acceptance-scenarios": {
+      "title": "Implementation scope and acceptance scenarios",
+      "chapter": "docs/planner/implementation.md"
+    },
+    "deferred-extensions": {
+      "title": "Deferred extensions",
+      "chapter": "docs/planner/implementation.md"
+    }
+  },
+  "chapters": {
+    "docs/planner/overview.md": {
+      "sections": [
+        "Premises",
+        "Architecture"
+      ],
+      "lines": 61,
+      "sha256": "fbfd7a7bf799d6a9090c449e09abd84b707f6c9d61f24c974ba0facbdded4504"
+    },
+    "docs/planner/workflow.md": {
+      "sections": [
+        "Agentic workflow",
+        "Events and invalidation",
+        "Failure policy",
+        "Simulation and decision transaction",
+        "Agent tools"
+      ],
+      "lines": 139,
+      "sha256": "530081d574bf557daa356c25c069711c967e80e03c911c7d281d11ace9ce9ba2"
+    },
+    "docs/planner/validation.md": {
+      "sections": [
+        "Validation contract",
+        "Completion and operator actions"
+      ],
+      "lines": 42,
+      "sha256": "04509f7118482bf72130529cb3fc9466a5f476e5e6192ec689ada6aa30af5db7"
+    },
+    "docs/planner/hypotheses.md": {
+      "sections": [
+        "Hypotheses and physical predictions",
+        "Explained hypothesis revisions",
+        "Example request"
+      ],
+      "lines": 78,
+      "sha256": "86dfc460bc9c8a1577fb80ef17ca274c593069a84df90502670ae9c0b4f80972"
+    },
+    "docs/planner/tasks-and-routes.md": {
+      "sections": [
+        "Replanning rules",
+        "Task and observation lifecycle",
+        "Route acceptance invariants"
+      ],
+      "lines": 39,
+      "sha256": "1f926cfc1cde23c7109b29a86a645c74d5fcfa15bb81c87164b8b772cf5689f9"
+    },
+    "docs/planner/domain-types.md": {
+      "sections": [
+        "Data shape",
+        "World and ground truth"
+      ],
+      "lines": 158,
+      "sha256": "30d6b736211153e3eb86c0d6ee721daa81401da540f9630c62a2696810506d0c"
+    },
+    "docs/planner/geometry-and-sensing.md": {
+      "sections": [
+        "Positions on the line",
+        "Local coverage and negative evidence",
+        "Sensing",
+        "Electrical observation abstraction",
+        "Noise and detection conditions"
+      ],
+      "lines": 61,
+      "sha256": "ebf0f2294c67dc65a607ef54df3b3167e0898c1a60d5bad87f0b582b0963b146"
+    },
+    "docs/planner/drone-state.md": {
+      "sections": [
+        "State model",
+        "Drone state machine",
+        "Energization, chargeability and inspection state",
+        "Time and simultaneous transitions"
+      ],
+      "lines": 119,
+      "sha256": "250ac9cf06b19059821354198180a80595518c5cf1d24effc593d4d548db0bec"
+    },
+    "docs/planner/electrical-model.md": {
+      "sections": [
+        "Power flow ground truth and scenarios",
+        "Local incident fixtures",
+        "Explicit electrical reduction",
+        "Minimum sampling"
+      ],
+      "lines": 62,
+      "sha256": "d32f1f6be63ab262562b8e5e2fb1e814e869c367156d7624a6b221aaa17dfcdd"
+    },
+    "docs/planner/estimation.md": {
+      "sections": [
+        "State estimation",
+        "Conditional uncertainty and model discrepancy",
+        "Bad-data interpretation"
+      ],
+      "lines": 66,
+      "sha256": "647380c34e713999c602e46d52cc9a2a2f7373c77e57fe8f7a501d777f991fb8"
+    },
+    "docs/planner/optimization.md": {
+      "sections": [
+        "Optimization model and objective",
+        "Benefit ownership",
+        "Reward order",
+        "Routing constraints",
+        "Solver guarantees and search budget",
+        "Example sortie"
+      ],
+      "lines": 87,
+      "sha256": "51d8ed8ce22936a4defba1c03545f47aec33e2ab2834fc7211131bd420bb42fd"
+    },
+    "docs/planner/evaluation.md": {
+      "sections": [
+        "Evaluation"
+      ],
+      "lines": 25,
+      "sha256": "785856e8b4326ae5610a0f56404b77367941da906e4afd10233a01be4a5b2d64"
+    },
+    "docs/planner/implementation.md": {
+      "sections": [
+        "Implementation scope and acceptance scenarios",
+        "Deferred extensions"
+      ],
+      "lines": 44,
+      "sha256": "a911c252eba129cfb2510d9c34cf64b779964400202f50a4e87eb7b75e3dc268"
+    }
+  },
+  "intentional_amendments": {
+    "Architecture": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "755222491e5c5a607e36fdff6b7accb384630c7e1cf82100d90ec5577d908197"
+    },
+    "Agentic workflow": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "20878897b2416f48de58c34da7432161a26fc50c5b7f71ba3fa95d21018a2443"
+    },
+    "Events and invalidation": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "73ed10dfece0dd20ef2dbc9ae5dbe9104c34b15d0bfc998673896e5b96dae41c"
+    },
+    "Failure policy": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "62e49a5d890fbd43df0e374f502ceff830d8077c8489bfd448d100eef736b02c"
+    },
+    "Simulation and decision transaction": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "2d965b16e5f70455f5b9b18604570eac21996a771bce59a99e77849fe14d0d83"
+    },
+    "Example request": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "b5a3a4706a080c6241c78c7333f4b16890a49b24ae270044467137ca44120fae"
+    },
+    "Data shape": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "5793ad06cfd0cb0c971a886f6737526ad96bc1aa42149194affe8db787ad7dc7"
+    },
+    "World and ground truth": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "7a219e7a4962d354ae174d5cd8128e096b1a28aed01fa3ec282eea2552d21b8d"
+    },
+    "Solver guarantees and search budget": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "d488b22eece899d8e58e226888f004695799987dafaf8e6e4c8f4f7f3064a1e6"
+    },
+    "Implementation scope and acceptance scenarios": {
+      "reason": "Near-real-time reactive/async decision contract or updated cross-chapter reference.",
+      "sha256": "41b6c45bcea88f780eb1ef7d24a4736909ff6082e7800af6454cae7f6ff96f37"
+    }
+  },
+  "additional_sections": [
+    "In-flight rerouting and latency"
+  ]
+}
