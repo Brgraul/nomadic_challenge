@@ -198,7 +198,7 @@ def test_stages_replay_and_round_caps_are_reported():
         if s.status == "FEASIBLE":
             assert s.bound is not None  # a bound accompanies every non-proven value
     assert res.replay["seed"] == 0 and res.replay["workers"] == 1
-    assert res.replay["deterministic_budget"] == pytest.approx(0.1)
+    assert res.replay["deterministic_budget"] == pytest.approx(planning.DETERMINISTIC_BUDGET)
     assert res.replay["solver"].startswith("ortools ")
     assert res.revision >= 0 and res.stop_reason
     tight = plan(sim, wall_cap_s=0.001)

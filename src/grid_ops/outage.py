@@ -16,7 +16,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections import defaultdict
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from itertools import pairwise
@@ -1321,17 +1321,20 @@ def rank_batch(
     acquisitions: Sequence[object],
     size: int,
     readings: Mapping[str, Reading] | None = None,
+    cost_of: Callable[[object], float] | None = None,
 ) -> list[object]:
-    """Greedy conditioned reranking: each pick maximises the joint value given earlier picks."""
+    """Greedy conditioned reranking: each pick maximises the joint value given earlier picks,
+    per second of cost when `cost_of` is given."""
     chosen: list[object] = []
     pool = list(acquisitions)
     current = 0.0
     while pool and len(chosen) < min(size, 3):
-        best, best_gain = None, 1e-9
+        best, best_gain, best_score = None, 0.0, 0.0
         for acq in pool:
             gain = joint_value(model, belief, [*chosen, acq], readings) - current
-            if gain > best_gain:
-                best, best_gain = acq, gain
+            score = gain / max(cost_of(acq), 1.0) if cost_of else gain
+            if gain > 1e-9 and score > best_score:
+                best, best_gain, best_score = acq, gain, score
         if best is None:
             break
         chosen.append(best)
@@ -1484,6 +1487,7 @@ def propose_experiments(
     *,
     limit: int | None = None,
     occupied: Collection[tuple[str, int]] = (),
+    cost_of: Callable[[object], float | None] | None = None,
 ) -> tuple[tuple[ExperimentProposal, ...], ExperimentValues]:
     """Bounded, ranked candidate experiments for the manager to turn into requests.
 
@@ -1495,11 +1499,18 @@ def propose_experiments(
     """
     limit = limit or model.caps.max_alternatives
     pool, meta = experiment_pool(model, belief, occupied)
+    if cost_of is not None:  # an acquisition no drone can reach is not a proposal
+        pool = [(label, acq) for label, acq in pool if cost_of(acq) is not None]
     values = value_acquisitions(model, belief, pool, readings)
     ranked = sorted(values.values, key=lambda v: (-v.eig_bits, v.key))
     by_label = dict(pool)
-    useful = [by_label[v.key] for v in ranked if v.eig_bits >= MIN_USEFUL_BITS][:12]
-    batch = rank_batch(model, belief, useful, BATCH_SIZE, readings)
+    useful = [by_label[v.key] for v in ranked if v.eig_bits >= MIN_USEFUL_BITS]
+    if cost_of is not None:
+        useful.sort(key=lambda a: cost_of(a))
+        useful = useful[:20]
+    else:
+        useful = useful[:12]
+    batch = rank_batch(model, belief, useful, BATCH_SIZE, readings, cost_of)
     order = {acquisition_key(acq): i + 1 for i, acq in enumerate(batch)}
     proposals = tuple(
         ExperimentProposal(

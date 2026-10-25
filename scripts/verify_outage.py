@@ -296,8 +296,7 @@ def run_runtime_lanes() -> tuple[list[dict], dict]:
     w = sim.snapshot
     check(bool(w.requests), "accepted proposal carries explicit measurement requests")
     check(
-        {str(r.request.method) for r in w.requests.values()}
-        <= {"lidar", "tdr", "contact_current"},
+        {str(r.request.method) for r in w.requests.values()} <= {"lidar", "tdr", "contact_current"},
         "requests use only the three declared methods",
     )
     check(any(t.status == "PENDING" for t in w.tasks.values()), "compiled tasks exist")
@@ -333,8 +332,7 @@ def run_runtime_lanes() -> tuple[list[dict], dict]:
     )
     check(
         all(
-            isinstance(d.state, Perched) or hasattr(d.state, "itinerary")
-            for d in w.drones.values()
+            isinstance(d.state, Perched) or hasattr(d.state, "itinerary") for d in w.drones.values()
         ),
         "every drone is perched or on an explicit itinerary",
     )
@@ -410,6 +408,10 @@ def main():
     parser.add_argument("--trunk", type=Path, help="checkout of the previous unit (P2) to compare")
     parser.add_argument("--llm", action="store_true", help="also run lane 10 on a real model")
     parser.add_argument("--llm-rounds", type=int, default=4)
+    parser.add_argument("--llm-seed", type=int, default=7)
+    parser.add_argument(
+        "--full", action="store_true", help="run the lane-10 model loop on the full network"
+    )
     parser.add_argument("--lane", type=int, action="append", help="run only these P3 lanes")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -422,7 +424,13 @@ def main():
             print(json.dumps({"case": "p3-perf", "out": str(args.out), **result["verdict"]}))
             return
         results = outage_lanes.run(
-            args.out, args.trunk, args.llm, args.llm_rounds, args.lane or list(outage_lanes.LANES)
+            args.out,
+            args.trunk,
+            args.llm,
+            args.llm_rounds,
+            args.lane or list(outage_lanes.LANES),
+            args.llm_seed,
+            args.full,
         )
         summary = [
             {

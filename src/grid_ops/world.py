@@ -512,6 +512,9 @@ def start_itinerary(world: World, drone_id: str, itinerary: Itinerary) -> None:
     """Put a drone on its itinerary and mark its first acquisition step in progress."""
     drone = world.drones[drone_id]
     drone.state = Executing(itinerary, 0)
+    first = itinerary.steps[0].operation
+    if isinstance(first, Charge):
+        knowledge.begin_charge_telemetry(world, first.site.circuit_id)
     _mark_step_tasks(world, itinerary.steps[0], TaskStatusV2.MEASURING)
 
 

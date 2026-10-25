@@ -658,7 +658,7 @@ def closed_loop(
     return sim, trace
 
 
-def lane10(out: Path, llm: bool, llm_rounds: int) -> dict:
+def lane10(out: Path, llm: bool, llm_rounds: int, llm_seed: int = 7, full: bool = False) -> dict:
     lane = Lane(10, out)
 
     def scripted(tb, trigger_ids=()):
@@ -715,7 +715,13 @@ def lane10(out: Path, llm: bool, llm_rounds: int) -> dict:
             return result
 
         language_model.author = "manager-llm"
-        sim2, trace2 = closed_loop(language_model, 7, llm_rounds, tiny_network(), wait_s=120)
+        sim2, trace2 = closed_loop(
+            language_model,
+            llm_seed,
+            llm_rounds,
+            load_network() if full else tiny_network(),
+            wait_s=120,
+        )
         (lane.dir / "llm-turns.json").write_text(json.dumps(captured, indent=1, default=str))
         w2 = sim2.snapshot
         turns = [t["turn"] for t in trace2 if "turn" in t] + [trace2[0]["turn"]]
@@ -928,13 +934,21 @@ def interleaved_route_response(trunk: Path | None, repeats: int, network: str = 
     return summary
 
 
-def run(out: Path, trunk: Path | None, llm: bool, llm_rounds: int, lanes: list[int]) -> list[dict]:
+def run(
+    out: Path,
+    trunk: Path | None,
+    llm: bool,
+    llm_rounds: int,
+    lanes: list[int],
+    llm_seed: int = 7,
+    full: bool = False,
+) -> list[dict]:
     results = []
     for n in lanes:
         if n == 1:
             results.append(lane1(out, trunk))
         elif n == 10:
-            results.append(lane10(out, llm, llm_rounds))
+            results.append(lane10(out, llm, llm_rounds, llm_seed, full))
         else:
             results.append(globals()[f"lane{n}"](out))
     return results

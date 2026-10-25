@@ -173,6 +173,21 @@ def ingest_handshake(
     recompute(world)
 
 
+def begin_charge_telemetry(world: World, circuit_id: str) -> None:
+    """A drone already perched on confirmed charging starts to charge in place: its telemetry
+    now renews the evidence, exactly as for a charge that follows a landing handshake."""
+    book = world.knowledge
+    for e in list(book.evidence.values()):
+        if (
+            e.circuit_id == circuit_id
+            and e.claim is Claim.CHARGE_OK
+            and not e.renewed_while_charging
+            and (e.expires_s is None or e.expires_s > world.clock_s)
+        ):
+            book.evidence[e.id] = replace(e, renewed_while_charging=True, expires_s=None)
+    recompute(world)
+
+
 def end_charge_telemetry(world: World, circuit_id: str) -> None:
     """Charging stopped being observed: telemetry no longer renews the circuit's evidence."""
     book = world.knowledge

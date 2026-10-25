@@ -564,6 +564,35 @@ class Simulation:
         self._outage_key = key
         self._value_key = None
 
+    def _cost_of(self, acquisition) -> float | None:
+        """Seconds for the cheapest drone that can reach and fly this acquisition on its present
+        energy (one-way, takeoff and landing included); None if none can."""
+        from grid_ops.sensing import LidarPass
+        from grid_ops.world import ground_duration_s, scan_duration_s
+
+        w = self._world
+        if isinstance(acquisition, LidarPass):
+            point = LinePoint(acquisition.target.segment_id, acquisition.target.start_mm)
+            dwell = scan_duration_s(acquisition)
+        else:
+            point = acquisition.conductor.point
+            dwell = ground_duration_s((acquisition,))
+        target = self.geometry.position_of(point)
+        model = w.energy_model
+        best = None
+        for d in w.drones.values():
+            if not isinstance(d.state, Perched):
+                continue
+            travel = leg_seconds(d.position, target, d.speed_km_per_min)
+            need = (
+                model.units_per_airborne_s * (travel + TAKEOFF_S + LAND_S + dwell)
+                + model.takeoff_units
+                + model.landing_units
+            )
+            if need <= d.battery.remaining_units:
+                best = min(best, travel + dwell) if best is not None else travel + dwell
+        return best
+
     def _fleet_blocked(self, open_tasks) -> bool:
         """Open requests exist, the whole fleet is perched, and the latest route pass after the
         tasks were compiled found nothing it could fly (energy, reach or eligibility)."""
@@ -602,13 +631,16 @@ class Simulation:
             for d in w.drones.values()
             if isinstance(d.state, Perched | Stranded)
         )
-        if self._proposal_key != (belief.digest, held):
+        fleet = tuple(
+            sorted((d.id, d.battery.remaining_units // 50_000, d.phase) for d in w.drones.values())
+        )
+        if self._proposal_key != (belief.digest, held, fleet):
             proposals, scored = outage.propose_experiments(
-                self.outage_model, belief, w.readings, occupied=held
+                self.outage_model, belief, w.readings, occupied=held, cost_of=self._cost_of
             )
             w.experiment_proposals = proposals
             self._best_eig = max((v.eig_bits for v in scored.values), default=0.0)
-            self._proposal_key = (belief.digest, held)
+            self._proposal_key = (belief.digest, held, fleet)
         w.outage_stop = outage.assess_stop(
             self.outage_model,
             belief,
