@@ -78,15 +78,15 @@ class PlannerWorker:
         self.restarts += 1
         self._spawn()
 
-    def plan(self, world, geometry, circuits, est_state, **kw) -> planning.PlanningResult:
+    def plan(self, world, geometry, circuits, **kw) -> planning.PlanningResult:
         """The planner contract (`Coordinator.planner`): returns a result or raises."""
         if not self.alive:
             self._restart()
         try:
-            self._conn.send(((world, geometry, circuits, est_state), kw))
+            self._conn.send(((world, geometry, circuits), kw))
         except (BrokenPipeError, OSError):
             self._restart()
-            self._conn.send(((world, geometry, circuits, est_state), kw))
+            self._conn.send(((world, geometry, circuits), kw))
         try:
             if not self._conn.poll(self.watchdog_s):
                 self._note("WATCHDOG", f"no answer in {self.watchdog_s:.1f}s; worker terminated")

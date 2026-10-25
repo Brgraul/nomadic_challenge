@@ -11,15 +11,18 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import StrEnum
 
 from grid_ops.assessment import Outcome
 from grid_ops.conclusion import check_conclusion, is_closed
 from grid_ops.hypotheses import ManagerOutput, RecommendationModel, RevisionModel
 from grid_ops.manager_tools import Toolbox
+from grid_ops.sensing import RequestStatus
 
-LOCAL_KINDS = ("clearance", "conductor_temp", "motion")
+# Only LiDAR carries a local inspected extent in the three-method runtime, so it is the only
+# local kind that can break a tie between readings.
+LOCAL_KINDS = ("lidar",)
 # Declared thresholds and levels the text may legitimately quote.
 DECLARED_NUMBERS = (0.5, 0.4, 2.0, 10.0, 15.0, 20.0, 0.2, 0.3, 5.0, 95.0, 30.0, 4.0, 1.0)
 NUMBER = re.compile(r"(-?\d+(?:\.\d+)?)\s*(km|mm|kV|MW|Mvar|°C|A|m)\b")
@@ -61,21 +64,42 @@ def _tied_readings(tb: Toolbox, rev: RevisionModel) -> list[str]:
 
 
 def tied_readings(world, spans) -> list[str]:
-    """Latest local reading per (segment, kind) that falls inside the hypothesis scope."""
+    """Latest lidar reading per segment whose inspected extent falls inside the scope."""
     latest: dict[tuple[str, str], tuple[int, str]] = {}
     for r in world.readings.values():
-        if str(r.kind) not in LOCAL_KINDS:
+        inspected = getattr(r.payload, "inspected", ())
+        if not inspected:
             continue
+        segment = inspected[0].segment_id
         for sp in spans:
-            if r.point.segment_id != sp.segment_id:
+            if segment != sp.segment_id:
                 continue
             lo, hi = sp.start_km * 1e6, sp.end_km * 1e6
-            inspected = r.inspected or ((r.point.offset_mm, r.point.offset_mm),)
-            if any(a <= hi and b >= lo for a, b in inspected):
-                key = (r.point.segment_id, str(r.kind))
-                if key not in latest or r.clock_s >= latest[key][0]:
-                    latest[key] = (r.clock_s, r.id)
+            if any(iv.start_mm <= hi and iv.end_mm >= lo for iv in inspected):
+                key = (segment, "lidar")
+                if key not in latest or r.acquired_end_s >= latest[key][0]:
+                    latest[key] = (r.acquired_end_s, r.id)
     return sorted(i for _, i in latest.values())
+
+
+def payload_values(reading) -> dict[str, float]:
+    """Scalar numbers a citation can quote from one reading's payload and acquisition."""
+    p, a = reading.payload, reading.acquisition
+    out = {}
+    for f in fields(p):
+        v = getattr(p, f.name)
+        if isinstance(v, int | float) and not isinstance(v, bool):
+            out[f.name] = float(v)
+    for name in ("integration_s", "duration_s"):
+        v = getattr(a, name, None)
+        if isinstance(v, int | float):
+            out[f"acquisition_{name}"] = float(v)
+    for iv in (*getattr(p, "inspected", ()), *getattr(p, "missing", ())):
+        out[f"{iv.segment_id}:{iv.start_mm}mm"] = float(iv.start_mm)
+        out[f"{iv.segment_id}:{iv.end_mm}mm"] = float(iv.end_mm)
+    out["acquired_start_s"] = float(reading.acquired_start_s)
+    out["acquired_end_s"] = float(reading.acquired_end_s)
+    return out
 
 
 def _allowed_numbers(tb: Toolbox, rev: RevisionModel) -> list[float]:
@@ -86,8 +110,7 @@ def _allowed_numbers(tb: Toolbox, rev: RevisionModel) -> list[float]:
         r = tb.world.readings.get(rid)
         if r is None:
             continue
-        allowed += [v for _, v in r.payload] + [r.point.offset_km, r.clock_s / 60]
-        allowed += [v for _, v in r.conditions]
+        allowed += list(payload_values(r).values())
     allowed += [v.value for v in rev.cited_values]
     for sp in rev.after.scope + (rev.before.scope if rev.before else []):
         allowed += [sp.start_km, sp.end_km]
@@ -111,6 +134,8 @@ def validate(output: ManagerOutput, tb: Toolbox) -> list[str]:
         or output.recommendations
         or output.conclusion
         or output.reopen
+        or output.measurement_requests
+        or output.retire_request_ids
     ):
         errors.append("empty proposal: revise, assess as unchanged, or recommend something")
     for rev in output.revisions:
@@ -212,13 +237,9 @@ def validate(output: ManagerOutput, tb: Toolbox) -> list[str]:
             if r is None:
                 errors.append(f"{tag}: cited value for unknown reading {v.reading_id}")
                 continue
-            actual = dict(r.payload).get(v.quantity)
+            actual = payload_values(r).get(v.quantity)
             if actual is None or not _close(v.value, actual):
                 errors.append(f"{tag}: cited {v.quantity}={v.value} does not match {v.reading_id}")
-        # electrical candidates must be tested before the final explanation
-        electrical = "topology" in text or "out of service" in text or "model" in rev.change_kinds
-        if electrical and not rev.diagnostic_ids:
-            errors.append(f"{tag}: an electrical candidate must cite a tested diagnostic")
     both = seen_h & {u.hypothesis_id for u in output.unchanged}
     for h in sorted(both):
         errors.append(f"{h}: appears as revised and unchanged")
@@ -246,7 +267,45 @@ def validate(output: ManagerOutput, tb: Toolbox) -> list[str]:
                 )
         if not output.reopen.reason.strip() or not output.reopen.evidence_ids:
             errors.append("reopen: needs a reason and the relevant new evidence")
+    errors += _request_errors(output, tb)
     return errors
+
+
+def _request_errors(output: ManagerOutput, tb: Toolbox) -> list[str]:
+    """Structural checks on the output's request lifecycle; feasibility is compile's job."""
+    errs: list[str] = []
+    w = tb.world
+    seen: set[str] = set()
+    for req in output.measurement_requests:
+        if req.id in seen:
+            errs.append(f"measurement request {req.id}: duplicate id in one output")
+        seen.add(req.id)
+    if len(set(output.retire_request_ids)) != len(output.retire_request_ids):
+        errs.append("retire_request_ids: duplicate ids in one output")
+    replaced = {r for req in output.measurement_requests for r in req.replaces_request_ids}
+    for rid in sorted(replaced | set(output.retire_request_ids)):
+        accepted = w.requests.get(rid)
+        if accepted is None:
+            errs.append(f"request {rid} does not exist in snapshot r{tb.snapshot.revision}")
+        elif accepted.status is not RequestStatus.ACTIVE:
+            errs.append(f"request {rid} is {accepted.status}, not ACTIVE")
+    for rid in sorted(replaced & set(output.retire_request_ids)):
+        errs.append(f"request {rid} is both replaced and retired")
+    for req in output.measurement_requests:
+        created = {r.hypothesis_id for r in output.revisions}
+        for hid in req.hypothesis_ids:
+            if hid not in w.hypotheses and hid not in created:
+                errs.append(f"measurement request {req.id}: unknown hypothesis {hid}")
+        evidence = (*req.evidence_ids, *getattr(req, "isolation_evidence_ids", ()))
+        for eid in evidence:
+            if eid not in known_ids(tb):
+                errs.append(f"measurement request {req.id}: evidence link {eid} does not exist")
+        if req.source_revision != str(tb.snapshot.revision):
+            errs.append(
+                f"measurement request {req.id}: source_revision {req.source_revision} is not "
+                f"the pinned revision {tb.snapshot.revision}"
+            )
+    return errs
 
 
 def _contrary_check(tb: Toolbox, rev: RevisionModel, tied: list[str]) -> list[str]:

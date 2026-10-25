@@ -2,21 +2,28 @@
 
 A `Toolbox` is built from a deep copy of the public World and nothing else: it holds no
 reference to the simulation, hidden physics, command queue or hold. Every result is labelled
-with the snapshot revision. `test_electrical_candidate` is the only computing tool; it re-solves
-the reduced model on the pinned readings under a candidate topology and records a diagnostic id
-that a final proposal must cite.
+with the snapshot revision. The three-method runtime runs no MW inference, so there is no
+computing tool: everything here reads accepted requests, compiled tasks, sensing payloads and
+derived knowledge.
 """
 
 from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
-from grid_ops import assessment, estimation
+from grid_ops import assessment
 from grid_ops.circuits import CircuitRegistry
-from grid_ops.consistency import check_consistency
+from grid_ops.geometry import Geometry
 from grid_ops.grid import Network
+from grid_ops.sensing import (
+    METHOD_CATALOG,
+    ContactCurrent,
+    LidarPass,
+    RequestStatus,
+    TdrTest,
+)
 from grid_ops.world import World, format_clock
 
 
@@ -58,6 +65,41 @@ class Toolbox:
     def world(self) -> World:
         return self.snapshot.world
 
+    def _reading_row(self, r, *, detailed: bool) -> dict:
+        acq = r.acquisition
+        if isinstance(acq, LidarPass):
+            location = {
+                "segment_id": acq.target.segment_id,
+                "start_mm": acq.target.start_mm,
+                "end_mm": acq.target.end_mm,
+            }
+        elif isinstance(acq, ContactCurrent | TdrTest):
+            location = {
+                "circuit_id": acq.conductor.circuit_id,
+                "phase": acq.conductor.phase,
+                "segment_id": acq.conductor.point.segment_id,
+                "offset_mm": acq.conductor.point.offset_mm,
+            }
+        else:
+            location = {}
+        row = {
+            "id": r.id,
+            "method": str(acq.method),
+            "drone": r.drone_id,
+            "task": r.task_id,
+            "requests": list(r.request_ids),
+            "time": format_clock(r.acquired_end_s / 60),
+            "location": location,
+            "values": asdict(r.payload),
+            "quality": asdict(r.quality),
+            "epoch": r.evidence_epoch,
+            "sensor_model_revision": r.sensor_model_revision,
+        }
+        if detailed:
+            interp = self.world.interpretations.get(r.id)
+            row["interpretation"] = None if interp is None else str(interp.outcome)
+        return row
+
     # -- tools --------------------------------------------------------------------------------
 
     def overview(self) -> str:
@@ -67,13 +109,13 @@ class Toolbox:
                 "scenario": str(w.scenario_mode),
                 "clock": format_clock(w.clock),
                 "readings": len(w.readings),
+                "requests": sum(
+                    1 for a in w.requests.values() if a.status is RequestStatus.ACTIVE
+                ),
                 "drones": {d.id: d.phase for d in w.drones.values()},
                 "known_switching": w.known_switching,
                 "hazards": [h.id for h in w.hazards],
                 "accepted_hypotheses": sorted(w.hypotheses),
-                "estimate": "prior-only"
-                if getattr(w.estimate, "prior_only", False)
-                else "has data",
                 "note": "no drone measurements exist" if not w.readings else "measurements exist",
             }
         )
@@ -88,8 +130,6 @@ class Toolbox:
 
     def segments_in_report(self, report_id: str) -> str:
         """Exact spans (segment and km range) of mapped lines inside a report area."""
-        from grid_ops.geometry import Geometry
-
         area = self.network.areas.get(report_id)
         if area is None:
             return self._out({"error": f"unknown report area {report_id}"})
@@ -107,49 +147,19 @@ class Toolbox:
                     )
         return self._out(spans)
 
-    def list_readings(self, kind: str | None = None) -> str:
+    def list_readings(self, method: str | None = None) -> str:
         rows = []
         for r in self.world.readings.values():
-            if kind and r.kind != kind:
+            if method and str(r.acquisition.method) != method:
                 continue
-            rows.append(
-                {
-                    "id": r.id,
-                    "kind": str(r.kind),
-                    "site": r.site_id,
-                    "time": format_clock(r.clock_s / 60),
-                    "values": dict(r.payload),
-                    "conditions": dict(r.conditions),
-                    "interpretation": str(
-                        getattr(self.world.interpretations.get(r.id), "outcome", "electrical")
-                    ),
-                }
-            )
+            rows.append(self._reading_row(r, detailed=True))
         return self._out(rows)
 
     def get_reading(self, reading_id: str) -> str:
         r = self.world.readings.get(reading_id)
         if r is None:
             return self._out({"error": f"unknown reading {reading_id}"})
-        interp = self.world.interpretations.get(reading_id)
-        return self._out(
-            {
-                "id": r.id,
-                "kind": str(r.kind),
-                "point": f"{r.point.segment_id} @ {r.point.offset_km:.3f} km",
-                "values": dict(r.payload),
-                "conditions": dict(r.conditions),
-                "inspected_mm": r.inspected,
-                "epoch": r.operating_epoch,
-                "interpretation": None
-                if interp is None
-                else {
-                    "outcome": str(interp.outcome),
-                    "reasons": interp.reasons,
-                    "detection_probability": interp.detection_probability,
-                },
-            }
-        )
+        return self._out(self._reading_row(r, detailed=True))
 
     def scope_assessment(
         self, segment_id: str, start_km: float, end_km: float, condition: str
@@ -167,40 +177,99 @@ class Toolbox:
             }
         )
 
-    def estimate_summary(self) -> str:
-        est = self.world.estimate
-        if est is None or not hasattr(est, "flows"):
-            return self._out({"estimate": "unavailable", "detail": getattr(est, "reason", None)})
+    def list_requests(self) -> str:
+        w = self.world
+        rejected = {u.request_id: u.reason for u in w.unavailable_work}
+        rows = []
+        for a in sorted(w.requests.values(), key=lambda a: a.id):
+            served = sorted(
+                (t for t in w.tasks.values() if t.request_id == a.id), key=lambda t: t.id
+            )
+            rows.append(
+                {
+                    "id": a.id,
+                    "method": str(a.request.method),
+                    "target": self._target_summary(a.request),
+                    "status": str(a.status),
+                    "urgency": a.request.urgency,
+                    "served_by": [{"task": t.id, "status": str(t.status)} for t in served],
+                    "rejected_reason": rejected.get(a.id),
+                    "retired_reason": a.retired_reason or None,
+                }
+            )
+        return self._out(rows)
+
+    @staticmethod
+    def _target_segment(request) -> str:
+        target = request.target
+        if hasattr(target, "segment_id"):
+            return target.segment_id
+        return target.circuit_id.split("/")[0]
+
+    @staticmethod
+    def _target_summary(request) -> str:
+        target = request.target
+        if hasattr(target, "segment_id"):
+            return f"{target.segment_id} {target.start_mm}-{target.end_mm} mm"
+        return f"{target.circuit_id} phase {target.phase} {target.start_mm}-{target.end_mm} mm"
+
+    def scan_coverage(self, segment_id: str) -> str:
+        """Union of lidar-inspected and missing intervals for one segment, from the payloads."""
+        inspected, missing = [], []
+        for r in self.world.readings.values():
+            payload = r.payload
+            if not getattr(payload, "inspected", ()):
+                continue
+            inspected += [iv for iv in payload.inspected if iv.segment_id == segment_id]
+            missing += [iv for iv in payload.missing if iv.segment_id == segment_id]
+        ins = assessment.merge(inspected)
+        mis = [x for part in assessment.merge(missing) for x in assessment._minus(part, ins)]
         return self._out(
             {
-                "prior_only": est.prior_only,
-                "accepted_readings": est.accepted_reading_ids,
-                "observable_segments": est.observable_segments,
-                "assumptions": est.assumptions,
-                "flows": {
-                    s: {
-                        "p_mw": round(f.p_mw, 2),
-                        "std": round(f.conditional_std_mw, 2),
-                        "radius95": f.uncertainty_radius_95_mw,
-                    }
-                    for s, f in est.flows.items()
-                    if f.observable
-                },
+                "segment_id": segment_id,
+                "inspected_mm": sum(i.end_mm - i.start_mm for i in ins),
+                "inspected": [{"start_mm": i.start_mm, "end_mm": i.end_mm} for i in ins],
+                "missing_mm": sum(i.end_mm - i.start_mm for i in mis),
+                "missing": [{"start_mm": i.start_mm, "end_mm": i.end_mm} for i in mis],
             }
         )
 
-    def consistency_summary(self) -> str:
-        rep = self.world.consistency
-        if rep is None:
-            return self._out({"consistency": "none"})
+    def charge_sites(self) -> str:
+        w = self.world
+        wanted: set[str] = set()
+        for a in w.requests.values():
+            if a.status is not RequestStatus.ACTIVE:
+                continue
+            seg = self._target_segment(a.request)
+            wanted.update(c.id for c in w.circuits_by_segment.get(seg, ()))
+        geo = Geometry(self.network)
+        for area in self.network.areas.values():
+            for seg in sorted(self.network.segments):
+                if any(iv.end_mm > iv.start_mm for iv in geo.clip_intervals(seg, area)):
+                    wanted.update(c.id for c in w.circuits_by_segment.get(seg, ()))
+        rows = []
+        for cid in sorted(wanted):
+            ch = w.knowledge.chargeability.get(cid)
+            rows.append(
+                {
+                    "circuit": cid,
+                    "state": str(ch.state) if ch else "unknown",
+                    "reason": ch.reason if ch else "no record",
+                    "expires_s": ch.expires_s if ch else None,
+                }
+            )
+        return self._out(rows)
+
+    def capabilities(self) -> str:
+        cap = self.world.capabilities
         return self._out(
             {
-                "status": str(rep.global_status),
-                "dof": rep.degrees_of_freedom,
-                "suspects": rep.suspect_reading_ids,
-                "meaning": rep.suspect_meaning,
-                "critical_sets": rep.critical_sets,
-                "explanations": [e.label for e in rep.explanations],
+                "methods": [
+                    {"method": m.method.value, "airborne": m.airborne, "description": m.description}
+                    for m in METHOD_CATALOG
+                ],
+                "sensor": asdict(cap),
+                "assumptions": list(self.world.brief),
             }
         )
 
@@ -219,53 +288,6 @@ class Toolbox:
 
     def list_hypotheses(self) -> str:
         return self._out({h: v for h, v in self.world.hypotheses.items()})
-
-    def test_electrical_candidate(self, out_of_service_segments: list[str]) -> str:
-        """Re-solve the reduced model on the pinned readings under a candidate topology. Isolated:
-        nothing outside this toolbox changes."""
-        known = {s for s in out_of_service_segments if s in self.network.segments}
-        bad = sorted(set(out_of_service_segments) - known)
-        model = estimation.ElectricalModel(self.network, self.registry, frozenset(known))
-        base = estimation.ElectricalModel(
-            self.network, self.registry, frozenset(self.world.known_switching)
-        )
-        readings = estimation.effective_readings(self.world)
-        rho = self.world.sensor_model.shared_rho
-        out = {}
-        for name, m in (("candidate", model), ("baseline", base)):
-            est = estimation.estimate(m, readings, clock_s=self.world.clock_s, shared_rho=rho)
-            cons = check_consistency(
-                m,
-                readings,
-                shared_rho=rho,
-                envelope=self.world.envelope,
-                known_switching_clock=dict(self.world.known_switching),
-                active_seed=self.world.scenario_seed,
-            )
-            out[name] = {
-                "estimate": "unavailable" if not hasattr(est, "flows") else "ok",
-                "dof": cons.degrees_of_freedom,
-                "chi2": cons.global_chi2,
-                "status": str(cons.global_status),
-                "components": len(m.components),
-            }
-        n = len(self.diagnostics) + 1
-        diag = DiagnosticRecord(
-            f"DX-r{self.snapshot.revision}-{n:02d}",
-            self.snapshot.revision,
-            tuple(sorted(known)),
-            out,
-        )
-        self.diagnostics[diag.id] = diag
-        verdict = (
-            "indistinguishable: both topologies are untestable with these readings"
-            if out["candidate"]["status"] == "NOT_TESTABLE"
-            and out["baseline"]["status"] == "NOT_TESTABLE"
-            else "see chi2/status; model-limited statistics justify no exclusion"
-        )
-        return self._out(
-            {"diagnostic_id": diag.id, "unknown_segments": bad, "results": out, "verdict": verdict}
-        )
 
 
 def build_toolbox(world: World, network: Network, registry: CircuitRegistry) -> Toolbox:

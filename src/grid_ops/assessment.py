@@ -1,41 +1,28 @@
-"""Public interpretation of local sensor readings: coverage and scoped condition results.
+"""Public interpretation of LiDAR readings: coverage and scoped vegetation-clearance results.
 
-A clean reading contradicts a local claim only where the sensor model gives adequate detection
-probability under the recorded conditions (>= 95% against the declared defect level) and only
-for the interval actually inspected. Thermal negatives without excitation and motion negatives
-outside a qualifying gust are inconclusive. Nothing here claims that a local defect caused the
-outage, or that clean readings prove mechanical integrity.
+LiDAR is the only local method in the three-method runtime. A below-threshold clearance over an
+inspected interval is an observed geometric fact and a hazard for landing checks; a clearance at
+or above the threshold, or no coverage, is inconclusive and never clears the scope. Nothing here
+claims that a local hazard caused the outage, or that clean readings prove mechanical integrity.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from grid_ops.geometry import MM_PER_KM, Interval, union_length_mm
 from grid_ops.knowledge import FaultAssessment
-from grid_ops.scenario import (
-    CLEARANCE_SIGMA_M,
-    CLEARANCE_THRESHOLD_M,
-    DEFECT_CLEARANCE_M,
-    DEFECT_EXCESS_C,
-    DEFECT_MOTION_M,
-    DETECTION_REQUIREMENT,
-    ENV_TEMP_C,
-    HEATING_C_PER_A2,
-    MOTION_SIGMA_M,
-    MOTION_THRESHOLD_M,
-    TEMP_SIGMA_C,
-    THERMAL_EXCESS_THRESHOLD_C,
-    THERMAL_EXCITATION_A,
-)
+from grid_ops.scenario import CLEARANCE_THRESHOLD_M
+from grid_ops.sensing import LidarPass, LidarPayload
 
 if TYPE_CHECKING:
-    from grid_ops.world import Reading, World
+    from grid_ops.world import World
 
-LOCAL_KINDS = ("clearance", "conductor_temp", "motion")
+LIDAR = "lidar"
+CONDITIONS = {"vegetation_clearance": LIDAR}
+HAZARD_TEXT = "low clearance (threshold {t} m)"
 
 
 class Verdict(StrEnum):
@@ -46,26 +33,9 @@ class Verdict(StrEnum):
 
 
 class Outcome(StrEnum):
-    POSITIVE = "positive"  # threshold event detected
-    QUALIFIED_NEGATIVE = "qualified_negative"  # adequate detection conditions, nothing found
+    POSITIVE = "positive"  # threshold event detected over inspected intervals
+    QUALIFIED_NEGATIVE = "qualified_negative"  # kept for proposal validation; lidar never emits it
     INCONCLUSIVE = "inconclusive"
-
-
-# condition name -> measurement kind that can test it
-CONDITIONS = {
-    "vegetation_clearance": "clearance",
-    "hot_joint": "conductor_temp",
-    "conductor_motion": "motion",
-}
-HAZARD_TEXT = {
-    "clearance": "low clearance (threshold {t} m)",
-    "conductor_temp": "thermal excess (threshold {t} C)",
-    "motion": "conductor motion (threshold {t} m)",
-}
-
-
-def _phi(x: float) -> float:
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
 
 
 @dataclass(frozen=True)
@@ -76,17 +46,14 @@ class SpanRef:
 
 
 @dataclass(frozen=True)
-class InspectionCoverage:
-    """What one accepted local reading actually inspected, and under which conditions."""
+class LidarCoverage:
+    """What one lidar reading inspected and missed over its requested target."""
 
     reading_id: str
     segment_id: str
-    kind: str
-    nominal: Interval
+    target: Interval
     inspected: tuple[Interval, ...]
-    occluded: tuple[Interval, ...]
-    visible_fraction: float
-    conditions: tuple[tuple[str, float], ...]
+    missing: tuple[Interval, ...]
     epoch: str
 
 
@@ -94,7 +61,6 @@ class InspectionCoverage:
 class ReadingInterpretation:
     reading_id: str
     outcome: Outcome
-    detection_probability: float
     reasons: tuple[str, ...]
     inspected: tuple[Interval, ...]
     value: float | None = None
@@ -114,100 +80,71 @@ class ScopeAssessment:
     explanation: str
 
 
+ASSUMPTIONS = {
+    LIDAR: (
+        "Gaussian clearance error 0.05 m",
+        "adverse value over the inspected interval",
+        "an above-threshold clearance is inconclusive, never a clear",
+    ),
+}
+
+
 # -- interpretation of one reading ---------------------------------------------------------------
 
 
-def detection_probability(kind: str, conditions: dict[str, float]) -> float:
-    """P(reading flags a threshold event | the worst credible defect), 0 if conditions are
-    inadequate to see it at all."""
-    if conditions.get("visible_fraction", 0.0) <= 0:
-        return 0.0
-    match kind:
-        case "clearance":
-            return _phi((CLEARANCE_THRESHOLD_M - DEFECT_CLEARANCE_M) / CLEARANCE_SIGMA_M)
-        case "conductor_temp":
-            if conditions.get("excitation_current_a", 0.0) <= THERMAL_EXCITATION_A:
-                return 0.0
-            return _phi((DEFECT_EXCESS_C - THERMAL_EXCESS_THRESHOLD_C) / TEMP_SIGMA_C)
-        case "motion":
-            if not conditions.get("qualifying_gust", 0.0):
-                return 0.0
-            return _phi((DEFECT_MOTION_M - MOTION_THRESHOLD_M) / MOTION_SIGMA_M)
-    return 0.0
-
-
-def inspected_intervals(reading: Reading) -> tuple[Interval, ...]:
-    return tuple(Interval(reading.point.segment_id, a, b) for a, b in reading.inspected)
-
-
-def interpret(reading: Reading, nominal: Interval) -> ReadingInterpretation:
-    kind = str(reading.kind)
-    cond = dict(reading.conditions)
-    values = dict(reading.payload)
-    inspected = inspected_intervals(reading)
-    p = detection_probability(kind, cond)
-    if not inspected or not values:
-        return ReadingInterpretation(
-            reading.id, Outcome.INCONCLUSIVE, 0.0, ("conductor not visible: nothing inspected",), ()
-        )
-    match kind:
-        case "clearance":
-            value = values["clearance_m"]
-            positive = value < CLEARANCE_THRESHOLD_M
-        case "conductor_temp":
-            current = cond.get("excitation_current_a", 0.0)
-            baseline = ENV_TEMP_C + HEATING_C_PER_A2 * current**2
-            value = values["temp_c"] - baseline
-            positive = value > THERMAL_EXCESS_THRESHOLD_C and p > 0
-        case "motion":
-            value = values["amplitude_m"]
-            positive = value > MOTION_THRESHOLD_M and p > 0
-        case _:
-            return ReadingInterpretation(reading.id, Outcome.INCONCLUSIVE, 0.0, ("not local",), ())
-    if positive:
-        return ReadingInterpretation(
-            reading.id, Outcome.POSITIVE, p, ("threshold event detected",), inspected, value
-        )
-    if p >= DETECTION_REQUIREMENT:
+def interpret_lidar(reading) -> ReadingInterpretation:
+    """A reading is POSITIVE only where its own payload shows a below-threshold clearance."""
+    payload = reading.payload
+    inspected = tuple(payload.inspected)
+    if payload.clearance_m is None:
         return ReadingInterpretation(
             reading.id,
-            Outcome.QUALIFIED_NEGATIVE,
-            p,
-            (f"adequate conditions, detection probability {p:.3f}",),
+            Outcome.INCONCLUSIVE,
+            ("clearance missing; no outage conclusion",),
             inspected,
-            value,
+            None,
         )
-    why = {
-        "conductor_temp": "thermal excitation too low (current below the excitation threshold)",
-        "motion": "no qualifying gust window during the reading",
-        "clearance": "insufficient detection probability",
-    }[kind]
-    return ReadingInterpretation(reading.id, Outcome.INCONCLUSIVE, p, (why,), inspected, value)
+    if payload.clearance_m < CLEARANCE_THRESHOLD_M:
+        return ReadingInterpretation(
+            reading.id,
+            Outcome.POSITIVE,
+            (
+                f"clearance {payload.clearance_m:.2f} m below the "
+                f"{CLEARANCE_THRESHOLD_M} m threshold",
+            ),
+            inspected,
+            payload.clearance_m,
+        )
+    return ReadingInterpretation(
+        reading.id,
+        Outcome.INCONCLUSIVE,
+        ("clearance above threshold or missing; no outage conclusion",),
+        inspected,
+        payload.clearance_m,
+    )
 
 
 # -- ingestion -----------------------------------------------------------------------------------
 
 
-def ingest_local_reading(world: World, reading: Reading, nominal: Interval) -> None:
-    """Record coverage; a detected threshold event becomes a scoped hazard for landing checks."""
-    inspected = inspected_intervals(reading)
-    occluded = _minus(nominal, inspected)
-    span = max(nominal.end_mm - nominal.start_mm, 1)
+def ingest_lidar(world: World, reading) -> None:
+    """Record coverage and interpretation for one lidar reading; a below-threshold clearance
+    becomes a scoped hazard for landing checks. Idempotent per reading id."""
+    if not isinstance(reading.payload, LidarPayload) or reading.id in world.interpretations:
+        return
+    interp = interpret_lidar(reading)
+    world.interpretations[reading.id] = interp
+    target = reading.acquisition.target
     world.coverage.append(
-        InspectionCoverage(
+        LidarCoverage(
             reading.id,
-            reading.point.segment_id,
-            str(reading.kind),
-            nominal,
-            inspected,
-            occluded,
-            sum(i.end_mm - i.start_mm for i in inspected) / span,
-            reading.conditions,
-            reading.operating_epoch,
+            target.segment_id,
+            target,
+            reading.payload.inspected,
+            reading.payload.missing,
+            reading.evidence_epoch,
         )
     )
-    interp = interpret(reading, nominal)
-    world.interpretations[reading.id] = interp
     if interp.outcome is Outcome.POSITIVE:
         for iv in interp.inspected:
             world.hazards.append(
@@ -218,17 +155,9 @@ def ingest_local_reading(world: World, reading: Reading, nominal: Interval) -> N
                     iv.end_mm,
                     "FAIL",
                     (reading.id,),
-                    (HAZARD_TEXT[str(reading.kind)].format(t=_threshold(str(reading.kind))),),
+                    (HAZARD_TEXT.format(t=CLEARANCE_THRESHOLD_M),),
                 )
             )
-
-
-def _threshold(kind: str) -> float:
-    return {
-        "clearance": CLEARANCE_THRESHOLD_M,
-        "conductor_temp": THERMAL_EXCESS_THRESHOLD_C,
-        "motion": MOTION_THRESHOLD_M,
-    }[kind]
 
 
 # -- interval arithmetic -------------------------------------------------------------------------
@@ -278,55 +207,51 @@ class CoverageReport:
     segment_id: str
     kind: str
     inspected: tuple[Interval, ...]
-    occluded: tuple[Interval, ...]
+    missing: tuple[Interval, ...]
     uninspected: tuple[Interval, ...]
     inspected_mm: int
     scope_mm: int
     stop_count: int
 
 
-def coverage_report(world: World, scope: SpanRef, kind: str) -> CoverageReport:
-    recs = [c for c in world.coverage if c.segment_id == scope.segment_id and c.kind == kind]
-    inspected = merge(_clip([i for c in recs for i in c.inspected], scope))
-    occluded_raw = merge(_clip([o for c in recs for o in c.occluded], scope))
-    occluded = [
-        o for part in occluded_raw for o in _minus(part, inspected)
-    ]  # occluded only where no other reading saw it
+def coverage_report(world: World, scope: SpanRef, kind: str = LIDAR) -> CoverageReport:
+    """Union of inspected and missing extent across lidar readings whose target overlaps the
+    scope. Missing extent counts only where no reading inspected."""
     base = Interval(scope.segment_id, scope.start_mm, scope.end_mm)
+    inspected_raw: list[Interval] = []
+    missing_raw: list[Interval] = []
+    count = 0
+    for reading in world.readings.values():
+        acquisition = reading.acquisition
+        if not isinstance(acquisition, LidarPass):
+            continue
+        if acquisition.target.segment_id != scope.segment_id:
+            continue
+        if (
+            acquisition.target.end_mm <= scope.start_mm
+            or acquisition.target.start_mm >= scope.end_mm
+        ):
+            continue
+        count += 1
+        inspected_raw += _clip(list(reading.payload.inspected), scope)
+        missing_raw += _clip(list(reading.payload.missing), scope)
+    inspected = merge(inspected_raw)
+    missing = [x for part in merge(missing_raw) for x in _minus(part, inspected)]
     uninspected = _minus(base, inspected)
     return CoverageReport(
         scope.segment_id,
         kind,
         tuple(inspected),
-        tuple(merge(occluded)),
+        tuple(missing),
         uninspected,
         union_length_mm(inspected),
         scope.end_mm - scope.start_mm,
-        len(recs),
+        count,
     )
 
 
-ASSUMPTIONS = {
-    "clearance": (
-        "Gaussian clearance error 0.05 m",
-        "adverse value over the inspected interval",
-        "95% detection against a 0.4 m defect",
-    ),
-    "conductor_temp": (
-        "thermal error 1 C; baseline = environment + k*I^2",
-        "excitation current above 20 A required",
-        "95% detection against a 15 C excess",
-    ),
-    "motion": (
-        "motion error 0.02 m",
-        "a qualifying gust window is required",
-        "95% detection against 0.30 m",
-    ),
-}
-
-
 def assess_scope(world: World, scope: SpanRef, condition: str) -> ScopeAssessment:
-    """Verdict for one condition over one scope, from the readings that inspected it."""
+    """Verdict for one condition over one scope, from the lidar readings that inspected it."""
     kind = CONDITIONS.get(condition)
     base = Interval(scope.segment_id, scope.start_mm, scope.end_mm)
     if kind is None:
@@ -343,60 +268,46 @@ def assess_scope(world: World, scope: SpanRef, condition: str) -> ScopeAssessmen
             f"No sensor here can test '{condition}'; it stays unassessed, not cleared.",
         )
     failed: list[Interval] = []
-    clear: list[Interval] = []
     inconclusive: list[Interval] = []
     evidence: list[str] = []
     for rec in world.coverage:
-        if rec.segment_id != scope.segment_id or rec.kind != kind:
+        if rec.segment_id != scope.segment_id or rec.reading_id not in world.interpretations:
             continue
         interp = world.interpretations[rec.reading_id]
         part = _clip(list(interp.inspected), scope)
         if not part:
             continue
         evidence.append(rec.reading_id)
-        match interp.outcome:
-            case Outcome.POSITIVE:
-                failed += part
-            case Outcome.QUALIFIED_NEGATIVE:
-                clear += part
-            case Outcome.INCONCLUSIVE:
-                inconclusive += part
-    failed_m, clear_m = merge(failed), merge(clear)
-    inconclusive_m = [x for iv in merge(inconclusive) for x in _minus(iv, failed_m + clear_m)]
-    clear_only = [x for iv in clear_m for x in _minus(iv, failed_m)]
-    untested = _minus(base, merge(failed_m + clear_only + inconclusive_m))
-    assumptions = ASSUMPTIONS[kind]
+        if interp.outcome is Outcome.POSITIVE:
+            failed += part
+        else:
+            inconclusive += part
+    failed_m, inconclusive_m = merge(failed), merge(inconclusive)
+    untested = _minus(base, failed_m + inconclusive_m)
+    if failed_m:
+        verdict = Verdict.FAIL
+        text = f"Threshold event detected on {_mm(failed_m)}."
+    else:
+        verdict = Verdict.INDETERMINATE
+        text = (
+            f"Inconclusive {_mm(inconclusive_m) or 'none'}; "
+            f"untested {_mm(list(untested)) or 'none'}. Untested alternatives remain open; "
+            "an above-threshold clearance is never a clear."
+        )
     disclaimer = (
         " Local findings do not show this condition caused the outage; clean readings do not "
         "prove mechanical integrity."
     )
-    covered_clear = union_length_mm(clear_only)
-    if failed_m:
-        verdict = Verdict.FAIL
-        text = (
-            f"Threshold event detected on {_mm(failed_m)}; "
-            f"qualified-clear on {_mm(clear_only) or 'none'}."
-        )
-    elif covered_clear >= base.end_mm - base.start_mm and base.end_mm > base.start_mm:
-        verdict = Verdict.PASS
-        text = "Qualified negative evidence covers the whole scope under adequate conditions."
-    else:
-        verdict = Verdict.INDETERMINATE
-        text = (
-            f"Qualified-clear {_mm(clear_only) or 'none'}; "
-            f"inconclusive {_mm(inconclusive_m) or 'none'}; "
-            f"untested {_mm(list(untested)) or 'none'}. Untested alternatives remain open."
-        )
     return ScopeAssessment(
         scope,
         condition,
         verdict,
         tuple(failed_m),
-        tuple(clear_only),
+        (),
         tuple(inconclusive_m),
         tuple(untested),
         tuple(sorted(set(evidence))),
-        assumptions,
+        ASSUMPTIONS[kind],
         text + disclaimer,
     )
 
@@ -409,12 +320,9 @@ def _mm(ivs: list[Interval]) -> str:
 
 
 def segment_assessments(world: World) -> list[ScopeAssessment]:
-    """Assessments of every tested condition over each segment's full length."""
-    seen = {(c.segment_id, c.kind) for c in world.coverage}
-    out = []
-    for seg, kind in sorted(seen):
-        length = world.segment_lengths[seg]
-        for condition, k in CONDITIONS.items():
-            if k == kind:
-                out.append(assess_scope(world, SpanRef(seg, 0, length), condition))
-    return out
+    """Assessments of the tested condition over each scanned segment's full length."""
+    seen = {c.segment_id for c in world.coverage}
+    return [
+        assess_scope(world, SpanRef(seg, 0, world.segment_lengths[seg]), "vegetation_clearance")
+        for seg in sorted(seen)
+    ]

@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from grid_ops.consistency import GlobalStatus, Testability
 from grid_ops.scenario import ScenarioMode
+from grid_ops.sensing import ContactCurrent, LidarPass, TdrTest
 
 if TYPE_CHECKING:
     from grid_ops.hypotheses import ManagerOutput
@@ -54,6 +54,15 @@ def _component_of(tb: Toolbox, segment: str) -> str:
     return tb.network.segments[segment].component
 
 
+def _reading_segment(reading) -> str | None:
+    acquisition = reading.acquisition
+    if isinstance(acquisition, LidarPass):
+        return acquisition.target.segment_id
+    if isinstance(acquisition, ContactCurrent | TdrTest):
+        return acquisition.conductor.point.segment_id
+    return None
+
+
 def _evidence_segment(tb: Toolbox, evidence_id: str) -> str | None:
     w = tb.world
     if evidence_id in w.knowledge.evidence:
@@ -63,7 +72,7 @@ def _evidence_segment(tb: Toolbox, evidence_id: str) -> str | None:
         if h.id == evidence_id:
             return h.segment_id
     r = w.readings.get(evidence_id)
-    return r.point.segment_id if r else None
+    return _reading_segment(r) if r else None
 
 
 def check_conclusion(output: ManagerOutput, tb: Toolbox) -> list[str]:
@@ -100,9 +109,7 @@ def check_conclusion(output: ManagerOutput, tb: Toolbox) -> list[str]:
     hazard_segs = {_evidence_segment(tb, e) for e in c.causal_link_evidence_ids}
     has_local = any(
         e.startswith("HZ")
-        or (
-            e in w.readings and str(w.readings[e].kind) in ("clearance", "conductor_temp", "motion")
-        )
+        or (e in w.readings and isinstance(w.readings[e].acquisition, LidarPass))
         for e in c.causal_link_evidence_ids
     )
     link = [
@@ -110,9 +117,7 @@ def check_conclusion(output: ManagerOutput, tb: Toolbox) -> list[str]:
         for e in c.causal_link_evidence_ids
         if e in w.knowledge.evidence
         and w.knowledge.evidence[e].source in ("reading", "report", "handshake")
-        and not (
-            e in w.readings and str(w.readings[e].kind) in ("clearance", "conductor_temp", "motion")
-        )
+        and not (e in w.readings and isinstance(w.readings[e].acquisition, LidarPass))
     ]
     for e in c.causal_link_evidence_ids:
         if (
@@ -161,9 +166,9 @@ def check_conclusion(output: ManagerOutput, tb: Toolbox) -> list[str]:
 
 
 def reopen_relevance(world: World, since_s: int) -> list[str]:
-    """New evidence that bears on a concluded case: local readings inside the cause scope that
-    contradict it, new hazards, or known switching in the cause's component. Covariance or flow
-    observability changes are deliberately not triggers."""
+    """New evidence that bears on a concluded case: lidar readings inside the cause scope that
+    detected a hazard, new hazards, or known switching in the cause's component. Coverage growth
+    alone is deliberately not a trigger."""
     inv = world.investigation
     if inv.conclusion is None:
         return []
@@ -173,19 +178,17 @@ def reopen_relevance(world: World, since_s: int) -> list[str]:
     if cause:
         spans = cause["scope"]
         for r in world.readings.values():
-            if r.clock_s <= since_s or str(r.kind) not in ("clearance", "conductor_temp", "motion"):
+            if r.acquired_end_s <= since_s or not isinstance(r.acquisition, LidarPass):
                 continue
+            target = r.acquisition.target
             inside = any(
-                s["segment_id"] == r.point.segment_id
-                and s["start_km"] * 1e6 <= r.point.offset_mm <= s["end_km"] * 1e6
+                s["segment_id"] == target.segment_id
+                and s["start_km"] * 1e6 <= target.end_mm
+                and s["end_km"] * 1e6 >= target.start_mm
                 for s in spans
             )
             interp = world.interpretations.get(r.id)
-            if (
-                inside
-                and interp is not None
-                and str(interp.outcome) in ("positive", "qualified_negative")
-            ):
+            if inside and interp is not None and str(interp.outcome) == "positive":
                 flags.append(f"{r.id}: {interp.outcome} reading inside the cause scope")
     for seg, t in world.known_switching.items():
         if t > since_s:
@@ -204,6 +207,8 @@ class Check:
 
 
 def benchmark_checks(world: World) -> list[Check]:
+    from grid_ops.consistency import GlobalStatus, Testability
+
     est = world.estimate
     if world.scenario_mode is not ScenarioMode.HEALTHY_BENCHMARK:
         return [Check("benchmark", False, "not the selected objective in this scenario")]
@@ -246,10 +251,7 @@ def investigation_report(world: World) -> dict:
     local = [h for h in world.hazards]
     report = {
         "incident_status": str(inv.status),
-        "operating_assessment": (
-            f"{len(world.readings)} readings; estimate "
-            f"{'prior-only' if getattr(world.estimate, 'prior_only', True) else 'data-conditioned'}"
-        ),
+        "operating_assessment": f"{len(world.readings)} three-method readings",
         "local_investigation": f"{len(local)} detected hazard(s); "
         f"{len(world.coverage)} inspections recorded",
         "benchmark": [(c.name, c.met, c.detail) for c in benchmark_checks(world)]

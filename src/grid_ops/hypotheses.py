@@ -14,6 +14,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from grid_ops.sensing import MeasurementRequest
+
 
 class Assessment(StrEnum):
     SUPPORTED = "SUPPORTED"
@@ -127,6 +129,8 @@ class ManagerOutput(BaseModel):
     )
     conclusion: ConclusionModel | None = None
     reopen: ReopenModel | None = None
+    measurement_requests: list[MeasurementRequest] = Field(default_factory=list)
+    retire_request_ids: list[str] = Field(default_factory=list)
 
 
 class AlternativeDisposition(BaseModel):

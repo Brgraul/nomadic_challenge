@@ -1,12 +1,13 @@
 """Atomic acceptance of explained decisions.
 
-A decision carries identity, the evidence it was based on, the before-values it revises and any
-sorties it wants. Acceptance first checks, without any hold, that the proposal still means what it
-said (identity, semantic dependencies, before-values). It then takes a hold cycle, builds a private
-candidate (hypotheses, explanations, model) and validates the candidate model and every sortie
-against the live fleet. Only if every check passes is anything applied, in one block. A failure
-discards the candidate, attempts the same validated route-only continuation, and releases the
-cycle when that continuation is safe.
+A decision carries identity, the evidence it was based on, the before-values it revises, any
+sorties it wants and the measurement-request lifecycle it proposes. Acceptance first checks,
+without any hold, that the proposal still means what it said (identity, semantic dependencies,
+before-values, request references). It then takes a hold cycle, builds a private candidate
+(hypotheses, explanations, model, accepted/retired requests) and validates every sortie against
+the live fleet. Only if every check passes is anything applied, in one block. A failure discards
+the candidate, attempts the same validated route-only continuation, and releases the cycle when
+that continuation is safe.
 """
 
 from __future__ import annotations
@@ -16,12 +17,29 @@ import json
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
-from grid_ops import estimation, knowledge
-from grid_ops.consistency import GlobalStatus, check_consistency
+from grid_ops import knowledge
+from grid_ops.geometry import Geometry, haversine_km
 from grid_ops.hypotheses import ManagerOutput
 from grid_ops.proposals import ProposedStatus, tied_readings
-from grid_ops.routes import SortieRequest, StopRequest, apply_sorties, validate_sorties
-from grid_ops.world import Flying, Measuring, World
+from grid_ops.routes import SortieRequest, apply_sorties, current_requests, validate_sorties
+from grid_ops.sensing import AcceptedRequest, RequestStatus
+from grid_ops.world import (
+    LAND_S,
+    TAKEOFF_S,
+    Charge,
+    Executing,
+    GroundSample,
+    Land,
+    Perched,
+    ScheduledStep,
+    Stranded,
+    Takeoff,
+    Transit,
+    Wait,
+    World,
+    leg_seconds,
+    position_at,
+)
 
 
 class Outcome(StrEnum):
@@ -96,26 +114,37 @@ def hypothesis_hash(value: dict | None) -> str | None:
     return None if value is None else _digest(value)
 
 
+def _referenced_request_ids(output: ManagerOutput) -> set[str]:
+    ids = {r.id for r in output.measurement_requests}
+    ids |= {r for req in output.measurement_requests for r in req.replaces_request_ids}
+    ids |= set(output.retire_request_ids)
+    return ids
+
+
 def semantic_key(world: World, output: ManagerOutput) -> str:
     """What the explanation's meaning depends on. Pure drone motion is deliberately absent, so a
-    proposal survives the fleet moving; changed evidence, epochs, model or before-values do not."""
+    proposal survives the fleet moving; changed evidence, epochs, model, request lifecycle or
+    before-values do not."""
     tied: set[str] = set()
     for rev in output.revisions:
         tied |= set(tied_readings(world, rev.after.scope))
+    referenced = _referenced_request_ids(output)
     return _digest(
         {
             "tied_readings": sorted(tied),
             "tied_epochs": {r: world.epoch_overrides.get(r) for r in sorted(tied)},
             "excluded": sorted(world.excluded_readings & tied),
-            "electrical_readings": sorted(
-                r.id for r in world.readings.values() if r.kind == "current"
-            ),
             "known_switching": sorted(world.known_switching),
             "accepted_model": sorted(world.accepted_out_of_service),
-            "sensor": [world.sensor_model.revision, world.sensor_model.shared_rho],
+            "sensor": world.capabilities.revision,
+            "energy_model": world.energy_model.revision,
             "before": {
                 rev.hypothesis_id: hypothesis_hash(world.hypotheses.get(rev.hypothesis_id))
                 for rev in output.revisions
+            },
+            "referenced_requests": {
+                rid: str(world.requests[rid].status) if rid in world.requests else "missing"
+                for rid in sorted(referenced)
             },
         }
     )
@@ -124,52 +153,120 @@ def semantic_key(world: World, output: ManagerOutput) -> str:
 # -- route-only continuation ----------------------------------------------------------------------
 
 
-def current_requests(world: World, only: set[str] | None = None) -> tuple[SortieRequest, ...]:
-    """The current continuation of every airborne drone, expressed as validatable requests."""
-    out = []
-    for d in world.drones.values():
-        st = d.state
-        if not isinstance(st, Flying | Measuring) or (only is not None and d.id not in only):
-            continue
-        stops = tuple(
-            StopRequest(s.point, s.kind, world.tasks[s.task_id].purpose, None, s.task_id)
-            for s in st.route.stops
-        )
-        out.append(SortieRequest(d.id, stops, st.route.perch))
-    return tuple(out)
-
-
 def landing_only_requests(
-    world: World, geometry, circuits
+    world: World, geometry: Geometry, circuits
 ) -> tuple[tuple[SortieRequest, ...], list[str]]:
-    """A landing-only plan for every airborne drone under the accepted landing policy."""
+    """A minimal land-and-stay itinerary for every executing drone that still has steps left.
+
+    Perched and stranded drones stay put and are omitted. The landing site must be free of known
+    hazards; chargeability deliberately does not gate it, because a dead line is a valid perch."""
     taken: set = set()
     out, problems = [], []
-    for d in world.drones.values():
-        if not isinstance(d.state, Flying | Measuring):
+    for d in sorted(world.drones.values(), key=lambda d: d.id):
+        st = d.state
+        if not isinstance(st, Executing) or st.step_index + 1 >= len(st.itinerary.steps):
+            continue
+        op = st.step.operation
+        if isinstance(op, Wait) and not op.airborne:
+            problems.append(f"{d.id}: perched wait carries no site to continue from")
             continue
         found = None
-        cands = knowledge.landing_candidates(world, geometry, d.id, lambda site: world.clock_s + 1)
-        for c in cands:
-            if not c.eligibility.eligible or c.occupant or c.site in taken:
-                continue
-            req = SortieRequest(d.id, (), c.site)
+        if isinstance(op, Land | GroundSample | Charge) and _stay_ok(world, d.id, op.site, taken):
+            req = _stay_request(world, d.id, st, op.site)
             if validate_sorties(world, geometry, circuits, (req,)).ok:
                 found = req
-                break
         if found is None:
-            problems.append(f"{d.id}: no eligible reachable landing")
+            for site in _safe_sites(world, geometry, d.id, taken):
+                req = _landing_request(world, geometry, d.id, st, site)
+                if req is not None and validate_sorties(world, geometry, circuits, (req,)).ok:
+                    found = req
+                    break
+        if found is None:
+            problems.append(f"{d.id}: no hazard-free reachable landing")
         else:
-            taken.add(found.landing)
+            taken.add(found.final_perch)
             out.append(found)
     return tuple(out), problems
 
 
-def route_only_continuation(world: World, geometry, circuits) -> tuple[str, list[str]]:
-    """Keep every airborne drone's route if the whole set still validates, else land them all.
+def _stay_ok(world: World, drone_id: str, site, taken: set) -> bool:
+    if _hazardous(world, site) or site in taken:
+        return False
+    for d in world.drones.values():
+        if d.id == drone_id or not isinstance(d.state, Perched | Stranded):
+            continue
+        if d.state.perch == site:
+            return False
+    return True
 
-    Returns (what happened, problems). The world is changed only when a complete valid
-    continuation exists; otherwise nothing changes and the caller stays held."""
+
+def _hazardous(world: World, site) -> bool:
+    return any(
+        h.segment_id == site.point.segment_id
+        and h.start_mm <= site.point.offset_mm <= h.end_mm
+        for h in world.hazards
+    )
+
+
+def _stay_request(world: World, drone_id: str, st: Executing, site) -> SortieRequest:
+    here = position_at(st.step, 1.0)
+    steps = (ScheduledStep(0, st.step.end_s, st.step.end_s + 60, Wait(False, here)),)
+    return SortieRequest(
+        drone_id, steps, site, world.revision, world.energy_model.revision,
+        world.capabilities.revision,
+    )
+
+
+def _safe_sites(world: World, geometry: Geometry, drone_id: str, taken: set):
+    drone = world.drones[drone_id]
+    candidates = knowledge.landing_candidates(
+        world, geometry, drone_id, lambda site: world.clock_s + 1
+    )
+    ordered = sorted(
+        candidates,
+        key=lambda c: haversine_km(drone.position, geometry.position_of(c.site.point)),
+    )
+    for c in ordered:
+        if _hazardous(world, c.site) or c.occupant or c.site in taken:
+            continue
+        yield c.site
+
+
+def _landing_request(world: World, geometry: Geometry, drone_id: str, st: Executing, site):
+    op = st.step.operation
+    end_s = st.step.end_s
+    here = position_at(st.step, 1.0)
+    target = geometry.position_of(site.point)
+    speed = world.drones[drone_id].speed_km_per_min
+    if isinstance(op, Land | GroundSample | Charge):
+        t1 = end_s + TAKEOFF_S
+        leg = leg_seconds(here, target, speed)
+        steps = (
+            ScheduledStep(0, end_s, t1, Takeoff(op.site, here)),
+            ScheduledStep(1, t1, t1 + max(leg, 1), Transit(here, target)),
+            ScheduledStep(2, t1 + max(leg, 1), t1 + max(leg, 1) + LAND_S, Land(site, target)),
+        )
+    else:
+        leg = leg_seconds(here, target, speed)
+        steps = (
+            ScheduledStep(0, end_s, end_s + max(leg, 1), Transit(here, target)),
+            ScheduledStep(1, end_s + max(leg, 1), end_s + max(leg, 1) + LAND_S, Land(site, target)),
+        )
+    return SortieRequest(
+        drone_id,
+        steps,
+        site,
+        world.revision,
+        world.energy_model.revision,
+        world.capabilities.revision,
+    )
+
+
+def route_only_continuation(
+    world: World, geometry: Geometry, circuits, physics
+) -> tuple[str, list[str]]:
+    """Keep every executing drone's remaining itinerary if the whole set still validates, else
+    land them all. The world changes only when a complete valid continuation exists."""
     requests = current_requests(world)
     if not requests:
         return "none needed", []
@@ -181,7 +278,7 @@ def route_only_continuation(world: World, geometry, circuits) -> tuple[str, list
     result = validate_sorties(world, geometry, circuits, landing)
     if not result.ok:
         return "HELD", [str(r) for r in result.rejections]
-    apply_sorties(world, result.plans)
+    apply_sorties(world, physics, result.plans)
     return "route-only continuation (landing-only)", []
 
 
@@ -204,27 +301,8 @@ def stage_model_change(world: World, segments: tuple[str, ...], author: str) -> 
 
 
 def _test_candidate_model(sim_ctx, world: World, segments: frozenset[str]) -> list[str]:
-    """Independently test a staged model against the live accepted readings."""
-    network, registry = sim_ctx
-    model = estimation.ElectricalModel(
-        network, registry, frozenset(world.known_switching) | segments
-    )
-    readings = estimation.effective_readings(world)
-    est = estimation.estimate(
-        model, readings, clock_s=world.clock_s, shared_rho=world.sensor_model.shared_rho
-    )
-    if not hasattr(est, "flows"):
-        return [f"candidate model: estimate unavailable ({est.reason})"]
-    rep = check_consistency(
-        model,
-        readings,
-        shared_rho=world.sensor_model.shared_rho,
-        envelope=world.envelope,
-        known_switching_clock=dict(world.known_switching),
-        active_seed=world.scenario_seed,
-    )
-    if rep.global_status is GlobalStatus.INCONSISTENT:
-        return ["candidate model is inconsistent with the accepted readings"]
+    """No-op since the estimation removal: the three-method runtime runs no MW inference, so a
+    staged model is never numerically tested against readings."""
     return []
 
 
@@ -240,7 +318,7 @@ def evaluate_commit(world: World, sim_ctx, geometry, circuits, cmd) -> dict:
     if live_key != pf.semantic_key or cmd.semantic_key != pf.semantic_key:
         raise DecisionRejected(
             [
-                "evidence, epoch, model, sensor assumptions or accepted hypotheses changed since "
+                "evidence, epoch, model, request lifecycle or accepted hypotheses changed since "
                 "the explanation was written; a fresh current-evidence turn is needed"
             ],
             superseded=True,
@@ -253,6 +331,30 @@ def evaluate_commit(world: World, sim_ctx, geometry, circuits, cmd) -> dict:
                 [f"{rev.hypothesis_id}: before-values changed since the proposal"], superseded=True
             )
     return {"pf": pf}
+
+
+def _request_candidate(
+    world: World, out: ManagerOutput, cmd
+) -> tuple[tuple[AcceptedRequest, ...], dict[str, str]]:
+    accepted: list[AcceptedRequest] = []
+    for req in out.measurement_requests:
+        existing = world.requests.get(req.id)
+        if existing is not None and existing.status is RequestStatus.ACTIVE:
+            raise DecisionRejected([f"request {req.id} is already active"])
+        accepted.append(
+            AcceptedRequest(
+                req.id, req, RequestStatus.ACTIVE, world.clock_s, str(req.source_revision)
+            )
+        )
+    if len({a.id for a in accepted}) != len(accepted):
+        raise DecisionRejected(["duplicate measurement request id in one output"])
+    retire: dict[str, str] = {}
+    for a in accepted:
+        for old in a.request.replaces_request_ids:
+            retire[old] = f"replaced by {a.id}"
+    for rid in out.retire_request_ids:
+        retire[rid] = f"retired by {cmd.decision_id}: {out.summary}"
+    return tuple(accepted), retire
 
 
 def apply_candidate(world: World, ctx: dict, cmd, cycle: int, clock_s: int) -> dict:
@@ -294,6 +396,7 @@ def apply_candidate(world: World, ctx: dict, cmd, cycle: int, clock_s: int) -> d
         )
         if rev.after.model_change is not None:
             accepted_model |= set(rev.after.model_change)
+    accepted_requests, retire = _request_candidate(world, out, cmd)
     return {
         "hypotheses": hypotheses,
         "revisions": revisions,
@@ -302,37 +405,18 @@ def apply_candidate(world: World, ctx: dict, cmd, cycle: int, clock_s: int) -> d
         "model_changes": [
             r.after.model_change for r in out.revisions if r.after.model_change is not None
         ],
+        "accepted_requests": accepted_requests,
+        "retire": retire,
     }
 
 
-def recovery_requests(world: World, geometry, circuits):
-    """Concluded cases stop collecting: every airborne drone keeps only its locked attempt and
-    lands. Returns (requests, problems); the plan must validate as a whole or the decision fails."""
-    problems: list[str] = []
-    airborne = [d for d in world.drones.values() if isinstance(d.state, Flying | Measuring)]
-    if not airborne:
-        return (), []
-    current = {r.drone_id: r for r in current_requests(world)}
-    keep, need_landing = [], []
-    for d in airborne:
-        req = current[d.id]
-        stripped = SortieRequest(d.id, (), req.landing)
-        if validate_sorties(world, geometry, circuits, (stripped,)).ok:
-            keep.append(stripped)
-        else:
-            need_landing.append(d.id)
-    if need_landing:
-        landing, problems = landing_only_requests(world, geometry, circuits)
-        by = {r.drone_id: r for r in landing}
-        for did in need_landing:
-            if did in by:
-                keep.append(by[did])
-            else:
-                problems.append(f"{did}: no eligible landing for its recovery route")
-    return tuple(keep), problems
+def recovery_requests(world: World, geometry, circuits, physics) -> tuple[str, list[str]]:
+    """A concluded case stops collecting: every executing drone keeps its validated continuation,
+    and if that no longer validates it lands. Perched drones are left alone."""
+    return route_only_continuation(world, geometry, circuits, physics)
 
 
-def commit_apply(world: World, cand: dict, ctx: dict, cmd, plans) -> None:
+def commit_apply(world: World, cand: dict, ctx: dict, cmd, plans, physics=None) -> None:
     """The single block that mutates accepted state. No validation happens here."""
     pf = ctx["pf"]
     from grid_ops.conclusion import Investigation, InvestigationStatus
@@ -386,7 +470,16 @@ def commit_apply(world: World, cand: dict, ctx: dict, cmd, plans) -> None:
                 ck = world.knowledge.circuits.get(c.id)
                 if ck and ck.discrepancy_ids:
                     world.knowledge.resolved_discrepancies.update(ck.discrepancy_ids)
-    apply_sorties(world, plans)
+    for acc in cand["accepted_requests"]:
+        world.requests[acc.id] = acc
+    for rid, reason in cand["retire"].items():
+        if rid in world.requests:
+            world.requests[rid] = replace(
+                world.requests[rid], status=RequestStatus.RETIRED, retired_reason=reason
+            )
+    if cand["accepted_requests"] or cand["retire"]:
+        world.requests_version += 1
+    apply_sorties(world, physics, plans)
     world.manager_turns.append(
         ManagerTurnRecord(
             f"MT{len(world.manager_turns) + 1:03d}", pf.id, cmd.decision_id, world.clock_s

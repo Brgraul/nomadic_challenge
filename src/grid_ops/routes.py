@@ -1,77 +1,59 @@
-"""Sortie validation and atomic application.
+"""Itinerary validation and atomic application.
 
-`validate_sorties` is the independent acceptance check: it recomputes every route from
-authoritative geometry and live drone state (never from a solver's or caller's claimed times),
-checks every drone in the request, and returns either full plans or every rejection reason.
-`apply_sorties` mutates the World only with plans that validated, so a bad later sortie leaves
-every earlier drone untouched.
+`validate_sorties` is the independent acceptance check: it replays every itinerary from
+authoritative geometry, the live drone state and the shared energy law (never from a solver's or
+caller's claimed times), enforces the operation state machine, method fidelity, timed site
+occupancy, charge evidence and the T+04:00 deadline, and returns either full plans or every
+rejection reason. `apply_sorties` mutates the World only with plans that validated.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from itertools import pairwise
 
-from grid_ops import knowledge
 from grid_ops.circuits import CircuitRegistry
-from grid_ops.geometry import Geometry, LandingSite, LinePoint
+from grid_ops.energy import BatteryState, OperationKind, integrate
+from grid_ops.geometry import Geometry, LandingSite
 from grid_ops.grid import LonLat
+from grid_ops.knowledge import ChargeState
+from grid_ops.sensing import (
+    RequestStatus,
+    TaskStatusV2,
+)
 from grid_ops.world import (
     DEADLINE_S,
-    DWELL_S,
-    Charging,
+    OPERATION_KIND,
+    Charge,
     Drone,
-    Flying,
-    Measurement,
-    MeasurementTask,
-    Measuring,
-    Ready,
-    Route,
-    Stop,
+    Executing,
+    GroundSample,
+    Itinerary,
+    Land,
+    Perched,
+    Scan,
+    ScheduledStep,
     Stranded,
-    TaskStatus,
+    Takeoff,
+    Transit,
+    Wait,
     World,
     format_clock,
     leg_seconds,
+    position_at,
+    start_itinerary,
 )
-
-
-@dataclass(frozen=True)
-class StopRequest:
-    point: LinePoint
-    kind: Measurement
-    purpose: str = "operator measurement"
-    repeat_of_reading_id: str | None = None
-    task_id: str | None = None  # reuse an existing unowned or already-owned attempt
 
 
 @dataclass(frozen=True)
 class SortieRequest:
     drone_id: str
-    stops: tuple[StopRequest, ...]
-    landing: LandingSite
-
-
-@dataclass(frozen=True)
-class StopTiming:
-    arrive_s: int
-    done_s: int
-
-
-@dataclass(frozen=True)
-class SortiePlan:
-    drone_id: str
-    stops: tuple[Stop, ...]
-    new_tasks: tuple[MeasurementTask, ...]
-    reuse_task_ids: tuple[str, ...]
-    timings: tuple[StopTiming, ...]
-    landing: LandingSite
-    landing_position: LonLat
-    landing_arrive_s: int
-    start_s: int
-    battery_left_s: int
-    locked_dwell_s: int
-    route: Route
-    first_leg_s: int
+    steps: tuple[ScheduledStep, ...]
+    final_perch: LandingSite
+    based_on_revision: int
+    energy_model_revision: str
+    sensor_model_revision: str
+    evidence_dependency_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -86,6 +68,12 @@ class Rejection:
 
 
 @dataclass(frozen=True)
+class SortiePlan:
+    drone_id: str
+    itinerary: Itinerary
+
+
+@dataclass(frozen=True)
 class Validation:
     plans: tuple[SortiePlan, ...]
     rejections: tuple[Rejection, ...]
@@ -95,19 +83,55 @@ class Validation:
         return not self.rejections
 
 
-def _start_state(drone: Drone, now_s: int) -> tuple[LonLat, int, int, int] | str:
-    """(position, start_s, battery_s, locked_dwell_s) for the part of the route still to plan."""
-    match drone.state:
-        case Ready():
-            return drone.position, now_s, drone.battery_s, 0
-        case Flying():
-            return drone.position, now_s, drone.battery_s, 0
-        case Measuring(stop=stop, until_s=until_s):
-            locked = until_s - now_s
-            return stop.position, until_s, drone.battery_s - locked, locked
-        case Charging() | Stranded():
-            return f"{drone.phase} drones keep their perch and cannot take a sortie"
-    return "unknown state"
+def _start_boundary(drone: Drone, world: World) -> tuple[int, bool, LandingSite | None, str] | str:
+    """(start_s, airborne, current_site, mode) where mode is perched | continue."""
+    st = drone.state
+    match st:
+        case Perched(perch):
+            return world.clock_s, False, perch, "perched"
+        case Stranded(perch):
+            return world.clock_s, False, perch, "perched"
+        case Executing(itinerary=it, step_index=i):
+            op = it.steps[i].operation
+            grounded = isinstance(op, (Land, GroundSample, Charge)) or (
+                isinstance(op, Wait) and not op.airborne
+            )
+            if grounded:
+                return it.steps[i].end_s, False, _grounded_site(it, i), "continue"
+            return it.steps[i].end_s, True, None, "continue"
+    return f"{drone.phase} drones cannot take an itinerary"
+
+
+def _grounded_site(it: Itinerary, i: int) -> LandingSite | None:
+    """The site a grounded drone stands on: the op's site, or the last perching site before a
+    bare Wait."""
+    op = it.steps[i].operation
+    if isinstance(op, (Land, GroundSample, Charge)):
+        return op.site
+    for step in reversed(it.steps[: i + 1]):
+        if isinstance(step.operation, (Land, GroundSample, Charge)):
+            return step.operation.site
+    return None
+
+
+def _cut_preamble(drone: Drone, world: World) -> tuple[BatteryState, int] | None:
+    """Energy and time an in-progress scan contributes before a cut continuation starts."""
+    st = drone.state
+    if not isinstance(st, Executing) or not isinstance(st.step.operation, Scan):
+        return None
+    elapsed = world.clock_s - st.step.start_s
+    if elapsed <= 0:
+        return None
+    battery, _ = integrate(drone.battery, OperationKind.SCAN, elapsed, model=world.energy_model)
+    return battery, elapsed
+
+
+def _cut_allowed(drone: Drone, world: World, steps: tuple[ScheduledStep, ...]) -> bool:
+    """An in-progress Scan may be cut at the current clock; a GroundSample never may."""
+    st = drone.state
+    if not isinstance(st, Executing) or not isinstance(st.step.operation, Scan):
+        return False
+    return bool(steps) and steps[0].start_s == world.clock_s and world.clock_s < st.step.end_s
 
 
 def validate_sorties(
@@ -120,14 +144,16 @@ def validate_sorties(
     plans: list[SortiePlan] = []
     seen_drones: set[str] = set()
     claimed_tasks: dict[str, str] = {}
-    # exact perches that someone will still occupy after this batch
-    occupied: dict[LandingSite, str] = {}
+    # perched intervals (start, end, drone) claimed per exact site; existing perches run open-ended
+    occupancy: dict[LandingSite, list[tuple[int, int, str]]] = {}
     for d in world.drones.values():
-        match d.state:
-            case Charging(perch=p) | Stranded(perch=p):
-                occupied[p] = d.id
-    planned_landings: dict[LandingSite, str] = {}
-    next_number = world.next_task_number
+        st = d.state
+        if isinstance(st, (Perched, Stranded)):
+            occupancy.setdefault(st.perch, []).append((world.clock_s, 10**12, d.id))
+        elif isinstance(st, Executing):
+            occupancy.setdefault(st.itinerary.final_perch, []).append(
+                (st.itinerary.end_s, 10**12, d.id)
+            )
 
     for req in requests:
         reject = lambda code, detail, drone_id=req.drone_id: rejections.append(  # noqa: E731
@@ -138,216 +164,411 @@ def validate_sorties(
             reject("unknown_drone", f"{req.drone_id} does not exist")
             continue
         if req.drone_id in seen_drones:
-            reject("duplicate_drone", "more than one sortie for the same drone in one decision")
+            reject("duplicate_drone", "more than one itinerary for the same drone in one batch")
             continue
         seen_drones.add(req.drone_id)
-        start = _start_state(drone, world.clock_s)
-        if isinstance(start, str):
-            reject("drone_unavailable", start)
-            continue
-        position, start_s, battery_s, locked_dwell_s = start
-
-        # landing
-        landing = req.landing
-        landing_position: LonLat | None = None
-        try:
-            landing_position = geometry.position_of(landing.point)
-        except ValueError as e:
-            reject("bad_landing", str(e))
-        circuit = circuits.circuits.get(landing.circuit_id)
-        if circuit is None or circuit.segment_id != landing.point.segment_id:
+        if req.energy_model_revision != world.energy_model.revision:
             reject(
-                "bad_landing", f"circuit {landing.circuit_id} is not on {landing.point.segment_id}"
+                "stale_energy_model",
+                f"plan assumes {req.energy_model_revision}, "
+                f"world runs {world.energy_model.revision}",
             )
-        holder = occupied.get(landing)
-        if holder is not None and holder != req.drone_id:
-            reject(
-                "landing_occupied",
-                f"{landing.circuit_id} at {landing.point.offset_km:.3f} km is occupied by {holder}",
-            )
-        other = planned_landings.get(landing)
-        if other is not None and other != req.drone_id:
-            reject("landing_occupied", f"{other} already plans to land at that exact site")
-        for other_drone in world.drones.values():
-            st = other_drone.state
-            if other_drone.id != req.drone_id and isinstance(st, Ready) and st.perch == landing:
-                reject(
-                    "landing_occupied", f"{other_drone.id} is perched there; handover is not proved"
-                )
-            if (
-                other_drone.id != req.drone_id
-                and isinstance(st, Flying | Measuring)
-                and st.route.perch == landing
-            ):
-                reject("landing_occupied", f"{other_drone.id} is already routed to land there")
-        if isinstance(drone.state, Ready) and not req.stops and landing == drone.state.perch:
-            reject("no_flight", "a Ready drone waits at its perch instead of flying nowhere")
-        planned_landings[landing] = req.drone_id
-
-        # stops
-        stops: list[Stop] = []
-        new_tasks: list[MeasurementTask] = []
-        reuse: list[str] = []
-        timings: list[StopTiming] = []
-        t = start_s
-        here = position
-        valid_route = landing_position is not None
-        first_leg = 0
-        for i, sr in enumerate(req.stops):
-            try:
-                pos = geometry.position_of(sr.point)
-            except ValueError as e:
-                reject("bad_stop", f"stop {i + 1}: {e}")
-                valid_route = False
-                continue
-            if sr.kind not in drone.sensors:
-                reject(
-                    "sensor_capability", f"stop {i + 1}: {req.drone_id} cannot measure {sr.kind}"
-                )
-                valid_route = False
-            if sr.repeat_of_reading_id is not None:
-                if sr.repeat_of_reading_id not in world.readings:
-                    reject("bad_repeat", f"stop {i + 1}: unknown reading {sr.repeat_of_reading_id}")
-                    valid_route = False
-                if not sr.purpose.strip():
-                    reject("bad_repeat", f"stop {i + 1}: a repeat must state its purpose")
-                    valid_route = False
-            if sr.task_id is not None:
-                existing = world.tasks.get(sr.task_id)
-                if existing is None:
-                    reject("bad_task", f"stop {i + 1}: unknown task {sr.task_id}")
-                    valid_route = False
-                elif existing.status not in (TaskStatus.PENDING, TaskStatus.RESERVED) or (
-                    existing.assigned_drone_id not in (None, req.drone_id)
-                ):
-                    reject(
-                        "task_owned",
-                        f"stop {i + 1}: {sr.task_id} is {existing.status}"
-                        f" and owned by {existing.assigned_drone_id}",
-                    )
-                    valid_route = False
-                elif sr.task_id in claimed_tasks:
-                    reject(
-                        "task_owned",
-                        f"stop {i + 1}: {sr.task_id} already goes to {claimed_tasks[sr.task_id]}",
-                    )
-                    valid_route = False
-                else:
-                    claimed_tasks[sr.task_id] = req.drone_id
-                    reuse.append(sr.task_id)
-            leg = leg_seconds(here, pos, drone.speed_km_per_min)
-            if i == 0:
-                first_leg = leg
-            arrive = t + leg
-            done = arrive + DWELL_S[sr.kind]
-            if done > DEADLINE_S:
-                reject(
-                    "deadline",
-                    f"stop {i + 1} completes at {format_clock(done / 60)}, after T+04:00",
-                )
-                valid_route = False
-            timings.append(StopTiming(arrive, done))
-            if sr.task_id is None:
-                task_id = f"T{next_number:04d}"
-                next_number += 1
-            else:
-                task_id = sr.task_id
-            site = geometry.site(sr.point)
-            if sr.task_id is None:
-                new_tasks.append(
-                    MeasurementTask(
-                        id=task_id,
-                        site_id=site.id,
-                        point=sr.point,
-                        kind=sr.kind,
-                        purpose=sr.purpose,
-                        status=TaskStatus.RESERVED,
-                        assigned_drone_id=req.drone_id,
-                        repeat_of_reading_id=sr.repeat_of_reading_id,
-                    )
-                )
-            stops.append(Stop(task_id, sr.point, pos, sr.kind, DWELL_S[sr.kind]))
-            t, here = done, pos
-
-        if landing_position is None:
             continue
-        last_leg = leg_seconds(here, landing_position, drone.speed_km_per_min)
-        if not req.stops:
-            first_leg = last_leg
-        landing_arrive = t + last_leg
-        if landing_arrive > DEADLINE_S:
-            reject("deadline", f"landing at {format_clock(landing_arrive / 60)} is after T+04:00")
-            valid_route = False
-        left = battery_s - (landing_arrive - start_s)
-        if left < 0:
+        if req.sensor_model_revision != world.capabilities.revision:
             reject(
-                "battery",
-                f"needs {(landing_arrive - start_s) / 60:.1f} min of airtime, "
-                f"{battery_s / 60:.1f} min available",
+                "stale_sensor_model",
+                f"plan assumes {req.sensor_model_revision}, "
+                f"world runs {world.capabilities.revision}",
             )
-            valid_route = False
-        if landing_position is not None:
-            verdict = knowledge.assess_landing(world, landing, landing_arrive)
-            if not verdict.eligible:
-                reject(
-                    "landing_ineligible",
-                    f"{landing.circuit_id} under {verdict.policy}: " + "; ".join(verdict.reasons),
-                )
-                valid_route = False
-        if not valid_route:
             continue
-        plans.append(
-            SortiePlan(
-                drone_id=req.drone_id,
-                stops=tuple(stops),
-                new_tasks=tuple(new_tasks),
-                reuse_task_ids=tuple(reuse),
-                timings=tuple(timings),
-                landing=landing,
-                landing_position=landing_position,
-                landing_arrive_s=landing_arrive,
-                start_s=start_s,
-                battery_left_s=left,
-                locked_dwell_s=locked_dwell_s,
-                route=Route(tuple(stops), landing, landing_position),
-                first_leg_s=first_leg,
+        started = _start_boundary(drone, world)
+        if isinstance(started, str):
+            reject("drone_unavailable", started)
+            continue
+        start_s, airborne, current_site, mode = started
+        steps = req.steps
+        if not steps:
+            reject("empty_itinerary", "an itinerary must end with the drone perched")
+            continue
+        if mode == "continue" and steps[0].start_s != start_s and not _cut_allowed(
+            drone, world, steps
+        ):
+            st = drone.state
+            assert isinstance(st, Executing)
+            reject(
+                "bad_start",
+                f"step 0 starts at {format_clock(steps[0].start_s / 60)} but step "
+                f"{st.step_index} of the running itinerary ends at {format_clock(start_s / 60)}",
             )
-        )
+            continue
+        for a, b in pairwise(steps):
+            if b.start_s != a.end_s:
+                reject("non_contiguous", f"step {b.index} does not follow step {a.index}")
+                break
+        else:
+            battery = drone.battery
+            if mode == "continue" and (preamble := _cut_preamble(drone, world)) is not None:
+                battery, _ = preamble
+            here0 = (
+                position_at(drone.state.step, 1.0)
+                if mode == "continue"
+                else drone.position
+            )
+            plan = _validate_steps(
+                world,
+                geometry,
+                req,
+                drone,
+                steps,
+                start_s,
+                airborne,
+                current_site,
+                here0,
+                battery,
+                claimed_tasks,
+                occupancy,
+                reject,
+            )
+            if plan is not None:
+                plans.append(plan)
+    _check_occupancy(occupancy, rejections)
     if rejections:
         return Validation((), tuple(rejections))
     return Validation(tuple(plans), ())
 
 
-def apply_sorties(world: World, plans: tuple[SortiePlan, ...]) -> None:
-    """Commit validated plans. Call only with `Validation.plans` of an `ok` validation."""
+def _check_occupancy(occupancy: dict, rejections: list[Rejection]) -> None:
+    for site, intervals in occupancy.items():
+        ordered = sorted(intervals)
+        for (_, e0, d0), (s1, _, d1) in pairwise(ordered):
+            if d0 != d1 and s1 < e0:
+                rejections.append(
+                    Rejection(
+                        None,
+                        "site_occupied",
+                        f"{d0} and {d1} both perch on {site.circuit_id} at "
+                        f"{site.point.offset_mm} mm with overlapping intervals",
+                    )
+                )
+
+
+def _validate_steps(
+    world: World,
+    geometry: Geometry,
+    req: SortieRequest,
+    drone: Drone,
+    steps,
+    start_s,
+    airborne: bool,
+    current_site: LandingSite | None,
+    here: LonLat,
+    battery: BatteryState,
+    claimed_tasks: dict[str, str],
+    occupancy: dict,
+    reject,
+) -> SortiePlan | None:
+    site = current_site
+    perched_since: int | None = None
+    valid = True
+    for i, step in enumerate(steps):
+        op = step.operation
+        if step.end_s <= step.start_s:
+            reject("bad_step", f"step {i} needs a positive duration")
+            valid = False
+            break
+        if step.end_s > DEADLINE_S:
+            reject(
+                "deadline", f"step {i} completes at {format_clock(step.end_s / 60)}, after T+04:00"
+            )
+            valid = False
+            break
+        match op:
+            case Takeoff(op_site, at):
+                if airborne:
+                    reject("state", f"step {i}: cannot take off while airborne")
+                    valid = False
+                    break
+                if op_site != site:
+                    reject("state", f"step {i}: takeoff from a site the drone is not perched on")
+                    valid = False
+                    break
+                if at != geometry.position_of(op_site.point):
+                    reject("geometry", f"step {i}: takeoff position contradicts the mapped path")
+                    valid = False
+                    break
+                if perched_since is not None:
+                    occupancy.setdefault(op_site, []).append(
+                        (perched_since, step.start_s, drone.id)
+                    )
+                    perched_since = None
+                here, airborne, site = at, True, None
+            case Land(op_site, at):
+                if not airborne:
+                    reject("state", f"step {i}: cannot land while perched")
+                    valid = False
+                    break
+                if at != geometry.position_of(op_site.point):
+                    reject("geometry", f"step {i}: landing position contradicts the mapped path")
+                    valid = False
+                    break
+                if perched_since is not None:
+                    occupancy.setdefault(op_site, []).append((perched_since, 10**12, drone.id))
+                    perched_since = None
+                perched_since = step.start_s
+                here, airborne, site = at, False, op_site
+            case Scan(acquisition, task_id):
+                if not airborne:
+                    reject("state", f"step {i}: a scan needs an airborne drone")
+                    valid = False
+                    break
+                error = _task_check(world, req, task_id, acquisition, claimed_tasks, i)
+                if error:
+                    reject(*error)
+                    valid = False
+                    break
+                if i > 0 and here != acquisition.trajectory.poses[0].position:
+                    reject(
+                        "geometry",
+                        f"step {i}: the scan starts where no transit delivered the drone",
+                    )
+                    valid = False
+                    break
+                here = acquisition.trajectory.poses[-1].position
+            case GroundSample(acquisitions, op_site, task_ids, at):
+                if airborne or op_site != site:
+                    reject(
+                        "state", f"step {i}: ground sampling needs the drone perched on its site"
+                    )
+                    valid = False
+                    break
+                if len(acquisitions) != len(task_ids):
+                    reject("bad_step", f"step {i}: one task id per acquisition required")
+                    valid = False
+                    break
+                for member, task_id in zip(acquisitions, task_ids, strict=True):
+                    error = _task_check(world, req, task_id, member, claimed_tasks, i)
+                    if error:
+                        reject(*error)
+                        valid = False
+                        break
+                if not valid:
+                    break
+                if at != geometry.position_of(op_site.point):
+                    reject("geometry", f"step {i}: sampling position contradicts the mapped path")
+                    valid = False
+                    break
+                here = at
+            case Charge(op_site, charge_s, at):
+                if airborne or op_site != site:
+                    reject("state", f"step {i}: charging needs the drone perched on its site")
+                    valid = False
+                    break
+                if charge_s <= 0:
+                    reject("bad_step", f"step {i}: a charge step needs a positive duration")
+                    valid = False
+                    break
+                ch = world.knowledge.chargeability.get(op_site.circuit_id)
+                if ch is None or ch.state is not ChargeState.CONFIRMED:
+                    uncertain = (
+                        ch is not None
+                        and ch.state is ChargeState.UNKNOWN
+                        and world.landing_policy.allow_uncertain
+                    )
+                    if not uncertain:
+                        reject(
+                            "charge_unavailable",
+                            f"step {i}: no confirmed charging on {op_site.circuit_id}"
+                            + (f" ({ch.reason})" if ch else ""),
+                        )
+                        valid = False
+                        break
+                elif ch.expires_s is not None and ch.expires_s <= step.start_s:
+                    reject(
+                        "charge_unavailable",
+                        f"step {i}: charging evidence expires at "
+                        f"{format_clock(ch.expires_s / 60)}, before the charge starts at "
+                        f"{format_clock(step.start_s / 60)}",
+                    )
+                    valid = False
+                    break
+                if at != geometry.position_of(op_site.point):
+                    reject("geometry", f"step {i}: charge position contradicts the mapped path")
+                    valid = False
+                    break
+                here = at
+            case Transit(_, destination):
+                if not airborne:
+                    reject("state", f"step {i}: transit needs an airborne drone")
+                    valid = False
+                    break
+                expected = leg_seconds(here, destination, drone.speed_km_per_min)
+                if step.duration_s < expected:
+                    reject(
+                        "geometry",
+                        f"step {i}: transit takes {expected} s over the mapped path, "
+                        f"the plan claims {step.duration_s} s",
+                    )
+                    valid = False
+                    break
+                here, airborne = destination, True
+            case Wait(op_airborne, at):
+                if op_airborne != airborne:
+                    reject("state", f"step {i}: wait state contradicts the drone state")
+                    valid = False
+                    break
+                here = at
+        kind = _kind(op)
+        charging = _charge_observed(world, op)
+        try:
+            battery, _ = integrate(
+                battery, kind, step.duration_s, charging_observed=charging, model=world.energy_model
+            )
+        except ValueError as e:
+            reject("energy", f"step {i}: {e} during {kind.value}")
+            valid = False
+            break
+    if not valid:
+        return None
+    if airborne:
+        reject("not_perched", "the itinerary must end with the drone perched")
+        return None
+    if site != req.final_perch:
+        reject(
+            "bad_final_perch",
+            f"the itinerary ends perched on {site.circuit_id} at {site.point.offset_mm} mm, "
+            "not the requested final perch",
+        )
+        return None
+    if perched_since is not None:
+        occupancy.setdefault(req.final_perch, []).append(
+            (perched_since, steps[-1].end_s, drone.id)
+        )
+    itinerary = Itinerary(tuple(steps), req.final_perch)
+    return SortiePlan(req.drone_id, itinerary)
+
+
+def _kind(op) -> OperationKind:
+    if isinstance(op, Wait):
+        return OperationKind.WAIT_AIRBORNE if op.airborne else OperationKind.WAIT_PERCHED
+    return OPERATION_KIND[type(op)]
+
+
+def _charge_observed(world: World, op) -> bool:
+    if not isinstance(op, Charge):
+        return False
+    ch = world.knowledge.chargeability.get(op.site.circuit_id)
+    return ch is not None and ch.state is ChargeState.CONFIRMED
+
+
+def _task_check(world: World, req: SortieRequest, task_id: str, acquisition, claimed, i):
+    """Method fidelity and ownership. Returns (code, detail) or None."""
+    task = world.tasks.get(task_id)
+    if task is None:
+        return ("bad_task", f"step {i}: unknown task {task_id}")
+    if task.status not in (TaskStatusV2.PENDING, TaskStatusV2.RESERVED, TaskStatusV2.MEASURING):
+        return ("task_owned", f"step {i}: {task_id} is {task.status}")
+    if task.status is TaskStatusV2.MEASURING and task.assigned_drone_id != req.drone_id:
+        return ("task_owned", f"step {i}: {task_id} is being measured by {task.assigned_drone_id}")
+    if task.status is not TaskStatusV2.MEASURING and task.assigned_drone_id not in (
+        None,
+        req.drone_id,
+    ):
+        return ("task_owned", f"step {i}: {task_id} is owned by {task.assigned_drone_id}")
+    if claimed.get(task_id, req.drone_id) != req.drone_id:
+        return ("task_owned", f"step {i}: {task_id} already goes to {claimed[task_id]}")
+    claimed[task_id] = req.drone_id
+    request = world.requests.get(task.request_id)
+    if request is None or request.status is not RequestStatus.ACTIVE:
+        return ("stale_request", f"step {i}: task {task_id} serves no active request")
+    if task.acquisition != acquisition:
+        return (
+            "method_substitution",
+            f"step {i}: the executed acquisition differs from task {task_id}'s compiled "
+            "acquisition; the requested method may not be substituted",
+        )
+    return None
+
+
+def apply_sorties(world: World, physics, plans: tuple[SortiePlan, ...]) -> None:
+    """Commit validated plans. Call only with `Validation.plans` of an `ok` validation.
+
+    A cut continuation finalizes the in-progress scan first (partial reading, elapsed energy)
+    through a settle, then every new itinerary starts."""
+    from grid_ops.world import settle
+
+    cutting = []
     for plan in plans:
         drone = world.drones[plan.drone_id]
-        new_ids = {t.id for t in plan.new_tasks}
-        keep = {s.task_id for s in plan.stops}
-        # release unstarted reservations this drone no longer plans to fly
+        st = drone.state
+        if (
+            isinstance(st, Executing)
+            and isinstance(st.step.operation, Scan)
+            and plan.itinerary.steps[0].start_s == world.clock_s
+            and world.clock_s < st.step.end_s
+        ):
+            if world.clock_s > st.step.start_s:
+                shortened = replace(st.step, end_s=world.clock_s)
+                steps = (*st.itinerary.steps[: st.step_index], shortened)
+                drone.state = Executing(replace(st.itinerary, steps=steps), st.step_index)
+                cutting.append(drone.id)
+            else:
+                task = world.tasks.get(st.step.operation.task_id)
+                if task is not None and task.status is TaskStatusV2.MEASURING:
+                    world.set_task(
+                        replace(task, status=TaskStatusV2.PENDING, assigned_drone_id=None)
+                    )
+    if cutting:
+        settle(world, physics)
+    for plan in plans:
+        drone = world.drones[plan.drone_id]
+        keep = {tid for step in plan.itinerary.steps for tid in _step_task_ids(step)}
         for task in list(world.tasks.values()):
             if (
                 task.assigned_drone_id == drone.id
-                and task.status is TaskStatus.RESERVED
+                and task.status in (TaskStatusV2.RESERVED, TaskStatusV2.MEASURING)
                 and task.id not in keep
             ):
-                world.set_task(replace(task, status=TaskStatus.PENDING, assigned_drone_id=None))
-        for task in plan.new_tasks:
-            world.set_task(task)
-        world.next_task_number += len(new_ids)
-        for task_id in keep - new_ids:
-            world.set_task(
-                replace(
-                    world.tasks[task_id], status=TaskStatus.RESERVED, assigned_drone_id=drone.id
+                world.set_task(replace(task, status=TaskStatusV2.PENDING, assigned_drone_id=None))
+        for task_id in keep:
+            task = world.tasks[task_id]
+            if task.status is TaskStatusV2.PENDING:
+                world.set_task(
+                    replace(task, status=TaskStatusV2.RESERVED, assigned_drone_id=drone.id)
                 )
+        start_itinerary(world, plan.drone_id, plan.itinerary)
+
+
+def _step_task_ids(step: ScheduledStep) -> tuple[str, ...]:
+    match step.operation:
+        case Scan(task_id=task_id):
+            return (task_id,)
+        case GroundSample(task_ids=task_ids):
+            return task_ids
+    return ()
+
+
+def current_requests(world: World) -> tuple[SortieRequest, ...]:
+    """The validated continuation of every executing drone, as validatable requests.
+
+    The request starts at the current step's end with renumbered steps; the drone's own current
+    step completes on its own and is not part of the request."""
+    out = []
+    for d in world.drones.values():
+        st = d.state
+        if not isinstance(st, Executing):
+            continue
+        remaining = st.itinerary.steps[st.step_index + 1 :]
+        if not remaining:
+            continue
+        renumbered = tuple(replace(step, index=i) for i, step in enumerate(remaining))
+        out.append(
+            SortieRequest(
+                d.id,
+                renumbered,
+                st.itinerary.final_perch,
+                world.revision,
+                world.energy_model.revision,
+                world.capabilities.revision,
             )
-        match drone.state:
-            case Measuring(stop=stop, started_s=started, until_s=until):
-                drone.state = Measuring(stop, started, until, plan.route)
-            case _:
-                drone.state = Flying(
-                    drone.position,
-                    world.clock_s,
-                    world.clock_s + plan.first_leg_s,
-                    plan.route,
-                )
+        )
+    return tuple(out)

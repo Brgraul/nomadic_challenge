@@ -2,9 +2,10 @@
 
 The simulation keeps flying and replanning (see `fleet`) whatever the manager is doing: the
 coordinator only reads published snapshots, coalesces arriving evidence into the next manager
-turn without losing any trigger id, and submits explained proposals back as ordinary commands.
-Accepted state never depends on an unfinished model call: a slow, failed or dead manager leaves
-the validated fleet continuation running. There are no per-drone agents.
+turn without losing any trigger id, records the returned proposal, and submits it back as an
+ordinary explained decision. Accepted state never depends on an unfinished model call: a slow,
+failed or dead manager leaves the validated fleet continuation running. There are no per-drone
+agents.
 """
 
 from __future__ import annotations
@@ -13,9 +14,15 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from grid_ops import agents
+from grid_ops import agents, manager_tools
 from grid_ops.proposals import ProposedStatus
-from grid_ops.sim import CommitDecision, RecordCoordinatorTurn, RecordPlannerPreview, Simulation
+from grid_ops.sim import (
+    CommitDecision,
+    RecordCoordinatorTurn,
+    RecordPlannerPreview,
+    RecordProposal,
+    Simulation,
+)
 from grid_ops.world import CommandRejected
 
 MAX_REGENERATIONS = 3
@@ -49,7 +56,7 @@ class PlannerPreview:
 @dataclass
 class Coordinator:
     sim: Simulation
-    manager_fn: object = agents.run_scripted_turn  # (sim, trigger_ids=...) -> TurnResult
+    manager_fn: object = agents.run_scripted_turn  # (toolbox, trigger_ids=...) -> TurnResult
     auto_accept: bool = True
     debounce_s: float = 0.15
     _pending: list[str] = field(default_factory=list)
@@ -159,11 +166,14 @@ class Coordinator:
         status, finding, note = "failed", None, ""
         for _ in range(MAX_REGENERATIONS):
             try:
-                result = self.manager_fn(self.sim, trigger_ids=triggers)
+                result = self.manager_fn(self._toolbox(), trigger_ids=triggers)
             except Exception as e:
                 note = f"manager error: {type(e).__name__}: {e}"
                 break
-            finding = result.finding_id
+            author = "manager-llm" if self.manager_fn is agents.run_llm_turn else "manager-scripted"
+            if not agents.llm_available() and author == "manager-llm":
+                author = "manager-scripted (no model credentials)"
+            finding = self._record(result, author, snap.revision)
             if result.errors:
                 note = "proposal rejected by validation: " + "; ".join(result.errors[:2])
                 status = "failed"
@@ -194,6 +204,23 @@ class Coordinator:
         self.sim.submit(RecordCoordinatorTurn(final)).result(timeout=5)
         self.turns_run += 1
         return final
+
+    def _toolbox(self) -> manager_tools.Toolbox:
+        return manager_tools.build_toolbox(self.sim.snapshot, self.sim.network, self.sim.circuits)
+
+    def _record(self, result, author: str, revision: int) -> str | None:
+        status = (
+            ProposedStatus.REJECTED
+            if result.errors
+            else ProposedStatus.PROPOSED_NOT_ACCEPTED
+        )
+        note = (
+            "; ".join(result.errors) if result.errors else "validated against the pinned snapshot"
+        )
+        key = decisions_semantic_key(self.sim.snapshot, result.output)
+        return self.sim.submit(
+            RecordProposal(author, revision, result.output, status, note, key)
+        ).result(timeout=10)
 
     def _proposal(self, finding_id: str):
         """The recorded proposal, once the next snapshot publishes it."""
@@ -247,9 +274,15 @@ class Coordinator:
         return _digest(
             {
                 "hyp": w.hypotheses_version,
-                "tasks": sorted(t.id for t in w.tasks.values() if t.status in ("pending",)),
-                "needs": sorted(n for n, v in w.needs.items() if v.status == "ACTIVE"),
+                "tasks": sorted(t.id for t in w.tasks.values() if t.status == "PENDING"),
+                "requests": sorted(r for r, a in w.requests.items() if a.status == "ACTIVE"),
                 "policy": w.landing_policy.name,
                 "readings": len(w.readings),
             }
         )
+
+
+def decisions_semantic_key(world, output) -> str:
+    from grid_ops.decisions import semantic_key
+
+    return semantic_key(world, output)

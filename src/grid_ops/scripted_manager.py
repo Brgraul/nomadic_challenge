@@ -1,13 +1,15 @@
 """A deterministic manager that follows the proposal contract.
 
-It exists so the contract (validation, citations, scoped recommendations) is testable without a
-language model. It reasons only from the pinned toolbox, like the LLM manager, and writes plain
-findings and update reasons from the evidence it cites.
+It exists so the contract (validation, citations, scoped recommendations, explicit requests) is
+testable without a language model. It reasons only from the pinned toolbox, like the LLM manager,
+and writes plain findings and update reasons from the evidence it cites. Zero current is never
+treated as proof of de-energization.
 """
 
 from __future__ import annotations
 
-from grid_ops.assessment import Outcome
+import json
+
 from grid_ops.hypotheses import (
     Assessment,
     CitedValue,
@@ -20,224 +22,441 @@ from grid_ops.hypotheses import (
     TurnAssessment,
 )
 from grid_ops.manager_tools import Toolbox
+from grid_ops.sensing import ContactCurrent, LidarPayload
 
-# What each broad report area could plausibly hide, expressed as a falsifiable local claim.
-REPORT_CLAIMS = {
-    "SYN_REPORT_02": (
-        "H_VEG",
-        "Vegetation is within 0.5 m of a conductor somewhere in the SYN_REPORT_02 corridor.",
-        "clearance",
-        "minimum clearance below 0.5 m on the inspected interval",
-        [],
-    ),
-    "SYN_REPORT_05": (
-        "H_HOT",
-        "A loaded hot joint exists on a conductor in the SYN_REPORT_05 area.",
-        "conductor_temp",
-        "excess temperature above 10 C over the load-dependent baseline",
-        ["circuit current above 20 A"],
-    ),
-    "SYN_REPORT_06": (
-        "H_MOTION",
-        "A span in the SYN_REPORT_06 area moves abnormally in gusts.",
-        "motion",
-        "motion amplitude above 0.20 m",
-        ["a qualifying gust window"],
-    ),
-}
+CLEARANCE_THRESHOLD_M = 0.5
 
 
-def _scope_for(tb: Toolbox, area_id: str) -> list[SpanModel]:
-    from grid_ops.geometry import Geometry
-
-    geo = Geometry(tb.network)
-    area = tb.network.areas[area_id]
-    spans = []
-    for seg in sorted(tb.network.segments):
-        for iv in geo.clip_intervals(seg, area):
-            if iv.end_mm > iv.start_mm:
-                spans.append(
-                    SpanModel(segment_id=seg, start_km=iv.start_mm / 1e6, end_km=iv.end_mm / 1e6)
-                )
-    return spans
+def _parse_out(text: str):
+    """Tool outputs carry the snapshot label before the JSON payload; try each bracket start."""
+    starts = [i for i, ch in enumerate(text) if ch in "{["]
+    for i in starts:
+        try:
+            return json.loads(text[i:])
+        except json.JSONDecodeError:
+            continue
+    return []
 
 
-def _hypothesis(tb: Toolbox, report_id: str, assessment: Assessment, priority: int, **kw):
-    hid, claim, kind, expected, conditions = REPORT_CLAIMS[report_id]
-    return HypothesisModel(
-        id=hid,
-        claim=claim,
-        scope=_scope_for(tb, report_id)[:12],
-        predictions=[
-            PredictionModel(
-                id=f"{hid}-P1",
-                statement=f"If the claim holds, a {kind} reading in the scope shows: {expected}.",
-                measurement=kind,
-                expected=expected,
-                required_conditions=conditions,
-            )
-        ],
-        assessment=assessment,
-        priority=priority,
-        supporting_evidence_ids=kw.get("support", []),
-        contradicting_evidence_ids=kw.get("contra", []),
+def _spans(tb: Toolbox, area_id: str) -> list[SpanModel]:
+    spans = _parse_out(tb.segments_in_report(area_id))
+    return [
+        SpanModel(segment_id=s["segment_id"], start_km=s["start_km"], end_km=s["end_km"])
+        for s in spans
+        if isinstance(s, dict) and "segment_id" in s
+    ]
+
+
+def _supply_evidence_id(tb: Toolbox, segment_id: str) -> str:
+    """A citable id for the switching report: the report itself, else its derived evidence."""
+    for report_id in tb.network.reports:
+        if segment_id in tb.network.reports[report_id].description:
+            return report_id
+    for e in tb.world.knowledge.evidence.values():
+        if e.source == "report" and e.circuit_id.split("/")[0] == segment_id:
+            return e.id
+    return segment_id
+
+
+def _segment_span(tb: Toolbox, segment_id: str) -> SpanModel:
+    seg = tb.network.segments[segment_id]
+    return SpanModel(segment_id=segment_id, start_km=0.0, end_km=round(seg.length_km, 3))
+
+
+def _request(tb, rid, hid, rationale, alternatives, outcomes, evidence, urgency, target):
+    from grid_ops.sensing import CorridorSpan, CurrentRequest, LidarRequest, OutcomeSpec
+
+    common = dict(
+        id=rid,
+        hypothesis_ids=(hid,),
+        rationale=rationale,
+        alternatives_distinguished=alternatives,
+        expected_outcomes=tuple(OutcomeSpec(description=o) for o in outcomes),
+        evidence_ids=evidence,
+        urgency=urgency,
+        source_revision=str(tb.snapshot.revision),
+        replaces_request_ids=(),
     )
+    if isinstance(target, CorridorSpan):
+        return LidarRequest(**common, target=target)
+    return CurrentRequest(**common, target=target)
+
+
+def _supply_segment(tb: Toolbox) -> str:
+    """The segment the supply claim tests: a reported switched segment, else a segment a report
+    names, else the first mapped segment."""
+    w = tb.world
+    for seg in sorted(w.known_switching):
+        return seg
+    for report in sorted(tb.network.reports.values(), key=lambda r: r.id):
+        for seg in sorted(tb.network.segments):
+            if seg in report.description:
+                return seg
+    return sorted(tb.network.segments)[0]
 
 
 def startup_proposal(tb: Toolbox) -> ManagerOutput:
-    revisions = []
-    for report_id, priority in (("SYN_REPORT_02", 3), ("SYN_REPORT_05", 2), ("SYN_REPORT_06", 2)):
-        after = _hypothesis(tb, report_id, Assessment.UNRESOLVED, priority, support=[report_id])
-        revisions.append(
-            RevisionModel(
-                hypothesis_id=after.id,
-                change_kinds=["creation"],
-                before=None,
-                after=after,
-                finding_summary=(
-                    f"{report_id} is a low-confidence area report; it motivates a local check, "
-                    "not a confirmed fault location."
+    veg_spans = _spans(tb, "SYN_REPORT_02")
+    veg_scope = veg_spans[:6] if veg_spans else []
+    supply_segment = _supply_segment(tb)
+    supply_evidence = _supply_evidence_id(tb, supply_segment)
+    revisions = [
+        RevisionModel(
+            hypothesis_id="H_VEG",
+            change_kinds=["creation"],
+            before=None,
+            after=HypothesisModel(
+                id="H_VEG",
+                claim="Vegetation is within 0.5 m of a conductor somewhere in the "
+                "SYN_REPORT_02 corridor.",
+                scope=veg_scope,
+                predictions=[
+                    PredictionModel(
+                        id="H_VEG-P1",
+                        statement=(
+                            "If the claim holds, a lidar corridor scan of the scope shows a "
+                            "minimum clearance below the declared 0.5 m threshold."
+                        ),
+                        measurement="clearance",
+                        expected="minimum clearance below 0.5 m on the inspected interval",
+                        required_conditions=["the corridor is geometrically visible to the lidar"],
+                    )
+                ],
+                assessment=Assessment.UNRESOLVED,
+                priority=3,
+                supporting_evidence_ids=["SYN_REPORT_02"],
+            ),
+            finding_summary=(
+                "SYN_REPORT_02 is a low-confidence area report; it motivates a lidar corridor "
+                "scan, not a confirmed fault location. No drone measurements exist yet."
+            ),
+            update_reason=(
+                "At startup only the reports exist and no drone measurements exist yet, so the "
+                "claim is created as UNRESOLVED with an urgency set by report confidence."
+            ),
+            remaining_uncertainty="Everything: location, existence and relation to the outage.",
+            trigger_kind="startup",
+            contributing_evidence_ids=["SYN_REPORT_02"],
+        ),
+        RevisionModel(
+            hypothesis_id="H_SUPPLY",
+            change_kinds=["creation"],
+            before=None,
+            after=HypothesisModel(
+                id="H_SUPPLY",
+                claim=(
+                    f"{supply_segment} is de-energized as its switching report states, so a "
+                    "landed contact sample reads no current."
                 ),
-                update_reason=(
-                    "At startup only the reports exist and no drone measurements exist yet, so "
-                    "the claim is created as UNRESOLVED with an urgency set by report confidence."
+                scope=[_segment_span(tb, supply_segment)],
+                predictions=[
+                    PredictionModel(
+                        id="H_SUPPLY-P1",
+                        statement=(
+                            "If the claim holds, a landed contact-current sample on the circuit "
+                            "reads zero (or near-zero) RMS current."
+                        ),
+                        measurement="current",
+                        expected="RMS current indistinguishable from zero on the sampled conductor",
+                        required_conditions=["the drone can land on the conductor"],
+                    )
+                ],
+                assessment=Assessment.UNRESOLVED,
+                priority=4,
+                supporting_evidence_ids=[supply_evidence],
+            ),
+            finding_summary=(
+                f"The switching report states {supply_segment} is de-energized; no drone "
+                "measurements exist yet, so the claim stays untested."
+            ),
+            update_reason=(
+                "At startup only the reports exist and no drone measurements exist yet, so the "
+                "claim is created as UNRESOLVED with an urgency set by the supply impact."
+            ),
+            remaining_uncertainty="Reports are approximate and can be wrong; only a landed "
+            "contact sample tests the claim, and even zero current leaves live-unloaded and "
+            "disconnected alternatives open.",
+            trigger_kind="startup",
+            contributing_evidence_ids=[supply_evidence],
+        ),
+    ]
+    requests = []
+    if veg_scope:
+        first = veg_scope[0]
+        requests.append(
+            _request(
+                tb,
+                "REQ-L-VTG",
+                "H_VEG",
+                "A moving lidar scan is the only way to test the vegetation claim over the "
+                "reported corridor.",
+                ("vegetation within 0.5 m versus clear corridor",),
+                ("minimum clearance below 0.5 m on some inspected interval",),
+                ("SYN_REPORT_02",),
+                3,
+                __import__("grid_ops.sensing", fromlist=["CorridorSpan"]).CorridorSpan(
+                    segment_id=first.segment_id,
+                    start_mm=round(first.start_km * 1e6),
+                    end_mm=round(first.end_km * 1e6),
                 ),
-                remaining_uncertainty="Everything: location, existence and relation to the outage.",
-                trigger_kind="startup",
-                contributing_evidence_ids=[report_id],
             )
         )
-    return ManagerOutput(
-        summary="Initial hypotheses from reports; no measurements yet.",
-        revisions=revisions,
-        recommendations=[
+    circuit_id = f"{supply_segment}/C1"
+    requests.append(
+        _request(
+            tb,
+            "REQ-C-SUP",
+            "H_SUPPLY",
+            "A landed contact sample tests the switching report's de-energized claim.",
+            (
+                "report correct (no current) versus report wrong (current flows: live-unloaded "
+                "or disconnected interpretations stay open)",
+            ),
+            ("RMS current at or near zero", "RMS current clearly above zero"),
+            [supply_evidence],
+            4,
+            __import__("grid_ops.sensing", fromlist=["ConductorScope"]).ConductorScope(
+                circuit_id=circuit_id,
+                phase="A",
+                start_mm=0,
+                end_mm=round(tb.network.segments[supply_segment].length_km * 1e6),
+            ),
+        )
+    )
+    recs = []
+    if veg_scope:
+        recs.append(
             RecommendationModel(
                 id="REC-START-1",
                 action_kind="measure",
-                text="Send a clearance measurement to the SYN_REPORT_02 corridor first.",
-                scope=revisions[0].after.scope[0],
+                text="Scan the SYN_REPORT_02 corridor with the lidar first.",
+                scope=veg_scope[0],
                 urgency=3,
                 evidence_ids=["SYN_REPORT_02"],
-                rationale="The report names vegetation; clearance can falsify it locally.",
+                rationale="The report names vegetation; a lidar scan can falsify it locally.",
                 uncertainty="The report is low to medium confidence and area-wide.",
             )
-        ],
+        )
+    return ManagerOutput(
+        summary="Initial hypotheses from the reports; no measurements yet.",
+        revisions=revisions,
+        recommendations=recs,
+        measurement_requests=requests,
         untested_alternatives=[
             "Electrical causes of SYN_REPORT_03's protection event are untested."
         ],
     )
 
 
+def _tied_lidar(tb: Toolbox, spans: list[SpanModel]) -> list[str]:
+    latest: dict[str, tuple[int, str]] = {}
+    for rid, reading in tb.world.readings.items():
+        payload = reading.payload
+        if not isinstance(payload, LidarPayload) or not payload.inspected:
+            continue
+        seg = payload.inspected[0].segment_id
+        for sp in spans:
+            if sp.segment_id != seg:
+                continue
+            lo, hi = sp.start_km * 1e6, sp.end_km * 1e6
+            overlap = any(
+                i.start_mm <= hi and i.end_mm >= lo for i in payload.inspected
+            )
+            if overlap and (seg not in latest or reading.acquired_end_s >= latest[seg][0]):
+                latest[seg] = (reading.acquired_end_s, rid)
+    return sorted(rid for _, rid in latest.values())
+
+
+def _current_readings(tb: Toolbox, circuit_id: str) -> list[str]:
+    out = []
+    for rid, reading in tb.world.readings.items():
+        a = reading.acquisition
+        if isinstance(a, ContactCurrent) and a.conductor.circuit_id == circuit_id:
+            out.append((reading.acquired_end_s, rid))
+    return sorted(rid for _, rid in out)
+
+
 def measurement_proposal(tb: Toolbox, trigger_event_ids: list[str]) -> ManagerOutput:
-    """Revise the report hypotheses against the latest tied local readings."""
+    """Revise the report hypotheses against the latest lidar and contact readings."""
     w = tb.world
     revisions, recs, unchanged = [], [], []
-    from grid_ops.proposals import _tied_readings
+    veg_spans = _spans(tb, "SYN_REPORT_02")
+    supply_segment = _supply_segment(tb)
 
-    for report_id in REPORT_CLAIMS:
-        hid = REPORT_CLAIMS[report_id][0]
-        scope = _scope_for(tb, report_id)
-        probe = RevisionModel(
-            hypothesis_id=hid,
-            change_kinds=["assessment"],
-            before=None,
-            after=_hypothesis(tb, report_id, Assessment.UNRESOLVED, 2),
-            finding_summary="x",
-            update_reason="x",
-            remaining_uncertainty="x",
-            trigger_kind="measurement",
-        )
-        probe.after.scope = scope[:12]
-        tied = _tied_readings(tb, probe)
-        if not tied:
-            continue
-        outcomes = {rid: w.interpretations[rid].outcome for rid in tied}
-        positives = [r for r, o in outcomes.items() if o is Outcome.POSITIVE]
-        negatives = [r for r, o in outcomes.items() if o is Outcome.QUALIFIED_NEGATIVE]
-        if positives:
-            assessment, priority = Assessment.SUPPORTED, 5
-        elif negatives and not any(o is Outcome.INCONCLUSIVE for o in outcomes.values()):
-            assessment, priority = Assessment.UNLIKELY, 1
-        else:
-            assessment, priority = Assessment.UNRESOLVED, 3
-        old = w.hypotheses.get(hid)
-        if old and old["assessment"] == str(assessment) and old["priority"] == priority:
-            unchanged += turn_assessments(tb, [hid])  # nothing to revise: a turn assessment only
-            continue
-        cited = []
+    tied = _tied_lidar(tb, veg_spans) if veg_spans else []
+    if tied:
+        values = []
+        positive = False
         for rid in tied:
-            r = w.readings[rid]
-            name, value = r.payload[0] if r.payload else ("none", 0.0)
-            cited.append(
-                CitedValue(
-                    reading_id=rid,
-                    quantity=name,
-                    value=value,
-                    unit={"clearance_m": "m", "temp_c": "C", "amplitude_m": "m"}.get(name, ""),
-                    location=f"{r.point.segment_id} @ {r.point.offset_km:.3f} km",
-                    conditions=", ".join(f"{k}={v:g}" for k, v in r.conditions),
+            payload = tb.world.readings[rid].payload
+            if payload.clearance_m is not None:
+                values.append((rid, payload.clearance_m))
+                positive = positive or payload.clearance_m < CLEARANCE_THRESHOLD_M
+        cited = [
+            CitedValue(
+                reading_id=rid,
+                quantity="clearance_m",
+                value=value,
+                unit="m",
+                location="lidar inspected intervals",
+                conditions="geometric visibility recorded on the reading",
+            )
+            for rid, value in values
+        ]
+        old = w.hypotheses.get("H_VEG")
+        if positive:
+            assessment, priority, summary = Assessment.SUPPORTED, 5, (
+                "A lidar scan found clearance below the declared threshold on the inspected "
+                "interval."
+            )
+            recs.append(
+                RecommendationModel(
+                    id="REC-H-VEG",
+                    action_kind="inspect",
+                    text="Field inspection of the low-clearance interval first.",
+                    scope=veg_spans[0],
+                    urgency=5,
+                    evidence_ids=[*tied],
+                    rationale="A detected low-clearance hazard: an urgent hazard action.",
+                    uncertainty="Whether it caused the outage is unresolved.",
                 )
             )
-        after = _hypothesis(
-            tb, report_id, assessment, priority, support=positives, contra=negatives
+        else:
+            assessment, priority, summary = Assessment.UNRESOLVED, 3, (
+                "The lidar scans so far do not show clearance below the threshold."
+            )
+        after = HypothesisModel(
+            id="H_VEG",
+            claim="Vegetation is within 0.5 m of a conductor somewhere in the SYN_REPORT_02 "
+            "corridor.",
+            scope=veg_spans[:6],
+            predictions=[
+                PredictionModel(
+                    id="H_VEG-P1",
+                    statement="A lidar corridor scan shows the minimum clearance state.",
+                    measurement="clearance",
+                    expected="minimum clearance below 0.5 m on the inspected interval",
+                    required_conditions=["the corridor is geometrically visible to the lidar"],
+                )
+            ],
+            assessment=assessment,
+            priority=priority,
+            supporting_evidence_ids=tied if positive else [],
+            contradicting_evidence_ids=[] if positive else tied,
         )
-        after.scope = scope[:12]
-        kinds = ["assessment", "priority"] if hid in w.hypotheses else ["creation", "assessment"]
-        summary = {
-            Assessment.SUPPORTED: "A threshold event was detected on the inspected interval.",
-            Assessment.UNLIKELY: "Qualified negative readings cover the tested interval.",
-            Assessment.UNRESOLVED: "The readings do not settle the claim.",
-        }[assessment]
         revisions.append(
             RevisionModel(
-                hypothesis_id=hid,
-                change_kinds=kinds,
-                before=None if hid not in w.hypotheses else HypothesisModel(**w.hypotheses[hid]),
+                hypothesis_id="H_VEG",
+                change_kinds=["assessment", "priority"] if old else ["creation", "assessment"],
+                before=HypothesisModel(**old) if old else None,
                 after=after,
                 finding_summary=summary + " This does not show the condition caused the outage.",
-                update_reason=(
-                    f"Latest tied readings {', '.join(tied)} were taken after the previous turn; "
-                    f"outcomes: {', '.join(f'{r}={o}' for r, o in outcomes.items())}."
-                ),
-                remaining_uncertainty="Untested intervals and the outage mechanism remain open.",
+                update_reason=f"Latest lidar readings {', '.join(tied)} arrived after the "
+                "previous turn.",
+                remaining_uncertainty="Uninspected intervals and the outage mechanism remain open.",
                 trigger_kind="measurement",
                 trigger_event_ids=trigger_event_ids,
-                contributing_evidence_ids=[report_id, *tied],
+                contributing_evidence_ids=["SYN_REPORT_02", *tied],
                 latest_measurement_ids=tied,
-                contrary_evidence_ids=negatives
-                if assessment is Assessment.SUPPORTED
-                else positives,
                 cited_values=cited,
             )
         )
-        if positives:
-            hz = [h for h in w.hazards if set(h.evidence_ids) & set(positives)]
-            if hz:
-                h0 = hz[0]
-                recs.append(
-                    RecommendationModel(
-                        id=f"REC-{hid}",
-                        action_kind="inspect",
-                        text=f"Field inspection of {h0.segment_id} {h0.start_mm / 1e6:.3f}-"
-                        f"{h0.end_mm / 1e6:.3f} km.",
-                        scope=SpanModel(
-                            segment_id=h0.segment_id,
-                            start_km=h0.start_mm / 1e6,
-                            end_km=h0.end_mm / 1e6,
-                        ),
-                        urgency=5,
-                        evidence_ids=[h0.id, *positives],
-                        rationale="A detected local hazard: this is an urgent hazard action.",
-                        uncertainty="Whether it relates to the outage is unresolved.",
-                    )
+    elif "H_VEG" in w.hypotheses:
+        unchanged += turn_assessments(tb, ["H_VEG"])
+
+    supply_readings = _current_readings(tb, f"{supply_segment}/C1")
+    supply_evidence = _supply_evidence_id(tb, supply_segment)
+    if supply_readings:
+        rid = supply_readings[-1]
+        payload = tb.world.readings[rid].payload
+        old = w.hypotheses.get("H_SUPPLY")
+        cited = [
+            CitedValue(
+                reading_id=rid,
+                quantity="rms_a",
+                value=payload.rms_a,
+                unit="A",
+                location=f"{payload.conductor.point.segment_id} @ "
+                f"{payload.conductor.point.offset_mm / 1e6:.3f} km",
+                conditions=f"integration {payload.integration_s} s, quality "
+                f"{'ok' if tb.world.readings[rid].quality.valid else 'invalid'}",
+            )
+        ]
+        if payload.rms_a > 2 * payload.uncertainty_a:
+            assessment, priority = Assessment.REFUTED, 1
+            summary = (
+                "A landed contact sample reads clear current on the reported de-energized "
+                "circuit; the switching report is contradicted."
+            )
+            contra = [rid]
+            alternatives = []
+        else:
+            assessment, priority = Assessment.UNRESOLVED, 4
+            summary = (
+                "The contact sample reads zero current, which is compatible with both a "
+                "live-unloaded and a disconnected circuit; the report is neither confirmed nor "
+                "refuted."
+            )
+            contra = []
+            alternatives = [
+                "the circuit is live but unloaded",
+                "the circuit is disconnected downstream of the sample point",
+            ]
+        after = HypothesisModel(
+            id="H_SUPPLY",
+            claim=f"{supply_segment} is de-energized as its switching report states.",
+            scope=[_segment_span(tb, supply_segment)],
+            predictions=[
+                PredictionModel(
+                    id="H_SUPPLY-P1",
+                    statement="A landed contact sample reads the circuit's current state.",
+                    measurement="current",
+                    expected="RMS current indistinguishable from zero on the sampled conductor",
+                    required_conditions=["the drone can land on the conductor"],
                 )
+            ],
+            assessment=assessment,
+            priority=priority,
+            supporting_evidence_ids=[] if assessment is Assessment.REFUTED else [supply_evidence],
+            contradicting_evidence_ids=contra,
+        )
+        revisions.append(
+            RevisionModel(
+                hypothesis_id="H_SUPPLY",
+                change_kinds=["assessment", "priority"] if old else ["creation", "assessment"],
+                before=HypothesisModel(**old) if old else None,
+                after=after,
+                finding_summary=summary,
+                update_reason=f"Latest contact reading {rid} arrived after the previous turn.",
+                remaining_uncertainty="Zero current is never proof of de-energization; both "
+                "alternatives stay open until a distinguishing observation exists.",
+                trigger_kind="measurement",
+                trigger_event_ids=trigger_event_ids,
+                contributing_evidence_ids=[supply_evidence, rid],
+                latest_measurement_ids=[rid],
+                contrary_evidence_ids=contra,
+                cited_values=cited,
+            )
+        )
+        if alternatives:
+            revisions[-1] = replace_untested(revisions[-1], alternatives)
+    elif "H_SUPPLY" in w.hypotheses:
+        unchanged += turn_assessments(tb, ["H_SUPPLY"])
+
     return ManagerOutput(
-        summary="Report hypotheses revised against the latest local readings.",
+        summary="Report hypotheses revised against the latest three-method readings.",
         revisions=revisions,
         unchanged=unchanged,
         recommendations=recs,
-        untested_alternatives=["Electrical alternatives are untested without current readings."],
+        untested_alternatives=[],
     )
+
+
+def replace_untested(rev: RevisionModel, alternatives: list[str]) -> RevisionModel:
+    rev.remaining_uncertainty = (
+        rev.remaining_uncertainty + " Open alternatives: " + "; ".join(alternatives) + "."
+    )
+    return rev
 
 
 def turn_assessments(tb: Toolbox, hypothesis_ids: list[str]) -> list[TurnAssessment]:
@@ -248,8 +467,8 @@ def turn_assessments(tb: Toolbox, hypothesis_ids: list[str]) -> list[TurnAssessm
 
 
 def add_conclusion(tb: Toolbox, output: ManagerOutput) -> ManagerOutput:
-    """If a detected hazard is connected to the outage by switching or electrical evidence in the
-    same component, and every material alternative has a disposition, propose concluding."""
+    """If a detected hazard is connected to the outage by switching or electrical evidence in
+    the same component, and every material alternative has a disposition, propose concluding."""
     from grid_ops.hypotheses import AlternativeDisposition, ConclusionModel
 
     w = tb.world
@@ -261,10 +480,9 @@ def add_conclusion(tb: Toolbox, output: ManagerOutput) -> ManagerOutput:
     link = [
         e.id
         for e in w.knowledge.evidence.values()
-        if e.source in ("report", "reading")
+        if e.source in ("report", "handshake", "telemetry")
         and e.circuit_id.split("/")[0] in tb.network.segments
         and tb.network.segments[e.circuit_id.split("/")[0]].component == comp
-        and e.claim.value in ("dead", "live")
     ]
     cause = next((r for r in output.revisions if str(r.after.assessment) == "SUPPORTED"), None)
     if not link or cause is None:

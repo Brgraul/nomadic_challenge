@@ -8,40 +8,51 @@ Hidden physics lives in `_truth` and is only ever asked questions through `world
 from __future__ import annotations
 
 import copy
+import hashlib
 import queue
 import threading
 import time
+import uuid
 from concurrent.futures import Future
 from dataclasses import dataclass
 
-from grid_ops import consistency, decisions, estimation, fleet, knowledge, needs, planning, scoring
+from grid_ops import assessment, decisions, fleet, knowledge, needs, planning, scoring
 from grid_ops.circuits import CircuitRegistry, build_registry
 from grid_ops.conclusion import Investigation, InvestigationStatus, reopen_relevance
-from grid_ops.envelope import load_envelope
+from grid_ops.energy import DEFAULT_ENERGY_MODEL
 from grid_ops.geometry import Geometry, LandingSite, LinePoint
 from grid_ops.grid import Network
 from grid_ops.knowledge import LandingPolicy
 from grid_ops.proposals import ProposedFinding, ProposedStatus
 from grid_ops.routes import SortieRequest, apply_sorties, validate_sorties
 from grid_ops.scenario import (
+    I_CHARGE_MIN_A,
     ScenarioConfig,
-    ScenarioInfeasible,
     ScenarioMode,
     SensorModel,
     public_brief,
 )
-from grid_ops.truth import TruthState, build
+from grid_ops.sensing import ConductorPoint, SensorCapabilities
+from grid_ops.truth import Episode, EpisodeSpec, build_episode
 from grid_ops.world import (
+    LAND_S,
+    TAKEOFF_S,
     CommandRejected,
     Event,
+    Land,
     LineStatus,
+    Perched,
     ReadingDisposition,
     RejectionRecord,
     ScheduledReport,
+    ScheduledStep,
+    Takeoff,
+    Transit,
     World,
     advance_to,
     format_clock,
     initial_world,
+    leg_seconds,
     seed_starting_handshakes,
     settle,
 )
@@ -49,6 +60,33 @@ from grid_ops.world import (
 TICK_SECONDS = 0.5
 # Fixture: a public switching report that hidden physics contradicts (the line stays live).
 CONTRADICTED_SEGMENT = "LINE_009"
+
+
+class EpisodePhysics:
+    """Adapts the hidden episode to the `world.Physics` protocol the runtime is allowed to ask."""
+
+    def __init__(self, episode: Episode) -> None:
+        self._episode = episode
+
+    def is_chargeable(self, site: LandingSite) -> bool:
+        # Balanced-phase declared rule: phase A must carry at least the minimum charging current;
+        # unsupplied spans read 0.0 A, so the threshold alone decides.
+        return (
+            self._episode.current_at(ConductorPoint(site.point, site.circuit_id, "A"))
+            >= I_CHARGE_MIN_A
+        )
+
+    def acquire(self, executed):
+        return self._episode.acquire(executed)
+
+
+def _private_seeds(policy_seed: int) -> tuple[int, int]:
+    """Deterministic but unpublished: the public seed selects the episode without revealing it."""
+    digest = hashlib.sha256(f"episode|{policy_seed}".encode()).digest()
+    return (
+        int.from_bytes(digest[:4], "big"),
+        int.from_bytes(digest[4:8], "big"),
+    )
 
 
 @dataclass(frozen=True)
@@ -251,8 +289,19 @@ class Simulation:
         self.paused = False
         self.scenario = scenario or ScenarioConfig()
         self._world = initial_world(network, self.geometry)
-        starting = tuple(d.state.perch.circuit_id for d in self._world.drones.values())
-        self._truth = build(network, self.circuits, self.geometry, self.scenario, starting)
+        policy_seed = getattr(self.scenario, "policy_seed", self.scenario.seed)
+        episode_seed, noise_seed = _private_seeds(policy_seed)
+        self._truth = build_episode(
+            network,
+            self.circuits,
+            self.geometry,
+            EpisodeSpec(episode_seed, noise_seed, run_id=uuid.uuid4().hex),
+            fixture_id="bavaria-public",
+            fixture_version="1",
+            policy_seed=policy_seed,
+            capabilities=SensorCapabilities(),
+        )
+        self._physics = EpisodePhysics(self._truth)
         self._commands: queue.Queue[tuple[Command, Future[str]]] = queue.Queue()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -261,18 +310,18 @@ class Simulation:
         self.auto_replan = auto_replan
         self.coordinator = fleet.Coordinator()
         self._ingest_wall = time.perf_counter()
-        self._estimation = estimation.EstimationState()
 
         w = self._world
         w.scenario_mode, w.scenario_seed = self.scenario.mode, self.scenario.seed
         w.brief = public_brief(network, self.scenario)
+        w.capabilities = SensorCapabilities()
+        w.energy_model = DEFAULT_ENERGY_MODEL
         w.sensor_model = SensorModel(shared_rho=self.scenario.shared_rho)
         w.circuits_by_segment = dict(self.circuits.by_segment)
-        w.envelope = load_envelope()
         w.segment_lengths = {sid: self.geometry.length_mm(sid) for sid in network.segments}
         knowledge.recompute(w)
         seed_starting_handshakes(w)
-        if self.scenario.mode is ScenarioMode.INCIDENT_DEMO:
+        if self.scenario.mode is ScenarioMode.INCIDENT_DEMO and "LINE_024" in w.circuits_by_segment:
             w.known_switching["LINE_024"] = 0  # SYN_REPORT_03's status check
             knowledge.ingest_report(
                 w, "LINE_024", 0, "SYN_REPORT_03: LINE_024 precautionarily switched off"
@@ -285,7 +334,6 @@ class Simulation:
                     f"Dispatch reports {CONTRADICTED_SEGMENT} switched to de-energized.",
                 )
             )
-        self._refresh_estimate()  # startup: a labelled prior-only estimate
         self.snapshot: World = copy.deepcopy(self._world)
 
     def submit(self, command: Command) -> Future[str]:
@@ -338,7 +386,7 @@ class Simulation:
         self._remainder_s += minutes * 60
         whole = int(self._remainder_s)
         self._remainder_s -= whole
-        events = advance_to(self._world, self._truth, self._world.clock_s + whole)
+        events = advance_to(self._world, self._physics, self._world.clock_s + whole)
         self._publish(events)
         return events
 
@@ -349,8 +397,7 @@ class Simulation:
         first_new = len(w.events)
         for e in events:
             w.events.append((f"EVT{len(w.events) + 1:04d}", e))
-        if any(e.kind in ("reading", "switching_report") for e in events):
-            self._refresh_estimate()
+        self._ingest_readings(first_new)
         if events:
             w.revision += 1
         self._refresh_tasks(events)
@@ -378,6 +425,16 @@ class Simulation:
         elif self.auto_replan and w.hold is not None:
             self._route_pass("retry while held", (), time.perf_counter(), time.perf_counter())
 
+    def _ingest_readings(self, first_new: int) -> None:
+        """Feed new readings to the lidar coverage and hazard interpretation."""
+        w = self._world
+        for _, e in w.events[first_new:]:
+            if e.kind != "reading":
+                continue
+            reading = w.readings.get(e.detail)
+            if reading is not None:
+                assessment.ingest_lidar(w, reading)
+
     def _route_pass(self, trigger, event_ids, ingested, published, **plan_kw) -> fleet.RoutePass:
         """Immediate, bounded route pass under an acceptance hold; releases only on a validated
         continuation. Hypotheses are never touched."""
@@ -389,7 +446,7 @@ class Simulation:
             w,
             self.geometry,
             self.circuits,
-            self._estimation,
+            self._physics,
             self.coordinator,
             trigger=trigger,
             event_ids=tuple(event_ids),
@@ -402,13 +459,41 @@ class Simulation:
             w.hold = decisions.Hold(cycle, None, f"no safe continuation: {rp.detail}", w.clock_s)
         else:
             w.hold = None
-        settle_events = settle(w, self._truth)
+        settle_first = len(w.events)
+        settle_events = settle(w, self._physics)
         for e in settle_events:
             w.events.append((f"EVT{len(w.events) + 1:04d}", e))
+        self._ingest_readings(settle_first)
         w.record("route", f"{rp.id} {rp.outcome}: {rp.detail}")
         self._refresh_tasks()
         self.snapshot = copy.deepcopy(w)
         return rp
+
+    def _dispatch(self, drone_id: str, segment_id: str, author: str) -> list[str]:
+        point = LinePoint(segment_id, self.geometry.length_mm(segment_id) // 2)
+        landing = LandingSite(point, f"{segment_id}/C1")
+        drone = self._world.drones[drone_id]
+        steps = []
+        t = self._world.clock_s
+        if isinstance(drone.state, Perched):
+            perch = drone.state.perch
+            perch_pos = self.geometry.position_of(perch.point)
+            site_pos = self.geometry.position_of(landing.point)
+            if perch == landing:
+                raise CommandRejected(f"{drone_id} is already perched on {landing.circuit_id}.")
+            steps.append(ScheduledStep(0, t, t + TAKEOFF_S, Takeoff(perch, perch_pos)))
+            t += TAKEOFF_S
+            leg = leg_seconds(perch_pos, site_pos, drone.speed_km_per_min)
+            steps.append(ScheduledStep(1, t, t + leg, Transit(perch_pos, site_pos)))
+            t += leg
+            steps.append(ScheduledStep(2, t, t + LAND_S, Land(landing, site_pos)))
+        else:
+            raise CommandRejected(f"{drone_id} is {drone.phase} and cannot be dispatched.")
+        request = SortieRequest(
+            drone_id, tuple(steps), landing, self._world.revision,
+            self._world.energy_model.revision, self._world.capabilities.revision,
+        )
+        return self._commit((request,), author)
 
     def submit_route_pass(self, reason: str, author: str = "coordinator"):
         return self.submit(RoutePassCommand(reason, author)).result(timeout=10)
@@ -421,7 +506,6 @@ class Simulation:
             self.snapshot,
             self.geometry,
             self.circuits,
-            self._estimation,
             revision=self.snapshot.revision,
             **kw,
         )
@@ -430,8 +514,7 @@ class Simulation:
         """Deterministic task refresh: runs for any evidence, coverage, expiry or availability
         change, with or without new hypotheses."""
         w = self._world
-        notes, _ = needs.refresh(w, self.geometry, self._estimation)
-        notes += needs.trim_routes(w)
+        notes, _ = needs.refresh(w, self.network, self.geometry)
         for n in notes:
             w.task_log.append((w.clock_s, n))
         w.score_preview = self._score_preview()
@@ -442,14 +525,13 @@ class Simulation:
         open_tasks = [t for t in w.tasks.values() if t.status in scoring.OPEN]
         if not open_tasks:
             return []
-        ctx = scoring.build_context(w, self._estimation)
+        ctx = scoring.build_context(w)
         rows = []
         for t in sorted(open_tasks, key=lambda t: t.id)[:80]:
-            s = scoring.score_plan(w, ctx, self.geometry, [t.id])
+            s = scoring.score_plan(w, ctx, [t.id])
             rows.append(
                 {
                     "task": t.id,
-                    "eligible": scoring.eligible(w, t),
                     "tier_points_5_to_1": s.tiers,
                     "owner_urgency": next(
                         (i for i, v in zip((5, 4, 3, 2, 1), s.tiers, strict=True) if v), None
@@ -459,20 +541,7 @@ class Simulation:
             )
         return rows
 
-    def _refresh_estimate(self) -> None:
-        w = self._world
-        if estimation.refresh(self._estimation, w, self.network, self.circuits):
-            model = self._estimation.model
-            w.consistency = consistency.check_consistency(
-                model,
-                estimation.effective_readings(w),
-                shared_rho=w.sensor_model.shared_rho,
-                envelope=w.envelope,
-                known_switching_clock=dict(w.known_switching),
-                active_seed=w.scenario_seed,
-            )
-
-    def evaluator_truth(self) -> TruthState:
+    def evaluator_truth(self):
         """Handle for `grid_ops.evaluation` only; agents and the UI must never call this."""
         return self._truth
 
@@ -485,17 +554,18 @@ class Simulation:
             reasons = tuple(str(r) for r in result.rejections)
             world.rejections.append(RejectionRecord(world.clock_s, author, reasons))
             raise CommandRejected("; ".join(reasons))
-        apply_sorties(world, result.plans)
-        events = settle(world, self._truth)  # zero-distance arrivals complete immediately
+        apply_sorties(world, self._physics, result.plans)
+        events = settle(world, self._physics)  # zero-distance arrivals complete immediately
+        first_new = len(world.events)
         for e in events:
             world.events.append((f"EVT{len(world.events) + 1:04d}", e))
+        self._ingest_readings(first_new)
         if events:
             world.revision += 1
-        if any(e.kind in ("reading", "switching_report") for e in events):
-            self._refresh_estimate()
+        self._refresh_tasks()
         return [
-            f"{p.drone_id}: {len(p.stops)} stop(s), landing {p.landing.circuit_id} at "
-            f"{format_clock(p.landing_arrive_s / 60)}, {p.battery_left_s / 60:.1f} min spare"
+            f"{p.drone_id}: itinerary until {format_clock(p.itinerary.end_s / 60)}, "
+            f"final perch {p.itinerary.final_perch.circuit_id}"
             for p in result.plans
         ]
 
@@ -508,7 +578,7 @@ class Simulation:
             raise CommandRejected(f"Unknown reading {reading_id}.")
         if not reason.strip():
             raise CommandRejected("A disposition must state its reason.")
-        current = w.epoch_overrides.get(reading_id, reading.operating_epoch)
+        current = w.epoch_overrides.get(reading_id, reading.evidence_epoch)
         if action == "EXCLUDED":
             if reading_id in w.excluded_readings:
                 raise CommandRejected(f"{reading_id} is already excluded.")
@@ -532,7 +602,7 @@ class Simulation:
                 epoch,
             )
         )
-        self._refresh_estimate()  # dependent recomputation
+
 
     def _commit_decision(self, cmd: CommitDecision) -> str:
         w = self._world
@@ -578,7 +648,9 @@ class Simulation:
         w.next_cycle += 1
         w.hold = decisions.Hold(cycle, cmd.decision_id, "decision acceptance", w.clock_s)
         try:
-            settle(w, self._truth)  # process observations due right now
+            settle_first = len(w.events)
+            settle(w, self._physics)  # process observations due right now
+            self._ingest_readings(settle_first)
             ctx = decisions.evaluate_commit(w, ctx_args[0], self.geometry, self.circuits, cmd)
             cand = decisions.apply_candidate(w, ctx, cmd, cycle, w.clock_s)
             for segs in cand["model_changes"]:
@@ -597,23 +669,29 @@ class Simulation:
                     raise decisions.DecisionRejected(
                         ["a concluding decision carries no new sorties"]
                     )
-                recovery, problems = decisions.recovery_requests(w, self.geometry, self.circuits)
+                _, problems = decisions.recovery_requests(
+                    w, self.geometry, self.circuits, self._physics
+                )
                 if problems:
                     raise decisions.DecisionRejected(problems)
-                batch = recovery
-                plans_wanted = {r.drone_id for r in recovery}
+                batch, plans_wanted = (), set()
             else:
                 others = {
                     d.id for d in w.drones.values() if d.id not in {s.drone_id for s in cmd.sorties}
                 }
-                batch = (*cmd.sorties, *decisions.current_requests(w, only=others))
+                batch = (
+                    *cmd.sorties,
+                    *(r for r in decisions.current_requests(w) if r.drone_id in others),
+                )
                 plans_wanted = {s.drone_id for s in cmd.sorties}
             validation = validate_sorties(w, self.geometry, self.circuits, batch)
             if not validation.ok:
                 raise decisions.DecisionRejected([str(r) for r in validation.rejections])
             plans = tuple(p for p in validation.plans if p.drone_id in plans_wanted)
         except decisions.DecisionRejected as e:
-            fallback, problems = decisions.route_only_continuation(w, self.geometry, self.circuits)
+            fallback, problems = decisions.route_only_continuation(
+                w, self.geometry, self.circuits, self._physics
+            )
             if fallback == "HELD":
                 w.hold = decisions.Hold(
                     cycle,
@@ -624,11 +702,12 @@ class Simulation:
             else:
                 w.hold = None
             reject(e.reasons, cycle, fallback, e.superseded)
-        decisions.commit_apply(w, cand, ctx, cmd, plans)
-        events = settle(w, self._truth)
+        decisions.commit_apply(w, cand, ctx, cmd, plans, self._physics)
+        apply_first = len(w.events)
+        events = settle(w, self._physics)
         for e_ in events:
             w.events.append((f"EVT{len(w.events) + 1:04d}", e_))
-        self._refresh_estimate()
+        self._ingest_readings(apply_first)
         self._refresh_tasks()
         w.decision_outcomes[cmd.decision_id] = decisions.DecisionOutcome(
             cmd.decision_id, decisions.Outcome.ACCEPTED, (), cycle, "none needed", w.clock_s
@@ -649,9 +728,7 @@ class Simulation:
             case Dispatch(drone_id, segment_id, author):
                 if segment_id not in self.network.segments:
                     raise CommandRejected(f"Unknown segment {segment_id}.")
-                point = LinePoint(segment_id, self.geometry.length_mm(segment_id) // 2)
-                landing = LandingSite(point, f"{segment_id}/C1")
-                lines = self._commit((SortieRequest(drone_id, (), landing),), author)
+                lines = self._dispatch(drone_id, segment_id, author)
                 result = f"{drone_id} departed for {segment_id}. " + lines[0]
             case CommitSorties(sorties, author):
                 result = "Accepted: " + " | ".join(self._commit(sorties, author))
@@ -660,16 +737,11 @@ class Simulation:
                     raise CommandRejected(f"Unknown segment {segment_id}.")
                 world.belief[segment_id] = status
                 result = f"{segment_id} marked {status}: {note}"
-            case SetInService(segment_id, in_service, author):
-                if segment_id not in self.circuits.by_segment:
-                    raise CommandRejected(f"Unknown segment {segment_id}.")
-                try:
-                    self._truth.set_in_service(segment_id, in_service)
-                except ScenarioInfeasible as e:
-                    raise CommandRejected(f"{e} {e.diagnostics}") from e
-                # Hidden physics: the public log must not reveal what the switching did.
-                self._hidden_log.append(f"{segment_id} in_service={in_service} ({author})")
-                return "Scenario change applied."
+            case SetInService():
+                raise CommandRejected(
+                    "SetInService is not part of the three-method runtime; scenario mutation "
+                    "belongs to the privileged evaluator"
+                )
             case RegisterSite(segment_id, offset_mm, author):
                 try:
                     site = self.geometry.site(LinePoint(segment_id, offset_mm))

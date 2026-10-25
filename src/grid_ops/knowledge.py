@@ -14,17 +14,11 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from grid_ops.geometry import Geometry, LandingSite, LinePoint
-from grid_ops.scenario import (
-    I_CHARGE_MIN_A,
-    VOLTAGE_DEAD_FRACTION,
-    VOLTAGE_LIVE_FRACTION,
-)
 
 if TYPE_CHECKING:
-    from grid_ops.world import Reading, World
+    from grid_ops.world import World
 
 EVIDENCE_LIFETIME_S = 30 * 60
-Z95 = 1.96
 PUBLIC_EPOCH = "E0"
 
 
@@ -138,60 +132,10 @@ def _add(book: KnowledgeBook, **kw) -> Evidence:
     return e
 
 
-def classify_voltage(value_kv: float, sigma_kv: float, nominal_kv: float) -> Claim | None:
-    lower, upper = value_kv - Z95 * sigma_kv, value_kv + Z95 * sigma_kv
-    if lower > VOLTAGE_LIVE_FRACTION * nominal_kv:
-        return Claim.LIVE
-    if upper < VOLTAGE_DEAD_FRACTION * nominal_kv:
-        return Claim.DEAD
-    return None  # intermediate intervals stay inconclusive
-
-
-def ingest_reading(world: World, reading: Reading) -> list[Evidence]:
-    """Qualified electrical evidence from one reading, per circuit. Local readings add none."""
-    if reading.covariance is None:
-        return []
-    book = world.knowledge
-    payload = dict(reading.payload)
-    added = []
-    for c in world.circuits_by_segment[reading.point.segment_id]:
-        v_name = f"{c.id}.voltage_kv"
-        if v_name not in payload:
-            continue
-        claim = classify_voltage(payload[v_name], reading.covariance.std(v_name), c.nominal_kv)
-        if claim is None:
-            continue
-        expires = reading.clock_s + EVIDENCE_LIFETIME_S
-        added.append(
-            _add(
-                book,
-                circuit_id=c.id,
-                claim=claim,
-                source="reading",
-                source_id=reading.id,
-                clock_s=reading.clock_s,
-                expires_s=expires,
-                detail=f"voltage {payload[v_name]:.1f} kV",
-            )
-        )
-        i_name = f"{c.id}.current_a"
-        if claim is Claim.LIVE and i_name in payload:
-            lower_i = payload[i_name] - Z95 * reading.covariance.std(i_name)
-            if lower_i >= I_CHARGE_MIN_A:
-                added.append(
-                    _add(
-                        book,
-                        circuit_id=c.id,
-                        claim=Claim.CHARGE_OK,
-                        source="reading",
-                        source_id=reading.id,
-                        clock_s=reading.clock_s,
-                        expires_s=expires,
-                        detail=f"supported current >= {lower_i:.1f} A",
-                    )
-                )
-    recompute(world)
-    return added
+def ingest_reading(world: World, reading) -> list[Evidence]:
+    """Three-method readings carry no energization evidence: current magnitude alone never
+    establishes live or de-energized, and zero current is never proof of isolation."""
+    return []
 
 
 def ingest_report(world: World, segment_id: str, clock_s: int, text: str) -> None:
@@ -244,11 +188,16 @@ def end_charge_telemetry(world: World, circuit_id: str) -> None:
 
 
 def _charging_circuits(world: World) -> set[str]:
-    from grid_ops.world import Charging
+    from grid_ops.world import Charge, Executing
 
-    return {
-        d.state.perch.circuit_id for d in world.drones.values() if isinstance(d.state, Charging)
-    }
+    out = set()
+    for d in world.drones.values():
+        st = d.state
+        if isinstance(st, Executing):
+            op = st.step.operation
+            if isinstance(op, Charge):
+                out.add(op.site.circuit_id)
+    return out
 
 
 def _valid(world: World, e: Evidence, charging: set[str]) -> bool:
@@ -398,6 +347,17 @@ def _derive(
 # -- eligibility -------------------------------------------------------------------------------
 
 
+def assess_perch(world: World, site: LandingSite) -> Eligibility:
+    """Mechanical landing safety only: known hazards over the point. Chargeability never gates a
+    perch, because a dead line is a valid perch; only Charge steps need assess_landing."""
+    for h in world.hazards:
+        if h.segment_id == site.point.segment_id and h.start_mm <= site.point.offset_mm <= h.end_mm:
+            return Eligibility(
+                False, (f"known landing hazard {h.id} ({h.verdict})",), world.landing_policy.name
+            )
+    return Eligibility(True, ("mechanically safe perch",), world.landing_policy.name)
+
+
 def assess_landing(
     world: World, site: LandingSite, arrival_s: int, policy: LandingPolicy | None = None
 ) -> Eligibility:
@@ -457,10 +417,10 @@ def landing_candidates(
     """Candidate recharge endpoints for a drone: current perches, task sites, a coarse sampled
     grid, and exact projections of the drone and of every candidate final stop onto each
     reachable segment. Every candidate names its circuit; ineligible ones are kept, explained."""
-    from grid_ops.world import Charging, Ready, Stranded
+    from grid_ops.world import Executing, Perched, Stranded
 
     drone = world.drones[drone_id]
-    reach_km = drone.battery_s / 60 * drone.speed_km_per_min
+    reach_km = drone.battery.remaining_units / 600 * drone.speed_km_per_min
     seen: dict[LandingSite, str] = {}
 
     def add(point: LinePoint, source: str) -> None:
@@ -469,12 +429,19 @@ def landing_candidates(
 
     for d in world.drones.values():
         st = d.state
-        if isinstance(st, Ready | Charging | Stranded):
+        if isinstance(st, Perched | Stranded):
             seen.setdefault(st.perch, "perch")
-        elif hasattr(st, "route"):
-            seen.setdefault(st.route.perch, "perch")
+        elif isinstance(st, Executing):
+            seen.setdefault(st.itinerary.final_perch, "perch")
     for t in world.tasks.values():
-        add(t.point, "task")
+        from grid_ops.sensing import ContactCurrent, LidarPass, TdrTest
+
+        a = t.acquisition
+        if isinstance(a, ContactCurrent | TdrTest):
+            add(a.conductor.point, "task")
+        elif isinstance(a, LidarPass):
+            add(LinePoint(a.target.segment_id, a.target.start_mm), "task")
+            add(LinePoint(a.target.segment_id, a.target.end_mm), "task")
     origins = [drone.position, *final_stop_positions]
     for seg in world.circuits_by_segment:
         for o in origins:
@@ -488,41 +455,23 @@ def landing_candidates(
                 add(p, "sample")
     occupied = {}
     for d in world.drones.values():
-        if isinstance(d.state, Charging | Stranded):
+        if isinstance(d.state, Perched | Stranded):
             occupied[d.state.perch] = d.id
     out = []
     for site, source in seen.items():
-        arrival = arrival_s_for(site)
-        out.append(
-            LandingCandidate(site, source, assess_landing(world, site, arrival), occupied.get(site))
-        )
+        out.append(LandingCandidate(site, source, assess_perch(world, site), occupied.get(site)))
     return sorted(out, key=lambda c: (c.site.circuit_id, c.site.point.offset_mm))
 
 
 def invalid_endpoints(world: World) -> list[tuple[str, LandingSite, Eligibility]]:
     """Planned landings that are no longer eligible (route continuation must be replaced)."""
-    from grid_ops.world import Flying, Measuring
+    from grid_ops.world import Executing
 
     out = []
     for d in world.drones.values():
         st = d.state
-        if isinstance(st, Flying | Measuring):
-            e = assess_landing(world, st.route.perch, _arrival_estimate(world, d))
+        if isinstance(st, Executing):
+            e = assess_perch(world, st.itinerary.final_perch)
             if not e.eligible:
-                out.append((d.id, st.route.perch, e))
+                out.append((d.id, st.itinerary.final_perch, e))
     return out
-
-
-def _arrival_estimate(world: World, drone) -> int:
-    from grid_ops.world import Flying, Measuring, leg_seconds
-
-    st = drone.state
-    t, here = world.clock_s, drone.position
-    if isinstance(st, Measuring):
-        t, here = st.until_s, st.stop.position
-    elif isinstance(st, Flying):
-        pass
-    for s in st.route.stops:
-        t += leg_seconds(here, s.position, drone.speed_km_per_min) + s.dwell_s
-        here = s.position
-    return t + leg_seconds(here, st.route.perch_position, drone.speed_km_per_min)

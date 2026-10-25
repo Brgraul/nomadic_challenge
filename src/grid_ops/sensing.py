@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal, Self
 
-from grid_ops.geometry import Interval, LinePoint
-from grid_ops.grid import LonLat
+from pydantic import BaseModel, Field, model_validator
+
+from grid_ops.geometry import Geometry, Interval, LinePoint
+from grid_ops.grid import LonLat, Network
 
 SENSOR_MODEL_REVISION = "three-method-v1"
 
@@ -273,3 +276,300 @@ class TdrAccessSite:
 def tdr_access(conductor: ConductorPoint) -> TdrAccessSite:
     key = f"{conductor.circuit_id}/{conductor.phase}@{conductor.point.offset_mm}mm"
     return TdrAccessSite(f"access:{key}", conductor, (f"return:{key}",))
+
+
+CONTACT_GRID_MM = 2_000_000
+LIDAR_SPEED_MPS = 10.0
+TDR_DURATION_S = 30
+CIRCUIT_PHASES = ("A", "B", "C")
+
+
+class CorridorSpan(BaseModel):
+    segment_id: str
+    start_mm: int
+    end_mm: int
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if self.end_mm <= self.start_mm:
+            raise ValueError("end_mm must exceed start_mm")
+        return self
+
+
+class ConductorScope(BaseModel):
+    circuit_id: str
+    phase: Literal["A", "B", "C"]
+    start_mm: int
+    end_mm: int
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if self.end_mm <= self.start_mm:
+            raise ValueError("end_mm must exceed start_mm")
+        return self
+
+
+class OutcomeSpec(BaseModel):
+    description: str
+
+
+class RequestCommon(BaseModel):
+    id: str
+    hypothesis_ids: tuple[str, ...]
+    rationale: str
+    alternatives_distinguished: tuple[str, ...]
+    expected_outcomes: tuple[OutcomeSpec, ...]
+    evidence_ids: tuple[str, ...]
+    urgency: int = Field(ge=1, le=5)
+    source_revision: str
+    replaces_request_ids: tuple[str, ...]
+
+
+class LidarRequest(RequestCommon):
+    method: Literal["lidar"] = "lidar"
+    target: CorridorSpan
+
+
+class TdrRequest(RequestCommon):
+    method: Literal["tdr"] = "tdr"
+    target: ConductorScope
+    coupling_profile_id: str = "synthetic-live-compatible-v1"
+    isolation_evidence_ids: tuple[str, ...] = ()
+
+
+class CurrentRequest(RequestCommon):
+    method: Literal["contact_current"] = "contact_current"
+    target: ConductorScope
+
+
+MeasurementRequest = Annotated[
+    LidarRequest | TdrRequest | CurrentRequest, Field(discriminator="method")
+]
+
+
+class TaskStatusV2(StrEnum):
+    PENDING = "PENDING"
+    RESERVED = "RESERVED"
+    MEASURING = "MEASURING"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    FAILED = "FAILED"
+
+
+class RequestStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    RETIRED = "RETIRED"
+
+
+@dataclass(frozen=True)
+class AcceptedRequest:
+    id: str
+    request: MeasurementRequest
+    status: RequestStatus
+    accepted_s: int
+    source_revision: str
+    retired_reason: str = ""
+
+
+@dataclass(frozen=True)
+class MeasurementTaskV2:
+    id: str
+    request_id: str
+    acquisition: Acquisition
+    alternative_group_id: str
+    status: TaskStatusV2
+    urgency: int
+    repeat_of_task_id: str | None = None
+    assigned_drone_id: str | None = None
+    reading_id: str | None = None
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class RequestRejection:
+    request_id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class TasksAndRejections:
+    tasks: tuple[MeasurementTaskV2, ...]
+    rejections: tuple[RequestRejection, ...]
+
+
+def compile_requests(
+    network: Network,
+    geometry: Geometry,
+    capabilities: SensorCapabilities,
+    requests: Sequence[MeasurementRequest],
+    *,
+    covered_intervals: Sequence[Interval] = (),
+    clock_s: int = 0,
+) -> TasksAndRejections:
+    """Expand accepted requests into pending tasks, rejecting each infeasible request."""
+    # covered_intervals and clock_s are carried for the scoring/refresh callers; compilation
+    # itself is position-based and time-blind.
+    tasks: list[MeasurementTaskV2] = []
+    rejections: list[RequestRejection] = []
+    seen: set[str] = set()
+    for request in requests:
+        if request.id in seen:
+            rejections.append(
+                RequestRejection(request.id, f"duplicate request id {request.id} in the same call")
+            )
+            continue
+        seen.add(request.id)
+        if isinstance(request, LidarRequest):
+            outcome = _lidar_tasks(network, geometry, capabilities, request)
+        elif isinstance(request, CurrentRequest):
+            outcome = _current_tasks(network, geometry, request)
+        else:
+            outcome = _tdr_tasks(network, geometry, request)
+        if isinstance(outcome, RequestRejection):
+            rejections.append(outcome)
+        else:
+            tasks.extend(outcome)
+    return TasksAndRejections(tuple(tasks), tuple(rejections))
+
+
+def _clipped_target(
+    request_id: str, segment_id: str, start_mm: int, end_mm: int, length_mm: int
+) -> tuple[int, int] | RequestRejection:
+    start, end = max(start_mm, 0), min(end_mm, length_mm)
+    if end <= start:
+        return RequestRejection(
+            request_id, f"requested span clips to empty on segment {segment_id}"
+        )
+    return start, end
+
+
+def _lidar_tasks(
+    network: Network, geometry: Geometry, capabilities: SensorCapabilities, request: LidarRequest
+) -> tuple[MeasurementTaskV2, ...] | RequestRejection:
+    target = request.target
+    if target.segment_id not in network.segments:
+        return RequestRejection(request.id, f"unknown segment {target.segment_id}")
+    bounds = _clipped_target(
+        request.id,
+        target.segment_id,
+        target.start_mm,
+        target.end_mm,
+        geometry.length_mm(target.segment_id),
+    )
+    if isinstance(bounds, RequestRejection):
+        return bounds
+    start, end = bounds
+    height_m = capabilities.conductor_height_m + 30.0
+    poses = tuple(
+        ScanPose(geometry.position_of(LinePoint(target.segment_id, mm)), height_m, 0.0, -60.0)
+        for mm in (start, end)
+    )
+    duration_s = max(10, round((end - start) / 1000.0 / LIDAR_SPEED_MPS))
+    interval = Interval(target.segment_id, start, end)
+    return tuple(
+        MeasurementTaskV2(
+            id="",
+            request_id=request.id,
+            acquisition=LidarPass(interval, ScanTrajectory(trajectory, duration_s)),
+            alternative_group_id=request.id,
+            status=TaskStatusV2.PENDING,
+            urgency=request.urgency,
+        )
+        for trajectory in (poses, poses[::-1])
+    )
+
+
+def _clipped_conductor_scope(
+    network: Network, geometry: Geometry, request: CurrentRequest | TdrRequest
+) -> Interval | RequestRejection:
+    scope = request.target
+    segment_id, _, suffix = scope.circuit_id.partition("/")
+    if segment_id not in network.segments:
+        return RequestRejection(request.id, f"unknown segment {segment_id}")
+    if not (suffix.startswith("C") and suffix[1:].isdecimal() and int(suffix[1:]) >= 1):
+        return RequestRejection(
+            request.id, f"circuit {scope.circuit_id} not on segment {segment_id}"
+        )
+    # pydantic rejects other phases at parse; this guards direct construction.
+    if scope.phase not in CIRCUIT_PHASES:
+        raise ValueError("unknown phase")
+    bounds = _clipped_target(
+        request.id, segment_id, scope.start_mm, scope.end_mm, geometry.length_mm(segment_id)
+    )
+    if isinstance(bounds, RequestRejection):
+        return bounds
+    start, end = bounds
+    return Interval(segment_id, start, end)
+
+
+def _current_tasks(
+    network: Network, geometry: Geometry, request: CurrentRequest
+) -> tuple[MeasurementTaskV2, ...] | RequestRejection:
+    scope = _clipped_conductor_scope(network, geometry, request)
+    if isinstance(scope, RequestRejection):
+        return scope
+    offsets = {
+        k * CONTACT_GRID_MM
+        for k in range(
+            scope.start_mm // CONTACT_GRID_MM + 1, (scope.end_mm - 1) // CONTACT_GRID_MM + 1
+        )
+    }
+    offsets.add((scope.start_mm + scope.end_mm) // 2)
+    return tuple(
+        MeasurementTaskV2(
+            id="",
+            request_id=request.id,
+            acquisition=ContactCurrent(
+                ConductorPoint(
+                    LinePoint(scope.segment_id, offset_mm),
+                    request.target.circuit_id,
+                    request.target.phase,
+                ),
+                integration_s=10,
+            ),
+            alternative_group_id=request.id,
+            status=TaskStatusV2.PENDING,
+            urgency=request.urgency,
+        )
+        for offset_mm in sorted(offsets)
+    )
+
+
+def _tdr_tasks(
+    network: Network, geometry: Geometry, request: TdrRequest
+) -> tuple[MeasurementTaskV2, ...] | RequestRejection:
+    scope = _clipped_conductor_scope(network, geometry, request)
+    if isinstance(scope, RequestRejection):
+        return scope
+    conductor = ConductorPoint(
+        LinePoint(scope.segment_id, (scope.start_mm + scope.end_mm) // 2),
+        request.target.circuit_id,
+        request.target.phase,
+    )
+    access = tdr_access(conductor)
+    if request.coupling_profile_id not in access.coupling_profiles:
+        return RequestRejection(
+            request.id, f"unknown coupling profile {request.coupling_profile_id}"
+        )
+    if request.coupling_profile_id == "isolated-only-v1" and not request.isolation_evidence_ids:
+        return RequestRejection(
+            request.id, "validated isolation evidence required; zero current is insufficient"
+        )
+    acquisition = TdrTest(
+        access.id,
+        conductor,
+        access.return_path_ids[0],
+        request.coupling_profile_id,
+        TDR_DURATION_S,
+        tuple(request.isolation_evidence_ids),
+    )
+    return (
+        MeasurementTaskV2(
+            id="",
+            request_id=request.id,
+            acquisition=acquisition,
+            alternative_group_id=request.id,
+            status=TaskStatusV2.PENDING,
+            urgency=request.urgency,
+        ),
+    )

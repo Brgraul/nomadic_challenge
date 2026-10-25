@@ -1,9 +1,10 @@
 """Manager agent: reads a pinned public snapshot with read-only tools and proposes findings.
 
-There are no per-drone agents. The manager can inspect evidence and test electrical candidates
-in isolation; it cannot inspect hidden truth, dispatch drones, overwrite observations, change
-the model or release a hold. Whatever it returns is validated deterministically and recorded as
-a PROPOSED_NOT_ACCEPTED finding; accepting it is a separate, atomic decision.
+There are no per-drone agents. The manager can inspect evidence and request measurements; it
+cannot inspect hidden truth, dispatch drones, overwrite observations, change the model or release
+a hold. Whatever it returns is validated deterministically by the coordinator; accepting it is a
+separate, atomic decision. The agent never sees a Simulation object: the coordinator hands it a
+pinned Toolbox and records whatever comes back.
 """
 
 from __future__ import annotations
@@ -14,15 +15,43 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from grid_ops import decisions, proposals, scripted_manager
+from grid_ops import proposals, scripted_manager
 from grid_ops.env import load_env
 from grid_ops.hypotheses import ManagerOutput
-from grid_ops.manager_tools import Toolbox, build_toolbox
-from grid_ops.sim import RecordProposal, Simulation
+from grid_ops.manager_tools import Toolbox
 
 load_env()
 MODEL_NAME = os.environ.get("GRID_OPS_MODEL", "z-ai/glm-5.3-flash")
 MODEL = f"openrouter:{MODEL_NAME}"
+
+RECORDINGS = Path(__file__).resolve().parents[2] / "recordings"
+
+SYSTEM = """You are the investigation manager for a power-grid outage after a windstorm.
+Your job is an evidence-supported cause of the outage and a scoped recommended action. You own
+hypotheses, urgency (1-5; urgency is not probability) and explicit measurement requests. You work
+only from a pinned, read-only snapshot through the tools. You cannot see ground truth and you
+cannot command drones.
+
+Rules:
+- State falsifiable claims with spatial scope, predictions and required conditions.
+- You may request exactly three measurement methods: lidar (a moving geometric corridor scan),
+  tdr (coupled reflectometry from a landed access site; a valid return path is required and zero
+  current is never valid isolation evidence), and contact_current (a landed single-conductor RMS
+  sample). The optimizer chooses drones, routes and charging; you choose only method and scope.
+- A zero-current contact reading never proves a circuit is de-energized: it is compatible with
+  both a live-unloaded and a disconnected circuit. Name both alternatives instead of concluding.
+- A detected low-clearance LiDAR observation is an urgent hazard finding, but it does not by
+  itself explain the outage; cite switching or electrical evidence for any causal claim.
+- Every revision needs: before/after values, a finding_summary, a causal update_reason, and the
+  remaining_uncertainty. Cite real ids (reports SYN_REPORT_xx, readings Rxxxx, events EVTxxxx,
+  hazards HZxxx). Quote only numbers present in cited readings.
+- At startup, cite the reports and say plainly that no drone measurements exist yet.
+- For a measurement-triggered revision, cite the trigger events and every latest tied reading.
+- Hypotheses unchanged this turn get a turn assessment, not a revision.
+- Say what you could not distinguish in untested_alternatives.
+- Measurement requests must cite the hypothesis they serve and the evidence they rest on, with
+  rationale, alternatives_distinguished and expected_outcomes filled in.
+Keep the number of hypotheses small (at most 3) and scopes to the 6 most relevant spans."""
 
 
 def llm_available() -> bool:
@@ -42,45 +71,6 @@ def make_model():
     )
 
 
-RECORDINGS = Path(__file__).resolve().parents[2] / "recordings"
-
-SYSTEM = """You are the investigation manager for a power-grid outage after a windstorm.
-Your job is an evidence-supported cause of the outage and a scoped recommended action. You own
-hypotheses, urgency (1-5; urgency is not probability) and recommendations. You work only from a
-pinned, read-only snapshot through the tools. You cannot see ground truth and you cannot
-command drones.
-
-Rules:
-- State falsifiable claims with spatial scope, predictions and required conditions.
-- A qualified negative contradicts only the interval actually inspected. Thermal negatives
-  without excitation and motion negatives outside a gust are inconclusive.
-- A detected local hazard is an urgent hazard action, but it does not by itself explain the outage.
-- Test any electrical candidate (a changed topology) with test_electrical_candidate before you
-  propose it, and cite the returned diagnostic id.
-- Every revision needs: before/after values, a finding_summary, a causal update_reason, and the
-  remaining_uncertainty. Cite real ids (reports SYN_REPORT_xx, readings Rxxxx, events EVTxxxx,
-  hazards HZxxx, diagnostics DX-...). Quote only numbers present in cited readings.
-- At startup, cite the reports and say plainly that no drone measurements exist yet.
-- For a measurement-triggered revision, cite the trigger events and EVERY latest tied measurement
-  with value, unit, location and conditions, plus any contrary evidence.
-- Hypotheses unchanged this turn get a turn assessment, not a revision.
-- Say what you could not distinguish in untested_alternatives.
-
-Checklist for every revision (validation rejects anything missing):
-1. `scope`: non-empty list of spans taken from segments_in_report (never invented).
-2. `predictions`: at least one with a statement, `expected`, a `measurement` name and conditions.
-3. `finding_summary`, `update_reason`, `remaining_uncertainty`: non-empty plain sentences.
-4. `change_kinds` includes "creation" and `before` is null for a new hypothesis.
-5. Startup: trigger_kind "startup", `contributing_evidence_ids` = the SYN_REPORT ids you used, and
-   the finding_summary or update_reason contains the words "no drone measurements".
-6. Measurement turn: trigger_kind "measurement", trigger_event_ids from list_events (kind
-   reading), latest_measurement_ids = every latest reading inside the scope, cited_values with
-   the exact payload numbers, contrary_evidence_ids for readings that disagree with the claim.
-7. `priority` is an integer 1-5 (urgency); `assessment` is one of SUPPORTED, PLAUSIBLE,
-   UNRESOLVED, UNLIKELY, REFUTED.
-Keep the number of hypotheses small (at most 3) and scopes to the 6 most relevant spans."""
-
-
 def _tools(tb: Toolbox):
     from langchain.tools import tool
 
@@ -97,13 +87,13 @@ def _tools(tb: Toolbox):
     @tool
     def segments_in_report(report_id: str) -> str:
         """Exact spans {segment_id,start_km,end_km} of mapped lines inside a report area, e.g.
-        SYN_REPORT_02. Use these as hypothesis scope."""
+        SYN_REPORT_02. Use these as hypothesis scope and request targets."""
         return tb.segments_in_report(report_id)
 
     @tool
-    def list_readings(kind: str | None = None) -> str:
-        """Immutable readings with numeric values, conditions and interpretation."""
-        return tb.list_readings(kind)
+    def list_readings(method: str | None = None) -> str:
+        """Recorded acquisitions with their typed payloads, quality and provenance."""
+        return tb.list_readings(method)
 
     @tool
     def get_reading(reading_id: str) -> str:
@@ -111,20 +101,24 @@ def _tools(tb: Toolbox):
         return tb.get_reading(reading_id)
 
     @tool
-    def scope_assessment(segment_id: str, start_km: float, end_km: float, condition: str) -> str:
-        """PASS/FAIL/INDETERMINATE/NOT_SUPPORTED for vegetation_clearance, hot_joint or
-        conductor_motion over a span."""
-        return tb.scope_assessment(segment_id, start_km, end_km, condition)
+    def list_requests() -> str:
+        """Accepted measurement requests with their lifecycle status and served-by tasks."""
+        return tb.list_requests()
 
     @tool
-    def estimate_summary() -> str:
-        """Reduced DC estimate: prior-only or data-conditioned, observable flows."""
-        return tb.estimate_summary()
+    def scan_coverage(segment_id: str) -> str:
+        """Inspected versus missing intervals of a segment from the LiDAR readings so far."""
+        return tb.scan_coverage(segment_id)
 
     @tool
-    def consistency_summary() -> str:
-        """Residual diagnostics: testability, critical sets, candidate explanations."""
-        return tb.consistency_summary()
+    def charge_sites() -> str:
+        """Charging capability per circuit: state, reason and evidence expiry."""
+        return tb.charge_sites()
+
+    @tool
+    def capabilities() -> str:
+        """The three-method catalog, sensor capabilities and declared model assumptions."""
+        return tb.capabilities()
 
     @tool
     def list_events(limit: int = 30) -> str:
@@ -136,65 +130,62 @@ def _tools(tb: Toolbox):
         """Currently accepted hypotheses (their values are the 'before' of any revision)."""
         return tb.list_hypotheses()
 
-    @tool
-    def test_electrical_candidate(out_of_service_segments: list[str]) -> str:
-        """Test a candidate topology (segments assumed out of service) on the pinned readings."""
-        return tb.test_electrical_candidate(out_of_service_segments)
-
     return [
         overview,
         list_reports,
+        segments_in_report,
         list_readings,
         get_reading,
-        scope_assessment,
-        estimate_summary,
-        consistency_summary,
+        list_requests,
+        scan_coverage,
+        charge_sites,
+        capabilities,
         list_events,
         list_hypotheses,
-        test_electrical_candidate,
     ]
 
 
 @dataclass
 class TurnResult:
-    finding_id: str | None
-    output: ManagerOutput | None
+    output: ManagerOutput
     errors: list[str]
     transcript: list[dict]
 
 
-def trigger_events(tb: Toolbox, since_revision: int = -1) -> list[str]:
-    return [i for i, e in tb.world.events if e.kind == "reading"]
+ASSESSED = ("reading", "switching_report", "evidence_expired")
+
+
+def trigger_ids(tb: Toolbox) -> list[str]:
+    return [i for i, e in tb.world.events if e.kind in ASSESSED]
 
 
 def run_scripted_turn(
-    sim: Simulation, trigger_ids: tuple[str, ...] = (), conclude: bool = False
+    tb: Toolbox, trigger_ids: tuple[str, ...] = (), conclude: bool = False
 ) -> TurnResult:
-    tb = build_toolbox(sim.snapshot, sim.network, sim.circuits)
     if not tb.world.readings:
         output = scripted_manager.startup_proposal(tb)
     else:
         output = scripted_manager.measurement_proposal(
-            tb, list(trigger_ids) if trigger_ids else trigger_events(tb)
+            tb, list(trigger_ids) or trigger_ids(tb)
         )
         if conclude:
             output = scripted_manager.add_conclusion(tb, output)
-    return _record(sim, tb, output, "manager-scripted", [])
+    errors = proposals.validate(output, tb)
+    return TurnResult(output, errors, [])
 
 
 def run_llm_turn(
-    sim: Simulation,
-    instruction: str | None = None,
+    tb: Toolbox,
     trigger_ids: tuple[str, ...] = (),
+    instruction: str | None = None,
     record: bool = False,
     max_repairs: int = 2,
 ) -> TurnResult:
     """One manager turn with a real model. If validation rejects the output, the errors are fed
-    back for up to `max_repairs` corrections; the final output is what gets recorded."""
+    back for up to `max_repairs` corrections; the final output is what the coordinator records."""
     from langchain.agents import create_agent
     from langchain.agents.structured_output import ToolStrategy
 
-    tb = build_toolbox(sim.snapshot, sim.network, sim.circuits)
     agent = create_agent(
         make_model(),
         tools=_tools(tb),
@@ -202,10 +193,11 @@ def run_llm_turn(
         response_format=ToolStrategy(ManagerOutput),
     )
     prompt = instruction or (
-        "Startup turn: no drone measurements exist. Propose initial hypotheses from the reports."
+        "Startup turn: no drone measurements exist. Propose initial hypotheses from the reports "
+        "and request the measurements that would test them."
         if not tb.world.readings
         else (
-            f"New measurements arrived (events {list(trigger_ids) or trigger_events(tb)}). "
+            f"New measurements arrived (events {list(trigger_ids) or trigger_ids(tb)}). "
             + (
                 "Revise the accepted hypotheses."
                 if tb.world.hypotheses
@@ -229,8 +221,6 @@ def run_llm_turn(
         attempts.append(errors)
         if not errors:
             break
-        # a fresh turn that carries the rejected draft and its errors (a replayed tool-call
-        # history confuses structured output on some models)
         draft = output.model_dump_json(indent=1) if output is not None else "(none)"
         messages = [
             {
@@ -254,7 +244,7 @@ def run_llm_turn(
     ]
     if output is None:
         output = ManagerOutput(summary="The model returned no structured proposal.")
-    turn = _record(sim, tb, output, "manager-llm", transcript)
+        errors = ["no structured proposal"]
     if record:
         RECORDINGS.mkdir(exist_ok=True)
         path = RECORDINGS / f"manager_turn_r{tb.snapshot.revision}_{int(t0)}.json"
@@ -267,7 +257,7 @@ def run_llm_turn(
                     "system": SYSTEM,
                     "transcript": transcript,
                     "output": output.model_dump(mode="json"),
-                    "validation_errors": turn.errors,
+                    "validation_errors": errors,
                     "attempt_errors": attempts,
                     "seconds": round(time.time() - t0, 1),
                 },
@@ -275,19 +265,4 @@ def run_llm_turn(
                 default=str,
             )
         )
-    return turn
-
-
-def _record(sim, tb: Toolbox, output: ManagerOutput, author: str, transcript) -> TurnResult:
-    errors = proposals.validate(output, tb)
-    status = (
-        proposals.ProposedStatus.REJECTED
-        if errors
-        else proposals.ProposedStatus.PROPOSED_NOT_ACCEPTED
-    )
-    note = "; ".join(errors) if errors else "validated against the pinned snapshot"
-    key = decisions.semantic_key(tb.world, output)
-    fid = sim.submit(
-        RecordProposal(author, tb.snapshot.revision, output, status, note, key)
-    ).result(timeout=10)
-    return TurnResult(fid, output, errors, transcript)
+    return TurnResult(output, errors, transcript)

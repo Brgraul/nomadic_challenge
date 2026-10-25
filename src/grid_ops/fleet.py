@@ -18,16 +18,7 @@ from grid_ops.routes import apply_sorties, validate_sorties
 from grid_ops.world import World
 
 RELEVANT_EVENTS = frozenset(
-    {
-        "reading",
-        "switching_report",
-        "evidence_expired",
-        "charged",
-        "charging_stopped",
-        "charging_resumed",
-        "landed_charging",
-        "landed_stranded",
-    }
+    {"reading", "switching_report", "evidence_expired", "charged", "charge_failed", "landed"}
 )
 
 
@@ -70,7 +61,7 @@ def route_pass(
     world: World,
     geometry,
     circuits,
-    est_state,
+    physics,
     coordinator: Coordinator,
     *,
     trigger: str,
@@ -87,7 +78,7 @@ def route_pass(
     failure = ""
     try:
         result = coordinator.planner(
-            world, geometry, circuits, est_state, revision=world.revision, **plan_kw
+            world, geometry, circuits, revision=world.revision, **plan_kw
         )
     except Exception as e:  # solver crash, timeout surfaced as an exception, invalid model
         failure = f"solver failure: {type(e).__name__}: {e}"
@@ -126,11 +117,11 @@ def route_pass(
             check = validate_sorties(world, geometry, circuits, cand.sorties)
             if not check.ok:
                 continue
-            apply_sorties(world, check.plans)
+            apply_sorties(world, physics, check.plans)
             return done("accepted-plan", f"{cand.source}: {len(cand.sorties)} sortie(s)")
     if incumbent_ok:
         return done("kept-incumbent" if airborne else "no-op", failure or "nothing to change")
-    outcome, problems = decisions.route_only_continuation(world, geometry, circuits)
+    outcome, problems = decisions.route_only_continuation(world, geometry, circuits, physics)
     if outcome == "HELD":
         return done("HELD", "; ".join(problems))
     return done("landing-only", outcome)
