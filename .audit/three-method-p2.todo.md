@@ -57,10 +57,10 @@ Autopilot-full steps that carry over (verbatim where applied):
 - [x] Ground (plan, verdicts, baseline receipts; baseline receipts lost in /tmp wipe,
       their recorded values live in the main repo's .audit/three-method-outage.tsv)
 - [x] Sketch (.audit/p2-design.md)
-- [ ] Phase A step 1: sensing request contracts + compile_requests (redone after /tmp wipe)
-- [ ] Phase A step 2: world itinerary/energy execution
-- [ ] Phase B: routes step validation; needs request-lifecycle refresh; scoring + planning
-- [ ] Phase C: proposals/decisions lifecycle; agents/scripted/coordinator; sim wiring, knowledge/assessment
-- [ ] Phase D: UI + e2e + driver lanes; full suite + ruff; local commit with verdict
-- [ ] Swarm-verify once at the code-ready head
-- [ ] Fix-forwards (ceiling two) then STACK-READY report
+- [x] Phase A step 1: sensing request contracts + compile_requests (redone after /tmp wipe)
+- [x] Phase A step 2: world itinerary/energy execution
+- [x] Phase B: routes step validation; needs request-lifecycle refresh; scoring + planning
+- [x] Phase C: proposals/decisions lifecycle; agents/scripted/coordinator; sim wiring, knowledge/assessment
+- [x] Phase D: UI + e2e + driver lanes; full suite + ruff; local commit with verdict
+- [x] Swarm-verify once at the code-ready head (PASS-WITH-FINDINGS, 0 blocking)
+- [x] Fix-forwards (ceiling two) then STACK-READY report
