@@ -1,0 +1,53 @@
+{
+  "case": "perf",
+  "perf": {
+    "n": 8,
+    "p50_s": 0.0007,
+    "p95_s": 0.0008,
+    "max_s": 0.0008,
+    "budget": "plan+validate+apply within the existing 1s p95 / 2s response target",
+    "note": "tiny-fixture probe; not a full-dataset latency claim"
+  },
+  "assertions": [
+    {
+      "assertion": "probe run produced a result",
+      "passed": true
+    },
+    {
+      "assertion": "probe run produced a result",
+      "passed": true
+    },
+    {
+      "assertion": "probe run produced a result",
+      "passed": true
+    },
+    {
+      "assertion": "probe run produced a result",
+      "passed": true
+    },
+    {
+      "assertion": "probe run produced a result",
+      "passed": true
+    },
+    {
+      "assertion": "probe run produced a result",
+      "passed": true
+    },
+    {
+      "assertion": "probe run produced a result",
+      "passed": true
+    },
+    {
+      "assertion": "probe run produced a result",
+      "passed": true
+    },
+    {
+      "assertion": "p50 0.001s <= 1s",
+      "passed": true
+    },
+    {
+      "assertion": "p95 0.001s <= 2s",
+      "passed": true
+    }
+  ]
+}

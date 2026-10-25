@@ -1,0 +1,30 @@
+{
+  "episode_spec": {
+    "episode_seed": 7,
+    "noise_seed": 11,
+    "fault_segment_id": "S",
+    "fault_fraction": 0.6,
+    "run_id": "opaque-verification-run"
+  },
+  "fault": {
+    "circuit_id": "S/C1",
+    "offset_mm": 600452,
+    "kind": "open-conductor",
+    "occurred_s": -2
+  },
+  "protection": {
+    "circuit_ids": [
+      "S/C1"
+    ],
+    "offset_mm": 100075,
+    "opened_s": -1,
+    "reason": "trip following primary conductor fault"
+  },
+  "newly_unsupplied_buses": [
+    1,
+    3,
+    4,
+    5
+  ],
+  "model": "post-trip balanced AC; no transient short-circuit model"
+}

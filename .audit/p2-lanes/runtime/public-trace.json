@@ -1,0 +1,86 @@
+{
+  "case": "runtime",
+  "turns": [
+    {
+      "id": "CT001",
+      "trigger_ids": [],
+      "snapshot_revision": 0,
+      "status": "accepted",
+      "finding_id": "PF0001",
+      "note": "accepted as AUTO-PF0001",
+      "started_s": 0,
+      "wall_s": 0.0
+    }
+  ],
+  "requests": [
+    {
+      "id": "REQ-L-VTG",
+      "method": "lidar",
+      "status": "ACTIVE"
+    },
+    {
+      "id": "REQ-C-SUP",
+      "method": "contact_current",
+      "status": "ACTIVE"
+    }
+  ],
+  "readings": 2,
+  "battery": {
+    "DRONE_1": 1080000,
+    "DRONE_2": 1080000,
+    "DRONE_3": 1080000,
+    "DRONE_4": 965940,
+    "DRONE_5": 1080000
+  },
+  "events": 9,
+  "assertions": [
+    {
+      "assertion": "startup scripted turn accepted (accepted: accepted as AUTO-PF0001)",
+      "passed": true
+    },
+    {
+      "assertion": "accepted proposal carries explicit measurement requests",
+      "passed": true
+    },
+    {
+      "assertion": "requests use only the three declared methods",
+      "passed": true
+    },
+    {
+      "assertion": "compiled tasks exist",
+      "passed": true
+    },
+    {
+      "assertion": "route pass finds a validated continuation (RP0001 accepted-plan)",
+      "passed": true
+    },
+    {
+      "assertion": "an executing drone carries an explicit itinerary",
+      "passed": true
+    },
+    {
+      "assertion": "an executed acquisition publishes a reading",
+      "passed": true
+    },
+    {
+      "assertion": "battery never increases without an observed charge",
+      "passed": true
+    },
+    {
+      "assertion": "published readings use exactly the three payload shapes",
+      "passed": true
+    },
+    {
+      "assertion": "every drone is perched or on an explicit itinerary",
+      "passed": true
+    },
+    {
+      "assertion": "a measurement turn runs",
+      "passed": true
+    },
+    {
+      "assertion": "the measurement turn accepts a revision (accepted: accepted as AUTO-PF0002)",
+      "passed": true
+    }
+  ]
+}

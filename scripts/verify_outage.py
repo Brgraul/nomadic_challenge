@@ -41,6 +41,8 @@ CASES = (
     "hop",
     "partial-charge",
     "replay",
+    "runtime",
+    "perf",
     "full",
 )
 
@@ -265,13 +267,153 @@ def run_case(case):
     )
 
 
+def run_runtime_lanes() -> tuple[list[dict], dict]:
+    """P2 live lanes on the real Simulation: request -> accept -> plan -> execute -> reading."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
+    from fixtures_three_method import tiny_network
+
+    from grid_ops.coordinator import Coordinator
+    from grid_ops.sim import Simulation
+    from grid_ops.world import DEADLINE_S, Perched
+
+    tests = []
+    sim = Simulation(tiny_network())
+    coordinator = Coordinator(sim)
+    turn = coordinator.run_turn_now()
+
+    def check(condition, statement):
+        tests.append({"assertion": statement, "passed": bool(condition)})
+        if not condition:
+            raise AssertionError(statement)
+
+    check(turn.status == "accepted", f"startup scripted turn accepted ({turn.status}: {turn.note})")
+    w = sim.snapshot
+    check(bool(w.requests), "accepted proposal carries explicit measurement requests")
+    check(
+        {str(r.request.method) for r in w.requests.values()}
+        <= {"lidar", "tdr", "contact_current"},
+        "requests use only the three declared methods",
+    )
+    check(any(t.status == "PENDING" for t in w.tasks.values()), "compiled tasks exist")
+    route = sim.submit_route_pass("verification")
+    check("HELD" not in route, f"route pass finds a validated continuation ({route})")
+    w = sim.snapshot
+    check(
+        any(hasattr(d.state, "itinerary") for d in w.drones.values()),
+        "an executing drone carries an explicit itinerary",
+    )
+    battery_at_start = {d.id: d.battery.remaining_units for d in w.drones.values()}
+    readings_before = len(w.readings)
+    for _ in range(120):
+        if len(sim.snapshot.readings) > readings_before:
+            break
+        if sim.snapshot.clock_s >= DEADLINE_S:
+            break
+        sim.step(min(90, (DEADLINE_S - sim.snapshot.clock_s) / 60))
+    w = sim.snapshot
+    check(len(w.readings) > readings_before, "an executed acquisition publishes a reading")
+    check(
+        all(d.battery.remaining_units <= battery_at_start[d.id] for d in w.drones.values()),
+        "battery never increases without an observed charge",
+    )
+    from grid_ops.sensing import CurrentPayload, LidarPayload, TdrPayload
+
+    check(
+        any(
+            isinstance(r.payload, (LidarPayload, CurrentPayload, TdrPayload))
+            for r in w.readings.values()
+        ),
+        "published readings use exactly the three payload shapes",
+    )
+    check(
+        all(
+            isinstance(d.state, Perched) or hasattr(d.state, "itinerary")
+            for d in w.drones.values()
+        ),
+        "every drone is perched or on an explicit itinerary",
+    )
+    triggers = tuple(i for i, e in w.events if e.kind == "reading")
+    result = coordinator.run_turn_now(triggers)
+    check(result.status in ("accepted", "proposed", "failed"), "a measurement turn runs")
+    check(
+        result.status == "accepted",
+        f"the measurement turn accepts a revision ({result.status}: {result.note})",
+    )
+    private = {
+        "mode": "P2 runtime lanes on the real Simulation (scripted manager, no LLM)",
+        "note": "episode seeds stay private; the public trace carries requests, readings, energy",
+    }
+    public = {
+        "case": "runtime",
+        "turns": [asdict(turn)],
+        "requests": [
+            {"id": r.id, "method": str(r.request.method), "status": str(r.status)}
+            for r in w.requests.values()
+        ],
+        "readings": len(w.readings),
+        "battery": {d.id: d.battery.remaining_units for d in w.drones.values()},
+        "events": len(w.events),
+        "assertions": tests,
+    }
+    return public, private
+
+
+def run_perf_probe() -> tuple[list[dict], dict]:
+    """Ingestion-to-validated-route latency on the tiny runtime; the plan's p95 1 s target."""
+    import statistics
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
+    from fixtures_three_method import tiny_network
+
+    from grid_ops import planning
+    from grid_ops.sim import Simulation
+
+    tests = []
+    sim = Simulation(tiny_network())
+    sim.submit_route_pass("warmup")  # warm the planner path once (cold start excluded)
+    latencies = []
+    for _ in range(8):
+        t0 = time.perf_counter()
+        w = sim.snapshot
+        result = planning.plan_sorties(w, sim.geometry, sim.circuits, revision=w.revision)
+        sim.submit_route_pass("probe")
+        latencies.append(time.perf_counter() - t0)
+        tests.append({"assertion": "probe run produced a result", "passed": result is not None})
+    p50 = statistics.median(latencies)
+    p95 = sorted(latencies)[max(0, int(-(-0.95 * len(latencies) // 1)) - 1)]
+    tests.append({"assertion": f"p50 {p50:.3f}s <= 1s", "passed": p50 <= 1.0})
+    tests.append({"assertion": f"p95 {p95:.3f}s <= 2s", "passed": p95 <= 2.0})
+    perf = {
+        "n": len(latencies),
+        "p50_s": round(p50, 4),
+        "p95_s": round(p95, 4),
+        "max_s": round(max(latencies), 4),
+        "budget": "plan+validate+apply within the existing 1s p95 / 2s response target",
+        "note": "tiny-fixture probe; not a full-dataset latency claim",
+    }
+    public = {"case": "perf", "perf": perf, "assertions": tests}
+    return public, {"mode": "P2 latency probe"}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", choices=CASES, default="all")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    public, private, perf = run_case(args.case)
+    if args.case == "runtime":
+        public, private = run_runtime_lanes()
+        perf = {"mode": "runtime lanes"}
+    elif args.case == "perf":
+        public, private = run_perf_probe()
+        perf = public["perf"]
+    else:
+        public, private, perf = run_case(args.case)
     (args.out / "public-trace.json").write_text(json.dumps(public, indent=2))
     private_path = args.out / "private-evaluator.json"
     private_path.touch(mode=0o600)

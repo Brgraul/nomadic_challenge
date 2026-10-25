@@ -1,0 +1,8 @@
+{
+  "episode_construction_s": 0.08307045899891818,
+  "acquisitions": 3,
+  "errors": 0,
+  "lidar_max_cells": 2048,
+  "lidar_max_poses": 128,
+  "tdr_max_paths": 128
+}

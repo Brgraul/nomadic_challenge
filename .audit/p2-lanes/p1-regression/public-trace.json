@@ -1,0 +1,314 @@
+{
+  "case": "all",
+  "context": {
+    "run_id": "opaque-verification-run",
+    "fixture_id": "bavaria-public",
+    "fixture_version": "1",
+    "policy_seed": 0,
+    "capabilities": {
+      "revision": "three-method-v1",
+      "lidar_range_m": 200.0,
+      "lidar_fov_deg": 60.0,
+      "lidar_resolution_mm": 10000,
+      "lidar_max_cells": 2048,
+      "conductor_height_m": 20.0,
+      "propagation_mps": 200000000.0,
+      "propagation_uncertainty_mps": 10000000.0,
+      "tdr_delay_sigma_s": 0.0,
+      "tdr_range_m": 50000.0,
+      "tdr_max_paths": 128,
+      "current_sigma_a": 0.0,
+      "current_saturation_a": 2000.0,
+      "systematic_fraction": 0.5
+    },
+    "assumptions": [
+      "Synthetic balanced-phase post-trip AC model, not transient fault simulation",
+      "LiDAR heights and obstacles are synthetic",
+      "Live-compatible TDR is hypothetical and requires a declared return path",
+      "Current magnitude alone does not establish energization or safe isolation"
+    ]
+  },
+  "trace": [
+    {
+      "executed": {
+        "id": "attempt-0",
+        "acquisition": {
+          "target": {
+            "segment_id": "S",
+            "start_mm": 0,
+            "end_mm": 1000754
+          },
+          "trajectory": {
+            "poses": [
+              {
+                "position": [
+                  0.0,
+                  -0.0005
+                ],
+                "height_m": 50.0,
+                "look_azimuth_deg": 0.0,
+                "look_elevation_deg": -30.0
+              },
+              {
+                "position": [
+                  0.008999996944095931,
+                  -0.0005
+                ],
+                "height_m": 50.0,
+                "look_azimuth_deg": 0.0,
+                "look_elevation_deg": -30.0
+              }
+            ],
+            "duration_s": 100
+          },
+          "speed_mps": 10.0,
+          "sensor_profile_id": "synthetic-lidar-v1",
+          "method": "lidar"
+        },
+        "started_s": 0,
+        "ended_s": 100,
+        "drone_id": "DRONE_1",
+        "landed_conductor": null,
+        "request_ids": [],
+        "valid_isolation_evidence_ids": [],
+        "completed_fraction": 1.0
+      },
+      "sample": {
+        "acquisition_id": "attempt-0",
+        "payload": {
+          "inspected": [
+            {
+              "segment_id": "S",
+              "start_mm": 0,
+              "end_mm": 1000754
+            }
+          ],
+          "missing": [],
+          "clearance_m": 0.25135428232564344,
+          "uncertainty_m": 0.05,
+          "resolution_mm": 10000,
+          "method": "lidar"
+        },
+        "quality": {
+          "valid": true,
+          "reason": "",
+          "saturated": false,
+          "contact_ok": true,
+          "correlation_group": "lidar:S"
+        },
+        "sensor_model_revision": "three-method-v1"
+      },
+      "acquisition_s": 0.001283125000554719
+    },
+    {
+      "executed": {
+        "id": "attempt-1",
+        "acquisition": {
+          "access_site_id": "access:S/C1/A@50000mm",
+          "conductor": {
+            "point": {
+              "segment_id": "S",
+              "offset_mm": 50000
+            },
+            "circuit_id": "S/C1",
+            "phase": "A"
+          },
+          "return_path_id": "return:S/C1/A@50000mm",
+          "coupling_profile_id": "synthetic-live-compatible-v1",
+          "duration_s": 30,
+          "isolation_evidence_ids": [],
+          "method": "tdr"
+        },
+        "started_s": 0,
+        "ended_s": 30,
+        "drone_id": "DRONE_1",
+        "landed_conductor": {
+          "point": {
+            "segment_id": "S",
+            "offset_mm": 50000
+          },
+          "circuit_id": "S/C1",
+          "phase": "A"
+        },
+        "request_ids": [],
+        "valid_isolation_evidence_ids": [],
+        "completed_fraction": 1.0
+      },
+      "sample": {
+        "acquisition_id": "attempt-1",
+        "payload": {
+          "echoes": [
+            {
+              "delay_s": 5e-07,
+              "amplitude": 1.0,
+              "polarity": "positive",
+              "delay_uncertainty_s": 0.0
+            },
+            {
+              "delay_s": 5.0075e-07,
+              "amplitude": 1.0,
+              "polarity": "positive",
+              "delay_uncertainty_s": 0.0
+            }
+          ],
+          "propagation_mps": 200000000.0,
+          "propagation_uncertainty_mps": 10000000.0,
+          "usable_range_m": 50000.0,
+          "coupling_quality": "coupled",
+          "path_truncated": false,
+          "method": "tdr"
+        },
+        "quality": {
+          "valid": true,
+          "reason": "",
+          "saturated": false,
+          "contact_ok": true,
+          "correlation_group": "tdr:S/C1:50000"
+        },
+        "sensor_model_revision": "three-method-v1"
+      },
+      "acquisition_s": 0.00033441599953221157
+    },
+    {
+      "executed": {
+        "id": "attempt-2",
+        "acquisition": {
+          "conductor": {
+            "point": {
+              "segment_id": "S",
+              "offset_mm": 50000
+            },
+            "circuit_id": "S/C1",
+            "phase": "A"
+          },
+          "integration_s": 10,
+          "method": "contact_current"
+        },
+        "started_s": 0,
+        "ended_s": 10,
+        "drone_id": "DRONE_1",
+        "landed_conductor": {
+          "point": {
+            "segment_id": "S",
+            "offset_mm": 50000
+          },
+          "circuit_id": "S/C1",
+          "phase": "A"
+        },
+        "request_ids": [],
+        "valid_isolation_evidence_ids": [],
+        "completed_fraction": 1.0
+      },
+      "sample": {
+        "acquisition_id": "attempt-2",
+        "payload": {
+          "conductor": {
+            "point": {
+              "segment_id": "S",
+              "offset_mm": 50000
+            },
+            "circuit_id": "S/C1",
+            "phase": "A"
+          },
+          "rms_a": 0.008396207925826654,
+          "uncertainty_a": 0.0,
+          "integration_s": 10,
+          "phase_model": "balanced-phase pi-section approximation",
+          "method": "contact_current"
+        },
+        "quality": {
+          "valid": true,
+          "reason": "",
+          "saturated": false,
+          "contact_ok": true,
+          "correlation_group": "current:S/C1:A"
+        },
+        "sensor_model_revision": "three-method-v1"
+      },
+      "acquisition_s": 0.00013595800010079984
+    }
+  ],
+  "energy": [
+    {
+      "start_s": 0,
+      "end_s": 3,
+      "operation": "takeoff",
+      "before_units": 1080000,
+      "cost_units": 4800,
+      "observed_charge_units": 0,
+      "after_units": 1075200
+    },
+    {
+      "start_s": 3,
+      "end_s": 63,
+      "operation": "transit",
+      "before_units": 1075200,
+      "cost_units": 36000,
+      "observed_charge_units": 0,
+      "after_units": 1039200
+    },
+    {
+      "start_s": 63,
+      "end_s": 66,
+      "operation": "land",
+      "before_units": 1039200,
+      "cost_units": 4800,
+      "observed_charge_units": 0,
+      "after_units": 1034400
+    },
+    {
+      "start_s": 66,
+      "end_s": 76,
+      "operation": "ground_sample",
+      "before_units": 1034400,
+      "cost_units": 60,
+      "observed_charge_units": 0,
+      "after_units": 1034340
+    },
+    {
+      "start_s": 76,
+      "end_s": 79,
+      "operation": "takeoff",
+      "before_units": 1034340,
+      "cost_units": 4800,
+      "observed_charge_units": 0,
+      "after_units": 1029540
+    }
+  ],
+  "assertions": [
+    {
+      "assertion": "exactly the three supported payload shapes",
+      "passed": true
+    },
+    {
+      "assertion": "paired private worlds have equal initial public views",
+      "passed": true
+    },
+    {
+      "assertion": "physical fault and protection produce solved supply loss",
+      "passed": true
+    },
+    {
+      "assertion": "same acquisition and manifest replay exactly",
+      "passed": true
+    },
+    {
+      "assertion": "same acquisition and manifest replay exactly",
+      "passed": true
+    },
+    {
+      "assertion": "same acquisition and manifest replay exactly",
+      "passed": true
+    },
+    {
+      "assertion": "landed contact and immediate next takeoff retain reduced energy",
+      "passed": true
+    },
+    {
+      "assertion": "public trace contains neither private manifest nor its seeds",
+      "passed": true
+    }
+  ],
+  "coverage_mm": 1000754,
+  "mode": "P1 physical API verification; production runtime migration is P2"
+}
