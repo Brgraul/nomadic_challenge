@@ -15,7 +15,10 @@ permissions granted). All artifacts are unedited captures.
 - `05-requests.png` — Requests tab: REQ-C-SUP (contact_current, LINE_024/C1 phase A,
   0.000-26.838 km, urgency 4) and REQ-L-VTG (lidar, LINE_025 span, urgency 3), both ACTIVE,
   with compiled tasks. This is the explicit-request panel required by the plan.
-- `06-preview-plan.png` — planner preview (stale pre-reset snapshot; shows staged solve reports).
+- `06-preview-plan.png` — map at T+00:48 with all five drone markers, the Planner/Decisions/
+  Investigation sidebar and the event log (RP0001 kept-incumbent, evidence expiry). The planner
+  preview bullets themselves were visible in the Plan tab during the session; this capture shows
+  the map view around it.
 - `07-reset.png` — simulation reset, paused at T+00:00.
 - `08-executing.png` — event log during the executed sortie: RP0001 accepted-plan -> DRONE_3
   took off from LINE_026/C1 -> landed on LINE_024/C1, handshake succeeded -> Reading R0001
