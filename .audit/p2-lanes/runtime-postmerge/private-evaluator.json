@@ -1,0 +1,4 @@
+{
+  "mode": "P2 runtime lanes on the real Simulation (scripted manager, no LLM)",
+  "note": "episode seeds stay private; the public trace carries requests, readings, energy"
+}
