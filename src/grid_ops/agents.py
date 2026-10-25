@@ -155,7 +155,7 @@ class TurnResult:
 ASSESSED = ("reading", "switching_report", "evidence_expired")
 
 
-def trigger_ids(tb: Toolbox) -> list[str]:
+def assessment_trigger_ids(tb: Toolbox) -> list[str]:
     return [i for i, e in tb.world.events if e.kind in ASSESSED]
 
 
@@ -166,7 +166,7 @@ def run_scripted_turn(
         output = scripted_manager.startup_proposal(tb)
     else:
         output = scripted_manager.measurement_proposal(
-            tb, list(trigger_ids) or trigger_ids(tb)
+            tb, list(trigger_ids) or assessment_trigger_ids(tb)
         )
         if conclude:
             output = scripted_manager.add_conclusion(tb, output)
@@ -197,7 +197,8 @@ def run_llm_turn(
         "and request the measurements that would test them."
         if not tb.world.readings
         else (
-            f"New measurements arrived (events {list(trigger_ids) or trigger_ids(tb)}). "
+            f"New measurements arrived (events "
+            f"{list(trigger_ids) or assessment_trigger_ids(tb)}). "
             + (
                 "Revise the accepted hypotheses."
                 if tb.world.hypotheses

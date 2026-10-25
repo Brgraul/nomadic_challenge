@@ -481,7 +481,28 @@ def _build_sortie(
                 t += TAKEOFF_S
     if not steps or t > DEADLINE_S:
         return None
-    final_perch = perches[seq[-1][1]].site
+    if seq[-1][0] == "t":
+        # a scan-ending path must still land: return to the vehicle's perch, else the nearest
+        # candidate perch site in the pool
+        terminal = None
+        if not veh.airborne and veh.site is not None:
+            terminal = veh.site
+        elif perches:
+            terminal = min(perches, key=lambda p: leg_seconds(pos, p.position, veh.speed)).site
+        if terminal is None:
+            return None
+        t_pos = geometry.position_of(terminal.point)
+        leg = leg_seconds(pos, t_pos, veh.speed)
+        if leg > 0:
+            steps.append(ScheduledStep(len(steps), t, t + leg, Transit(pos, t_pos)))
+            t, pos = t + leg, t_pos
+        if t + LAND_S > DEADLINE_S:
+            return None
+        steps.append(ScheduledStep(len(steps), t, t + LAND_S, Land(terminal, t_pos)))
+        t += LAND_S
+        final_perch = terminal
+    else:
+        final_perch = perches[seq[-1][1]].site
     return SortieRequest(
         veh.drone_id,
         tuple(steps),

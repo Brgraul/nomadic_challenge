@@ -1,309 +1,260 @@
-"""Ticket 13: bounded CP-SAT fleet planning with honest statuses and independent validation."""
+"""Bounded CP-SAT planning on the three-method runtime: honest candidates, hard constraints.
+
+`plan_sorties` is pure: it reads a published snapshot and returns ranked candidate plans, every
+one independently revalidated. Locked (in-progress) attempts are never decision variables,
+occupied perches and drained batteries leave reasoned omissions, and only validated plans commit.
+The exact-mode enumeration match is proven in test_planning_v2.
+"""
 
 from __future__ import annotations
 
 import dataclasses
-import itertools
 
 import pytest
-from conftest import permissive
+from fixtures_three_method import contact_task, seed_handshakes, site_at, two_drone_world
+from helpers_p2 import publish, tiny_sim
 
-from grid_ops import agents, planning, scoring
-from grid_ops.grid import load_network
-from grid_ops.routes import SortieRequest, StopRequest, validate_sorties
-from grid_ops.scenario import ScenarioConfig, ScenarioMode
-from grid_ops.sim import CommitDecision, CommitSorties, Simulation
-from grid_ops.world import DEADLINE_S, Charging, TaskStatus
+from grid_ops import planning, scoring
+from grid_ops.coordinator import Coordinator
+from grid_ops.energy import BatteryState
+from grid_ops.geometry import LandingSite, LinePoint
+from grid_ops.routes import ScheduledStep, SortieRequest, validate_sorties
+from grid_ops.sim import CommitSorties
+from grid_ops.world import (
+    DEADLINE_S,
+    LAND_S,
+    TAKEOFF_S,
+    Land,
+    Scan,
+    Stranded,
+    Takeoff,
+    Transit,
+    leg_seconds,
+)
 
 
-@pytest.fixture(scope="module")
-def network():
-    return load_network()
-
-
-def accepted_sim(network, seed=7, mode=ScenarioMode.INCIDENT_DEMO):
-    sim = permissive(Simulation(network, scenario=ScenarioConfig(mode, seed)))
-    agents.run_scripted_turn(sim)
-    pf = sim.snapshot.proposals[-1]
-    sim.submit(CommitDecision("D0", pf.id, pf.semantic_key, "operator")).result()
+def accepted_sim(**kw):
+    """A tiny Simulation whose startup proposal (hypotheses + measurement requests) is accepted."""
+    sim = tiny_sim(**kw)
+    Coordinator(sim).run_turn_now()
     return sim
 
 
 def plan(sim, **kw):
     return planning.plan_sorties(
-        sim._world,
-        sim.geometry,
-        sim.circuits,
-        sim._estimation,
-        revision=sim.snapshot.revision,
-        **kw,
+        sim.snapshot, sim.geometry, sim.circuits, revision=sim.snapshot.revision, **kw
     )
 
 
-@pytest.fixture(scope="module")
-def planned(network):
-    sim = accepted_sim(network)
-    return sim, plan(sim)
+def sortie_task_ids(req):
+    ids = []
+    for step in req.steps:
+        op = step.operation
+        if hasattr(op, "task_id"):
+            ids.append(op.task_id)
+        if hasattr(op, "task_ids"):
+            ids.extend(op.task_ids)
+    return ids
+
+
+def scan_locked_sortie(sim, drone_id, task_id):
+    """An itinerary whose scan over a compiled lidar task is in progress (the locked attempt)."""
+    w = sim._world
+    task = w.tasks[task_id]
+    acq = task.acquisition
+    drone = w.drones[drone_id]
+    entry = acq.trajectory.poses[0].position
+    exit_pos = acq.trajectory.poses[-1].position
+    perch = LandingSite(
+        LinePoint(acq.target.segment_id, acq.target.end_mm), f"{acq.target.segment_id}/C1"
+    )
+    here = sim.geometry.position_of(drone.state.perch.point)
+    t = w.clock_s
+    leg = leg_seconds(here, entry, drone.speed_km_per_min)
+    steps = [ScheduledStep(0, t, t + TAKEOFF_S, Takeoff(drone.state.perch, here))]
+    if leg:
+        steps.append(ScheduledStep(1, t + TAKEOFF_S, t + TAKEOFF_S + leg, Transit(here, entry)))
+    i = len(steps)
+    scan_end = t + TAKEOFF_S + leg + acq.trajectory.duration_s
+    steps.append(ScheduledStep(i, t + TAKEOFF_S + leg, scan_end, Scan(acq, task_id)))
+    i += 1
+    steps.append(ScheduledStep(i, scan_end, scan_end + LAND_S, Land(perch, exit_pos)))
+    return SortieRequest(
+        drone_id, tuple(steps), perch, w.revision, w.energy_model.revision, w.capabilities.revision
+    ), TAKEOFF_S + leg
 
 
 # -- structure ---------------------------------------------------------------------------------------------------------
 
 
-def test_plans_assign_unique_attempts_to_connected_validated_paths(planned):
-    sim, res = planned
-    assert res.best is not None and res.best.source != "incumbent"
+def test_ranked_candidates_own_tasks_uniquely_and_validate():
+    sim = accepted_sim()
+    res = plan(sim)
+    assert res.best is not None
     seen: list[str] = []
     for cand in res.ranked:
         assert cand.valid
-        ids = [s.task_id for r in cand.sorties for s in r.stops]
+        ids = [tid for r in cand.sorties for tid in sortie_task_ids(r)]
         assert len(ids) == len(set(ids))  # unique ownership
-        landings = [r.landing for r in cand.sorties]
+        landings = [r.final_perch for r in cand.sorties]
         assert len(landings) == len(set(landings))  # one drone per exact site
-        assert validate_sorties(sim._world, sim.geometry, sim.circuits, cand.sorties).ok
+        check = validate_sorties(sim.snapshot, sim.geometry, sim.circuits, cand.sorties)
+        assert check.ok, [str(r) for r in check.rejections]
         seen += ids
-    assert all(sim._world.tasks[i].status is TaskStatus.PENDING for i in set(seen))
+    assert all(sim._world.tasks[i].status.value == "PENDING" for i in set(seen))  # planning is pure
 
 
-def test_ready_drones_may_wait_and_never_fly_empty(network):
-    sim = permissive(Simulation(network))  # no accepted needs: nothing worth flying for
+def test_drones_wait_when_there_is_no_work_and_never_fly_empty():
+    sim = tiny_sim()  # no accepted requests: nothing worth flying for
     res = plan(sim)
     assert res.best is not None and res.best.sorties == ()
-    # with work, a Ready drone either measures something or stays out of the plan
-    sim2 = accepted_sim(network)
+    sim2 = accepted_sim()
     for cand in plan(sim2).ranked:
-        assert all(r.stops for r in cand.sorties if sim2._world.drones[r.drone_id].phase == "ready")
+        assert all(r.steps for r in cand.sorties)  # no empty itineraries
 
 
-def test_locked_work_and_airborne_continuations_are_preserved(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    task = next(t for t in w.tasks.values() if t.point.segment_id == "LINE_058")
-    perch = w.drones["DRONE_2"].state.perch
-    req = SortieRequest(
-        "DRONE_2", (StopRequest(task.point, task.kind, task.purpose, None, task.id),), perch
-    )
+def test_locked_attempts_are_counted_and_never_reassigned():
+    sim = accepted_sim()
+    from grid_ops.sensing import LidarPass
+
+    task = next(t for t in sim._world.tasks.values() if isinstance(t.acquisition, LidarPass))
+    req, t_scan_start = scan_locked_sortie(sim, "DRONE_1", task.id)
     sim.submit(CommitSorties((req,), "operator")).result()
-    sim.step(0.2)
-    assert (
-        w.drones["DRONE_2"].phase == "measuring" and w.tasks[task.id].status is TaskStatus.MEASURING
-    )
+    sim.step((t_scan_start + task.acquisition.trajectory.duration_s / 2) / 60)  # mid scan
+    assert sim._world.tasks[task.id].status.value == "MEASURING"
     res = plan(sim)
     for cand in res.ranked:
-        assert task.id in cand.task_ids  # locked attempt counted, never reassigned
-        assert all(task.id not in [s.task_id for s in r.stops] for r in cand.sorties)
-        mine = [r for r in cand.sorties if r.drone_id == "DRONE_2"]
-        assert len(mine) == 1  # an executable continuation for the measuring drone
-    drone_ids = {r.drone_id for r in res.best.sorties}
-    assert "DRONE_2" in drone_ids
+        assert task.id in cand.task_ids  # the locked attempt is counted as served
+        assert all(
+            task.id not in sortie_task_ids(r) for r in cand.sorties
+        )  # never a decision variable
+        mine = [r for r in cand.sorties if r.drone_id == "DRONE_1"]
+        assert len(mine) <= 1  # at most one executable continuation for the busy drone
+    assert res.best is not None
 
 
-def test_a_corrupt_solver_plan_is_rejected_by_independent_validation(network, monkeypatch):
-    sim = accepted_sim(network)
-    real = planning._to_requests
+def test_a_corrupt_solver_round_is_never_ranked(monkeypatch):
+    sim = accepted_sim()
+    real = planning._round_requests
 
-    def corrupt(world, model, paths, tasks_by_idx):
-        reqs = real(world, model, paths, tasks_by_idx)
+    def corrupt(world, geometry, vehicles, model, solution, revision):
+        reqs = real(world, geometry, vehicles, model, solution, revision)
         return tuple(
-            dataclasses.replace(r, landing=dataclasses.replace(r.landing, circuit_id="LINE_999/C1"))
-            for r in reqs
+            dataclasses.replace(r, energy_model_revision="tampered-energy-model") for r in reqs
         )
 
-    monkeypatch.setattr(planning, "_to_requests", corrupt)
+    monkeypatch.setattr(planning, "_round_requests", corrupt)
     res = plan(sim)
     assert [c.source for c in res.ranked] == ["incumbent"]  # nothing invalid ever ranks
 
 
-# -- authoritative constraints ----------------------------------------------------------------------------------------------
+# -- authoritative constraints ---------------------------------------------------------------------------------------------------------
 
 
-def test_battery_deadline_and_reach_leave_reasoned_unassigned_work(network):
-    sim = accepted_sim(network)
+def test_drained_batteries_and_the_deadline_leave_reasoned_unassigned_work():
+    sim = accepted_sim()
     w = sim._world
     for d in w.drones.values():
-        d.battery_s = 120  # two minutes of airtime: nothing far is reachable
+        d.battery = BatteryState(remaining_units=1_200)  # not even a takeoff
+    publish(w, sim)
     res = plan(sim)
-    assert res.unassigned and all(
-        "infeasible for every drone" in u.reason or "left out" in u.reason for u in res.unassigned
+    assert res.unassigned and all(u.reason for u in res.unassigned)
+    assert all(
+        "infeasible for every drone" in u.reason
+        or "no eligible visit node" in u.reason
+        or "left out" in u.reason
+        for u in res.unassigned
     )
     for cand in res.ranked:
-        air = validate_sorties(w, sim.geometry, sim.circuits, cand.sorties)
-        assert air.ok and all(p.battery_left_s >= 0 for p in air.plans)
+        check = validate_sorties(sim.snapshot, sim.geometry, sim.circuits, cand.sorties)
+        assert check.ok
     w.clock_s = DEADLINE_S - 30
+    publish(w, sim)
     res2 = plan(sim)
-    assert all(not c.sorties for c in res2.ranked) or all(
-        p.landing_arrive_s <= DEADLINE_S
-        for c in res2.ranked
-        for p in validate_sorties(w, sim.geometry, sim.circuits, c.sorties).plans
-    )
+    for cand in res2.ranked:
+        assert all(r.steps[-1].end_s <= DEADLINE_S for r in cand.sorties)
 
 
-def test_occupied_endpoints_are_never_planned_and_expiring_evidence_is_respected(network):
-    sim = accepted_sim(network)
+def test_occupied_perches_are_never_planned():
+    sim = accepted_sim()
     w = sim._world
-    sim.submit(
-        CommitSorties((SortieRequest("DRONE_3", (), w.drones["DRONE_3"].state.perch),), "operator")
-    ) if False else None
-    w.drones["DRONE_5"].state = Charging(w.drones["DRONE_5"].state.perch, w.clock_s + 5000)
+    w.drones["DRONE_5"].state = Stranded(w.drones["DRONE_5"].state.perch)
     occupied = w.drones["DRONE_5"].state.perch
+    publish(w, sim)
     res = plan(sim)
     for cand in res.ranked:
-        assert occupied not in [r.landing for r in cand.sorties]
-        for r in cand.sorties:
-            plans = validate_sorties(w, sim.geometry, sim.circuits, (r,)).plans
-            assert plans and plans[0].landing_arrive_s < DEADLINE_S
+        assert occupied not in [r.final_perch for r in cand.sorties]
 
 
-# -- objective and budget -----------------------------------------------------------------------------------------------------------
+# -- objective, budget and replay ------------------------------------------------------------------------------------------------------
 
 
-def test_stage_statuses_bounds_and_replay_settings_are_reported(planned):
-    _, res = planned
-    assert {s.round for s in res.stages} <= {1, 2, 3}
-    names = {s.name for s in res.stages}
-    assert {"switching", "airtime"} <= names or {"tier-3"} <= names
+def test_stages_replay_and_round_caps_are_reported():
+    sim = accepted_sim()
+    res = plan(sim, rounds=5)
+    assert max(s.round for s in res.stages) <= 5 and res.replay["rounds"] == 5
     for s in res.stages:
-        assert s.status in {
-            "OPTIMAL",
-            "FEASIBLE",
-            "UNKNOWN",
-            "INFEASIBLE",
-            "MODEL_INVALID",
-            "SKIPPED",
-        }
+        assert s.status in {"OPTIMAL", "FEASIBLE", "UNKNOWN", "INFEASIBLE", "MODEL_INVALID"}
         if s.status == "FEASIBLE":
             assert s.bound is not None  # a bound accompanies every non-proven value
     assert res.replay["seed"] == 0 and res.replay["workers"] == 1
     assert res.replay["deterministic_budget"] == pytest.approx(0.1)
     assert res.replay["solver"].startswith("ortools ")
     assert res.revision >= 0 and res.stop_reason
-
-
-def test_at_most_three_rounds_share_the_budget_and_wall_cap_is_honoured(network):
-    sim = accepted_sim(network)
-    res = plan(sim, rounds=5)
-    assert max(s.round for s in res.stages) <= 5 and res.replay["rounds"] == 5
     tight = plan(sim, wall_cap_s=0.001)
     assert "wall cap" in tight.stop_reason and tight.ranked  # still returns the incumbent
 
 
-def test_strict_urgency_beats_value_without_a_priority_multiplier(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    for did in ("DRONE_1", "DRONE_3", "DRONE_4", "DRONE_5"):
-        w.drones[did].state = Charging(w.drones[did].state.perch, w.clock_s + 9000)
-    res = plan(sim)  # only DRONE_2 can fly
+def test_strict_urgency_precedence_without_multipliers():
+    w, geo = two_drone_world()
+    seed_handshakes(w)
+    contact_task(w, "T-HIGH", site_at(w, "LINE_040", 555_000), "REQ-HIGH", urgency=5)
+    contact_task(w, "T-LOW", site_at(w, "LINE_025", 555_000), "REQ-LOW", urgency=2)
+    del w.drones["DRONE_2"]  # one vehicle: the cap forces a choice between urgencies
+    res = planning.plan_sorties(w, geo, None, cap=1)
     best = res.best
-    assert best.score.tiers[2] > 0  # urgency-3 (vegetation) work is taken ...
-    assert best.score.tiers[3] == 0 or best.score.tiers[2] >= 0  # ... ahead of urgency-2 work
+    assert best is not None and best.valid
+    assert set(best.task_ids) == {"T-HIGH"}  # urgency-5 work is taken ...
+    assert best.score.tiers[scoring.TIERS.index(5)] > 0
+    assert best.score.tiers[scoring.TIERS.index(2)] == 0  # ... ahead of urgency-2 work
+    t5 = next(s for s in res.stages if s.round == 1 and s.name == "tier-5")
+    assert t5.objective is not None and t5.objective >= 0
     for cand in res.ranked:
         assert not cand.score.better_than(best.score)
-    t3 = next(s for s in res.stages if s.round == 1 and s.name == "tier-3")
-    assert t3.objective is not None and t3.objective >= 0
 
 
-def test_the_cap_keeps_required_work_reports_omissions_and_can_block(network):
-    sim = accepted_sim(network)
-    res = plan(sim, cap=6)
-    assert len(res.omitted) > 0 and all("cap" in o.reason for o in res.omitted)
-    ctx = scoring.build_context(sim._world, sim._estimation)
-    chosen, _, blocked, _ = planning.select_tasks(sim._world, ctx, sim.geometry, cap=6)
-    assert blocked is None and len(chosen) == 6
-    tops = {n for t in chosen for n in t.need_ids}
-    assert tops  # every highest-urgency need keeps a representative
-    _, _, blocked2, _ = planning.select_tasks(sim._world, ctx, sim.geometry, cap=0)
-    assert blocked2 is not None and "exceeds" in blocked2.reason
-    blocked_res = plan(sim, cap=0)
-    assert blocked_res.blocked is not None and blocked_res.stop_reason == "PlanningBlocked"
-    assert all(c.source == "incumbent" for c in blocked_res.ranked)
+def test_the_cap_reports_omissions_and_blocks_when_required_work_cannot_fit():
+    w, geo = two_drone_world()
+    seed_handshakes(w)
+    contact_task(w, "T-HIGH", site_at(w, "LINE_040", 555_000), "REQ-HIGH", urgency=5)
+    contact_task(w, "T-LOW", site_at(w, "LINE_025", 555_000), "REQ-LOW", urgency=2)
+    del w.drones["DRONE_2"]
+    res = planning.plan_sorties(w, geo, None, cap=1)
+    assert len(res.omitted) == 1 and "cap" in res.omitted[0].reason
+    blocked = planning.plan_sorties(w, geo, None, cap=0)
+    assert blocked.blocked is not None and blocked.stop_reason == "PlanningBlocked"
+    assert all(c.source == "incumbent" for c in blocked.ranked)
 
 
-def test_new_candidates_are_never_worse_than_the_incumbent_under_the_same_objective(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    task = next(t for t in w.tasks.values() if t.point.segment_id == "LINE_064")
-    perch = w.drones["DRONE_2"].state.perch
-    req = SortieRequest(
-        "DRONE_2", (StopRequest(task.point, task.kind, task.purpose, None, task.id),), perch
-    )
-    sim.submit(CommitSorties((req,), "operator")).result()
+def test_candidates_never_rank_below_a_validated_incumbent():
+    sim = accepted_sim()
     res = plan(sim)
-    inc = next(c for c in res.ranked if c.source == "incumbent")
-    assert res.best.score.key >= inc.score.key
-    assert not inc.score.better_than(res.best.score)
+    incumbent = next(c for c in res.ranked if c.source == "incumbent")
+    assert res.best.score.key >= incumbent.score.key
+    assert not incumbent.score.better_than(res.best.score)
+    keys = [c.score.key for c in res.ranked]
+    assert keys == sorted(keys, reverse=True)
 
 
-def test_only_validated_plans_commit_and_commit_reserves_attempts(network):
-    sim = accepted_sim(network)
+def test_only_validated_plans_commit_and_commit_reserves_tasks():
+    sim = accepted_sim()
     res = plan(sim)
     best = res.best
-    assert best.sorties
+    assert best.valid and best.sorties
     sim.submit(CommitSorties(best.sorties, "planner")).result()
     w = sim._world
     for r in best.sorties:
-        assert w.drones[r.drone_id].phase == "flying" or w.drones[r.drone_id].phase == "measuring"
-        for s in r.stops:
-            assert w.tasks[s.task_id].assigned_drone_id == r.drone_id
-
-
-# -- tiny exact enumeration -----------------------------------------------------------------------------------------------------
-
-
-def brute_force(sim, chosen_ids, pool_limit):
-    """Every assignment, ordering and landing for a tiny instance, validated independently and
-    scored with the same fixed joint scorer; returns the best score key."""
-    w = sim._world
-    ctx = scoring.build_context(w, sim._estimation)
-    vehicles = planning._vehicles(w)
-    tasks = [
-        planning.PlanTask(i, sim.geometry.position_of(w.tasks[i].point), 0) for i in chosen_ids
-    ]
-    lands = planning._landing_pool(w, sim.geometry, vehicles, tasks, pool_limit)
-    best = None
-    for owners in itertools.product([None, *range(len(vehicles))], repeat=len(chosen_ids)):
-        per_v: dict[int, list[str]] = {}
-        for tid, o in zip(chosen_ids, owners, strict=True):
-            if o is not None:
-                per_v.setdefault(o, []).append(tid)
-        orders = [list(itertools.permutations(per_v[v])) for v in per_v]
-        for combo in itertools.product(*orders):
-            for ls in itertools.product(lands, repeat=len(per_v)):
-                reqs = []
-                for (vi, _), order, land in zip(per_v.items(), combo, ls, strict=True):
-                    stops = tuple(
-                        StopRequest(w.tasks[t].point, w.tasks[t].kind, w.tasks[t].purpose, None, t)
-                        for t in order
-                    )
-                    reqs.append(SortieRequest(vehicles[vi].drone_id, stops, land.site))
-                if len({r.landing for r in reqs}) < len(reqs):
-                    continue
-                res = validate_sorties(w, sim.geometry, sim.circuits, tuple(reqs))
-                if not res.ok:
-                    continue
-                air = sum(p.landing_arrive_s - p.start_s for p in res.plans)
-                s = scoring.score_plan(
-                    w,
-                    ctx,
-                    sim.geometry,
-                    [t for r in reqs for t in [x.task_id for x in r.stops]],
-                    airtime_s=air,
-                )
-                key = s.key[:5]  # benefit tiers only: risk/switching/airtime tie-breaks differ
-                if best is None or key > best:
-                    best = key
-    return best
-
-
-def test_tiny_instance_matches_exhaustive_enumeration_and_reports_the_gap(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    for did in ("DRONE_1", "DRONE_4", "DRONE_5"):  # leave two vehicles
-        w.drones[did].state = Charging(w.drones[did].state.perch, w.clock_s + 9000)
-    ctx = scoring.build_context(w, sim._estimation)
-    chosen, _, _, _ = planning.select_tasks(w, ctx, sim.geometry, cap=3)
-    ids = [t.id for t in chosen]
-    res = plan(sim, cap=3, exact=True, landing_limit=3, deterministic_budget=5.0, wall_cap_s=20.0)
-    best = brute_force(sim, ids, 3)
-    got = res.best.score.key[:5]
-    gap = tuple(b - g for b, g in zip(best, got, strict=True))
-    assert all(g >= 0 for g in gap)  # the planner can never beat the exhaustive optimum
-    assert gap == (0, 0, 0, 0, 0), f"measured objective gap {gap}"  # and here it matches it
+        assert w.drones[r.drone_id].phase == "executing"
+        for tid in sortie_task_ids(r):
+            assert w.tasks[tid].status.value == "RESERVED"
+            assert w.tasks[tid].assigned_drone_id == r.drone_id

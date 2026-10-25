@@ -1,433 +1,141 @@
-"""Ticket 03: validated multi-stop sorties, exact transitions and atomic acceptance."""
+"""Itinerary sorties: atomic validation, exact rejection reasons and dispatch through the validator."""
 
 from __future__ import annotations
 
 import copy
-import dataclasses
-import math
+from dataclasses import replace
 
 import pytest
-from conftest import permissive
+from fixtures_three_method import StubPhysics, site_at, two_drone_world
+from helpers_p2 import lidar_reading, real_sim
 
-from grid_ops.geometry import MM_PER_KM, LandingSite, LinePoint
-from grid_ops.grid import load_network
-from grid_ops.routes import SortieRequest, StopRequest
-from grid_ops.sim import CommitSorties, Dispatch, SetInService, Simulation
+from grid_ops.geometry import LandingSite, LinePoint
+from grid_ops.routes import SortieRequest, apply_sorties, validate_sorties
+from grid_ops.sim import CommitSorties, Dispatch
 from grid_ops.world import (
-    CHARGE_S,
     DEADLINE_S,
-    DWELL_S,
-    FLIGHT_S,
-    Charging,
+    LAND_S,
+    TAKEOFF_S,
     CommandRejected,
-    Flying,
-    Measurement,
-    Measuring,
-    Ready,
-    Stranded,
-    TaskStatus,
-    distance_km,
+    Executing,
+    Land,
+    ScheduledStep,
+    Takeoff,
+    Transit,
     leg_seconds,
 )
 
 
-@pytest.fixture(scope="module")
-def network():
-    return load_network()
+def world():
+    return two_drone_world()
 
 
-@pytest.fixture
-def sim(network):
-    return permissive(Simulation(network))
-
-
-def pt(segment: str, km: float) -> LinePoint:
-    return LinePoint(segment, round(km * MM_PER_KM))
-
-
-def land(segment: str, km: float) -> LandingSite:
-    return LandingSite(pt(segment, km), f"{segment}/C1")
-
-
-def sortie(drone, stops, landing):
-    return SortieRequest(drone, tuple(stops), landing)
-
-
-def run(sim, *sorties, author="operator"):
-    return sim._apply(CommitSorties(tuple(sorties), author))
-
-
-def two_stop_sortie():
-    return sortie(
-        "DRONE_3",
-        [
-            StopRequest(pt("LINE_026", 3.0), Measurement.VOLTAGE_PRESENCE),
-            StopRequest(pt("LINE_026", 8.0), Measurement.CLEARANCE),
-        ],
-        land("LINE_026", 9.5),
+def request_for(w, drone_id, steps, final):
+    return SortieRequest(
+        drone_id, steps, final, w.revision, w.energy_model.revision, w.capabilities.revision
     )
 
 
-def expected_times(sim, drone_id, stops, landing):
-    """Independent recomputation of the timeline from geometry, using the shared rounding rule."""
-    drone = sim.snapshot.drones[drone_id]
-    t, here, out = 0, drone.position, []
-    for point, kind in stops:
-        pos = sim.geometry.position_of(point)
-        t += leg_seconds(here, pos, 1.0)
-        out.append(t)
-        t += DWELL_S[kind]
-        out.append(t)
-        here = pos
-    t += leg_seconds(here, sim.geometry.position_of(landing.point), 1.0)
-    return out, t
-
-
-# -- execution -------------------------------------------------------------------------------
-
-
-def test_multi_stop_sortie_executes_in_order_and_lands(sim):
-    stops = [
-        (pt("LINE_026", 3.0), Measurement.VOLTAGE_PRESENCE),
-        (pt("LINE_026", 8.0), Measurement.CLEARANCE),
-    ]
-    landing = land("LINE_026", 9.5)
-    times, land_t = expected_times(sim, "DRONE_3", stops, landing)
-    run(sim, two_stop_sortie())
-    w = sim._world
-    assert isinstance(w.drones["DRONE_3"].state, Flying)
-    assert {t.status for t in w.tasks.values()} == {TaskStatus.RESERVED}
-
-    sim.step(times[0] / 60)
-    d = sim.snapshot.drones["DRONE_3"]
-    assert isinstance(d.state, Measuring) and d.state.stop.point == stops[0][0]
-    assert d.position == sim.geometry.position_of(stops[0][0])
-
-    sim.step((times[1] - times[0]) / 60)
-    assert len(sim.snapshot.readings) == 1
-    r = sim.snapshot.readings["R0001"]
-    assert r.clock_s == times[1] and r.kind is Measurement.VOLTAGE_PRESENCE
-    assert 95.0 < dict(r.payload)["LINE_026/C1.voltage_kv"] < 120.0
-    sim.step((land_t - times[1]) / 60 + 0.001)
-    snap = sim.snapshot
-    assert [x.clock_s for x in snap.readings.values()] == [times[1], times[3]]
-    assert snap.drones["DRONE_3"].history == ("T0001", "T0002")
-    assert isinstance(snap.drones["DRONE_3"].state, Charging)
-    assert snap.drones["DRONE_3"].state.until_s == land_t + CHARGE_S
-    assert all(t.status is TaskStatus.COMPLETED for t in snap.tasks.values())
-
-
-def test_readings_are_immutable(sim):
-    run(sim, two_stop_sortie())
-    sim.step(60)
-    reading = next(iter(sim.snapshot.readings.values()))
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        reading.payload = ()  # type: ignore[misc]
-
-
-def test_position_and_battery_are_exact_mid_leg(sim):
-    start = sim.snapshot.drones["DRONE_3"].position
-    run(sim, two_stop_sortie())
-    target = sim.geometry.position_of(pt("LINE_026", 3.0))
-    leg = leg_seconds(start, target, 1.0)
-    sim.step(leg / 2 / 60)
-    d = sim.snapshot.drones["DRONE_3"]
-    assert d.battery_s == FLIGHT_S - leg // 2
-    f = (leg // 2) / leg
-    assert d.position == pytest.approx(
-        (start[0] + (target[0] - start[0]) * f, start[1] + (target[1] - start[1]) * f)
+def fly_steps(w, geo, drone_id, site):
+    """Takeoff, transit, land: a minimal validated itinerary ending perched on `site`."""
+    pos = geo.position_of(site.point)
+    state = w.drones[drone_id].state
+    start = state.perch if hasattr(state, "perch") else state.itinerary.final_perch
+    start_pos = geo.position_of(start.point)
+    leg = max(leg_seconds(start_pos, pos, w.drones[drone_id].speed_km_per_min), 1)
+    return (
+        ScheduledStep(0, 0, TAKEOFF_S, Takeoff(start, start_pos)),
+        ScheduledStep(1, TAKEOFF_S, TAKEOFF_S + leg, Transit(start_pos, pos)),
+        ScheduledStep(2, TAKEOFF_S + leg, TAKEOFF_S + leg + LAND_S, Land(site, pos)),
     )
-    assert sim.snapshot.clock_s == leg // 2
 
 
-def test_charging_battery_only_restored_when_charge_completes(sim):
-    run(
-        sim,
-        sortie(
-            "DRONE_3",
-            [StopRequest(pt("LINE_026", 6.0), Measurement.CURRENT)],
-            land("LINE_026", 6.2),
-        ),
-    )
-    sim.step(5)
-    d = sim.snapshot.drones["DRONE_3"]
-    assert isinstance(d.state, Charging)
-    low = d.battery_s
-    assert 0 < low < FLIGHT_S
-    # interrupt the charge: hidden switching, observable only as charging stopping
-    sim._apply(SetInService("LINE_026", False, "scenario"))
-    sim.step(1)
-    assert isinstance(sim.snapshot.drones["DRONE_3"].state, Stranded)
-    assert sim.snapshot.drones["DRONE_3"].battery_s == low
-    sim.step(2)
-    assert sim.snapshot.drones["DRONE_3"].battery_s == low
-    # restore: the charge starts over, and only its completion refills the battery
-    sim._apply(SetInService("LINE_026", True, "scenario"))
-    resumed_at = sim._world.clock_s
-    sim.step(1)
-    st = sim.snapshot.drones["DRONE_3"].state
-    assert isinstance(st, Charging)
-    assert st.until_s == resumed_at + CHARGE_S
-    sim.step(CHARGE_S / 60 - 2)
-    assert sim.snapshot.drones["DRONE_3"].battery_s == low
-    sim.step(2)
-    d = sim.snapshot.drones["DRONE_3"]
-    assert isinstance(d.state, Ready) and d.battery_s == FLIGHT_S
-    assert d.position == sim.geometry.position_of(pt("LINE_026", 6.2))
+# -- validation and atomic acceptance ----------------------------------------------------------------
 
 
-def test_zero_distance_arrival_completes_without_division_or_drain(sim):
-    here = sim.snapshot.drones["DRONE_3"].state.perch.point
-    run(sim, sortie("DRONE_3", [StopRequest(here, Measurement.CURRENT)], land("LINE_026", 9.5)))
-    d = sim._world.drones["DRONE_3"]
-    assert isinstance(d.state, Measuring)  # arrived immediately, at commit time
-    assert d.battery_s == FLIGHT_S and sim._world.clock_s == 0
-    sim.step(DWELL_S[Measurement.CURRENT] / 60)
-    assert len(sim.snapshot.readings) == 1
-    assert sim.snapshot.readings["R0001"].clock_s == DWELL_S[Measurement.CURRENT]
+def test_a_valid_itinerary_validates_and_ends_perched_on_its_final_perch():
+    w, geo = world()
+    target = site_at(w, "LINE_025", 50_000)
+    req = request_for(w, "DRONE_1", fly_steps(w, geo, "DRONE_1", target), target)
+    result = validate_sorties(w, geo, None, (req,))
+    assert result.ok, [str(r) for r in result.rejections]
+    assert result.plans[0].itinerary.final_perch == target
+    assert result.plans[0].itinerary.end_s == req.steps[-1].end_s
 
 
-def test_colocated_stops_chain_to_a_fixed_point_at_exact_times(sim):
-    p = pt("LINE_026", 4.0)
-    run(
-        sim,
-        sortie(
-            "DRONE_3",
-            [StopRequest(p, Measurement.VOLTAGE_PRESENCE), StopRequest(p, Measurement.CURRENT)],
-            land("LINE_026", 4.0),
-        ),
-    )
-    leg = leg_seconds(sim.snapshot.drones["DRONE_3"].position, sim.geometry.position_of(p), 1.0)
-    sim.step(leg / 60 + (DWELL_S[Measurement.VOLTAGE_PRESENCE] + DWELL_S[Measurement.CURRENT]) / 60)
-    times = [r.clock_s for r in sim.snapshot.readings.values()]
-    assert times == [leg + 60, leg + 60 + 120]
-    # zero-distance landing at the same exact point completes at the same instant as the reading
-    assert isinstance(sim.snapshot.drones["DRONE_3"].state, Charging)
-    assert sim.snapshot.drones["DRONE_3"].state.until_s == times[-1] + CHARGE_S
-
-
-def test_hidden_only_changes_produce_no_public_events(sim):
-    before = copy.deepcopy(sim.snapshot.log)
-    sim._apply(SetInService("LINE_001", False, "scenario"))
-    events = sim.step(10)
-    assert events == []
-    assert sim.snapshot.log == before
-
-
-def test_attempt_ownership_and_repeat_link(sim):
-    run(sim, two_stop_sortie())
-    sim.step(120)
-    first = sim.snapshot.readings["R0001"]
-    assert sim.snapshot.tasks[first.task_id].reading_id == "R0001"
-    # second sortie for the same drone is impossible while it is charging
-    with pytest.raises(CommandRejected, match="drone_unavailable"):
-        run(sim, two_stop_sortie())
-
-
-def test_repeat_creates_new_attempt_linked_to_evidence(sim):
-    run(
-        sim,
-        sortie(
-            "DRONE_3",
-            [StopRequest(pt("LINE_026", 3.0), Measurement.CURRENT)],
-            land("LINE_026", 5.0),
-        ),
-    )
-    sim.step(10)
-    reading = next(iter(sim.snapshot.readings.values()))
-    sim._world.drones["DRONE_3"].state = Ready(land("LINE_026", 5.0))
-    sim._world.drones["DRONE_3"].battery_s = FLIGHT_S
-    with pytest.raises(CommandRejected, match="repeat must state its purpose"):
-        run(
-            sim,
-            sortie(
-                "DRONE_3",
-                [StopRequest(reading.point, Measurement.CURRENT, "", reading.id)],
-                land("LINE_026", 4.0),
-            ),
-        )
-    run(
-        sim,
-        sortie(
-            "DRONE_3",
-            [StopRequest(reading.point, Measurement.CURRENT, "confirm current", reading.id)],
-            land("LINE_026", 4.0),
-        ),
-    )
-    tasks = sim._world.tasks
-    assert tasks["T0001"].status is TaskStatus.COMPLETED  # history preserved
-    assert tasks["T0002"].repeat_of_reading_id == reading.id and tasks["T0002"].id != "T0001"
-
-
-# -- locked dwell ----------------------------------------------------------------------------
-
-
-def test_in_progress_dwell_is_locked_and_counted_once(sim):
-    run(sim, two_stop_sortie())
-    p1 = sim.geometry.position_of(pt("LINE_026", 3.0))
-    leg = leg_seconds(sim.snapshot.drones["DRONE_3"].position, p1, 1.0)
-    sim.step((leg + 20) / 60)  # 20 s into the 60 s voltage dwell
-    d = sim._world.drones["DRONE_3"]
-    assert isinstance(d.state, Measuring)
-    battery_now = d.battery_s
-    new_landing = land("LINE_026", 6.0)
-    run(sim, sortie("DRONE_3", [], new_landing))  # replace the rest of the route
-    state = sim._world.drones["DRONE_3"].state
-    assert isinstance(state, Measuring) and state.stop.task_id == "T0001"
-    assert state.route.stops == () and state.route.perch == new_landing
-    sim.step(40 / 60)
-    assert len(sim.snapshot.readings) == 1  # locked stop finished at its original time
-    assert sim.snapshot.readings["R0001"].clock_s == leg + 60
-    # unstarted second stop released, not cancelled and not duplicated
-    assert sim.snapshot.tasks["T0002"].status is TaskStatus.PENDING
-    assert sim.snapshot.tasks["T0002"].assigned_drone_id is None
-    leg2 = leg_seconds(p1, sim.geometry.position_of(new_landing.point), 1.0)
-    expected_battery_at_landing = battery_now - 40 - leg2
-    sim.step(leg2 / 60 + 0.001)
-    st = sim.snapshot.drones["DRONE_3"]
-    assert isinstance(st.state, Charging)
-    assert st.battery_s == expected_battery_at_landing  # remaining dwell charged exactly once
-
-
-def test_mid_leg_replan_diverts_from_interpolated_position(sim):
-    run(sim, two_stop_sortie())
-    sim.step(60 / 60)
-    pos = sim.snapshot.drones["DRONE_3"].position
-    battery = sim.snapshot.drones["DRONE_3"].battery_s
-    run(
-        sim,
-        sortie(
-            "DRONE_3", [StopRequest(pt("LINE_026", 8.0), Measurement.MOTION)], land("LINE_026", 9.5)
-        ),
-    )
-    d = sim._world.drones["DRONE_3"]
-    assert isinstance(d.state, Flying) and d.state.origin == pos and d.battery_s == battery
-    assert d.state.departed_s == 60
-    assert sim._world.tasks["T0001"].status is TaskStatus.PENDING
-
-
-# -- validation ------------------------------------------------------------------------------
-
-
-def snapshot_of(sim):
-    return copy.deepcopy(sim._world)
-
-
-def test_invalid_later_sortie_leaves_every_drone_unchanged(sim):
-    good = two_stop_sortie()
-    bad = sortie(
-        "DRONE_1",
-        [
-            StopRequest(pt("LINE_001", 0.05), Measurement.CURRENT),
-            StopRequest(pt("LINE_040", 0.05), Measurement.CURRENT),
-        ],
-        land("LINE_040", 0.09),
-    )
-    before = snapshot_of(sim)
-    with pytest.raises(CommandRejected, match="DRONE_1: battery"):
-        run(sim, good, bad)
-    assert sim._world.drones == before.drones
-    assert sim._world.tasks == before.tasks and sim._world.next_task_number == 1
-    assert sim._world.rejections[-1].reasons[0].startswith("DRONE_1: battery")
-    # the good sortie alone is fine afterwards, with ids starting from T0001
-    run(sim, good)
-    assert "T0001" in sim._world.tasks
-
-
-def test_every_rejection_reason_is_reported(sim):
-    reqs = (
-        sortie(
-            "DRONE_1",
-            [StopRequest(pt("LINE_040", 99.0), Measurement.CURRENT)],
-            land("LINE_040", 0.05),
-        ),
-        sortie("DRONE_9", [], land("LINE_040", 0.05)),
-        sortie("DRONE_2", [], LandingSite(pt("LINE_025", 0.02), "LINE_026/C1")),
-    )
+def test_invalid_later_itineraries_leave_every_drone_unchanged():
+    sim = real_sim()
+    w, geo = sim._world, sim.geometry
+    good = request_for(w, "DRONE_1", fly_steps(w, geo, "DRONE_1", site_at(w, "LINE_025", 50_000)),
+                       site_at(w, "LINE_025", 50_000))
+    far = LandingSite(LinePoint("LINE_024", 500_000), "LINE_024/C1")
+    bad = request_for(w, "DRONE_9", fly_steps(w, geo, "DRONE_1", far), far)
+    before = copy.deepcopy((w.drones, w.tasks, w.next_task_number))
     with pytest.raises(CommandRejected) as err:
-        run(sim, *reqs)
-    msg = str(err.value)
-    assert "bad_stop" in msg and "unknown_drone" in msg and "bad_landing" in msg
+        sim.submit(CommitSorties((good, bad), "operator")).result()
+    assert "DRONE_9" in str(err.value)
+    assert (w.drones, w.tasks, w.next_task_number) == before
+    assert w.rejections[-1].reasons
+    sim.submit(CommitSorties((good,), "operator")).result()  # the good itinerary alone is fine
+    assert isinstance(w.drones["DRONE_1"].state, Executing)
 
 
-def test_sensor_capability_checked(sim):
-    sim._world.drones["DRONE_3"].sensors = frozenset({Measurement.CURRENT})
-    with pytest.raises(CommandRejected, match="sensor_capability"):
-        run(sim, two_stop_sortie())
-
-
-def test_battery_limit_from_authoritative_geometry(sim):
-    # add dwell that busts the budget exactly: legal + dwell > battery
-    stop = StopRequest(pt("LINE_040", 0.05), Measurement.MOTION)
-    sim2 = permissive(Simulation(load_network()))
-    pos = sim2.snapshot.drones["DRONE_1"].position
-    first = leg_seconds(pos, sim2.geometry.position_of(stop.point), 1.0)
-    second = leg_seconds(
-        sim2.geometry.position_of(stop.point),
-        sim2.geometry.position_of(land("LINE_026", 5.0).point),
-        1.0,
+def test_every_rejection_reason_is_reported():
+    w, geo = world()
+    reqs = (
+        request_for(w, "DRONE_9", fly_steps(w, geo, "DRONE_1", site_at(w)), site_at(w)),
+        request_for(w, "DRONE_1", (), site_at(w)),
     )
-    need = first + DWELL_S[Measurement.MOTION] + second
-    if need > FLIGHT_S:
-        with pytest.raises(CommandRejected, match="battery"):
-            run(sim2, sortie("DRONE_1", [stop], land("LINE_026", 5.0)))
-    else:
-        run(sim2, sortie("DRONE_1", [stop], land("LINE_026", 5.0)))
+    result = validate_sorties(w, geo, None, reqs)
+    assert {"unknown_drone", "empty_itinerary"} <= {r.code for r in result.rejections}
 
 
-def test_deadline_rejects_stop_or_landing_beyond_t_plus_4(sim):
-    w = sim._world
-    w.clock_s = DEADLINE_S - 300
-    with pytest.raises(CommandRejected, match="deadline"):
-        run(
-            sim,
-            sortie(
-                "DRONE_3",
-                [StopRequest(pt("LINE_026", 9.0), Measurement.MOTION)],
-                land("LINE_026", 9.5),
-            ),
-        )
-    # a landing alone that arrives after the deadline is also refused
-    far_leg = leg_seconds(
-        w.drones["DRONE_3"].position, sim.geometry.position_of(pt("LINE_026", 10.8)), 1.0
+def test_a_second_itinerary_for_an_executing_drone_is_rejected():
+    w, geo = world()
+    target = site_at(w, "LINE_025", 50_000)
+    first = request_for(w, "DRONE_1", fly_steps(w, geo, "DRONE_1", target), target)
+    apply_sorties(w, StubPhysics(), validate_sorties(w, geo, None, (first,)).plans)
+    second = request_for(w, "DRONE_1", fly_steps(w, geo, "DRONE_1", site_at(w)), site_at(w))
+    result = validate_sorties(w, geo, None, (second,))
+    assert not result.ok and result.rejections[0].code == "bad_start", (
+        "a fresh itinerary for an executing drone must start at its current step boundary"
     )
-    assert far_leg > 0
-    w.clock_s = DEADLINE_S - 10
-    with pytest.raises(CommandRejected, match="deadline"):
-        run(sim, sortie("DRONE_3", [], land("LINE_026", 10.8)))
-    # exactly on time is allowed
-    t_exact = leg_seconds(
-        w.drones["DRONE_3"].position, sim.geometry.position_of(pt("LINE_026", 5.5)), 1.0
+
+
+def test_itineraries_past_the_deadline_are_rejected():
+    w, geo = world()
+    target = site_at(w, "LINE_025", 50_000)
+    late = tuple(
+        replace(s, start_s=s.start_s + DEADLINE_S, end_s=s.end_s + DEADLINE_S)
+        for s in fly_steps(w, geo, "DRONE_1", target)
     )
-    w.clock_s = DEADLINE_S - t_exact
-    run(sim, sortie("DRONE_3", [], land("LINE_026", 5.5)))
+    result = validate_sorties(w, geo, None, (request_for(w, "DRONE_1", late, target),))
+    assert not result.ok and any(r.code == "deadline" for r in result.rejections)
 
 
-def test_landing_occupancy_and_circuit_identity(sim):
-    with pytest.raises(CommandRejected, match="bad_landing"):
-        run(sim, sortie("DRONE_3", [], LandingSite(pt("LINE_026", 5.0), "LINE_025/C1")))
-    # a perched drone's exact site cannot be taken by another drone
-    perch = sim.snapshot.drones["DRONE_3"].state.perch
-    with pytest.raises(CommandRejected, match="landing_occupied"):
-        run(sim, sortie("DRONE_2", [], perch))
-    # a Ready drone cannot be sent nowhere
-    with pytest.raises(CommandRejected, match="no_flight"):
-        run(sim, sortie("DRONE_3", [], perch))
-    # two drones cannot plan the same exact site
-    with pytest.raises(CommandRejected, match="landing_occupied"):
-        run(
-            sim,
-            sortie("DRONE_3", [], land("LINE_026", 5.0)),
-            sortie("DRONE_2", [], land("LINE_026", 5.0)),
-        )
+def test_energy_is_recomputed_from_the_drone_battery_not_the_caller():
+    w, geo = world()
+    target = site_at(w, "LINE_025", 50_000)
+    steps = fly_steps(w, geo, "DRONE_1", target)
+    w.drones["DRONE_1"].battery = replace(w.drones["DRONE_1"].battery, remaining_units=1000)
+    result = validate_sorties(w, geo, None, (request_for(w, "DRONE_1", steps, target),))
+    assert not result.ok and any(r.code == "energy" for r in result.rejections)
 
 
-def test_dispatch_still_works_through_the_validator(sim):
+# -- readings and dispatch ----------------------------------------------------------------------------
+
+
+def test_readings_are_immutable():
+    w, geo = world()
+    w.readings["R0001"] = lidar_reading(geo, "R0001", "LINE_040", 0, 110_000, 2.0)
+    with pytest.raises(Exception):
+        w.readings["R0001"].payload = None  # type: ignore[misc]
+
+
+def test_dispatch_builds_a_validated_itinerary_and_unknown_segments_are_rejected():
+    sim = real_sim()
     msg = sim._apply(Dispatch("DRONE_1", "LINE_001", "operator"))
     assert "DRONE_1 departed for LINE_001" in msg
-    d = sim._world.drones["DRONE_1"]
-    assert isinstance(d.state, Flying)
-    dist = distance_km(sim.snapshot.drones["DRONE_1"].position, d.state.route.perch_position)
-    assert d.state.arrives_s == math.ceil(60 * dist)
+    assert isinstance(sim._world.drones["DRONE_1"].state, Executing)
     with pytest.raises(CommandRejected, match="Unknown segment"):
         sim._apply(Dispatch("DRONE_2", "NOPE", "operator"))

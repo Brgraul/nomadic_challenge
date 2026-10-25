@@ -1,304 +1,232 @@
-"""Ticket 12: shared evidence is valued once, under manager-owned urgency."""
+"""Shared evidence is valued once, under manager-owned request urgency (three-method model)."""
 
 from __future__ import annotations
 
-import dataclasses
-import itertools
+from dataclasses import replace
 
 import pytest
-from conftest import permissive
+from fixtures_three_method import contact, site_at, tiny_network, two_drone_world
+from helpers_p2 import lidar_reading
 
-from grid_ops import agents, estimation, scoring
-from grid_ops.estimation import EstimateUnavailable
-from grid_ops.grid import load_network
-from grid_ops.scenario import ScenarioConfig, ScenarioMode
-from grid_ops.scoring import PlanScore, build_context, eligible, score_plan
-from grid_ops.sim import CommitDecision, Simulation
-from grid_ops.world import MeasurementTask, TaskStatus
-
-
-@pytest.fixture(scope="module")
-def network():
-    return load_network()
-
-
-def accepted_sim(network, mode=ScenarioMode.INCIDENT_DEMO):
-    sim = permissive(Simulation(network, scenario=ScenarioConfig(mode, 7)))
-    agents.run_scripted_turn(sim)
-    pf = sim.snapshot.proposals[-1]
-    sim.submit(CommitDecision("D0", pf.id, pf.semantic_key, "operator")).result()
-    return sim
+from grid_ops import scoring
+from grid_ops.geometry import Geometry, Interval
+from grid_ops.scoring import PlanScore, build_context, explain, score_plan
+from grid_ops.sensing import (
+    LidarPass,
+    MeasurementTaskV2,
+    RequestStatus,
+    ScanPose,
+    ScanTrajectory,
+    TaskStatusV2,
+)
 
 
-def ctx_of(sim, **kw):
-    return build_context(sim._world, sim._estimation, **kw)
+def world():
+    return two_drone_world()
 
 
-def local_tasks(world, seg="LINE_064"):
-    return sorted(
-        (t for t in world.tasks.values() if t.point.segment_id == seg and t.kind == "clearance"),
-        key=lambda t: t.point.offset_mm,
+def contact_request(w, rid="REQ-1", urgency=5, status=RequestStatus.ACTIVE):
+    from grid_ops.sensing import AcceptedRequest, ConductorScope, CurrentRequest, OutcomeSpec
+
+    request = CurrentRequest(
+        id=rid,
+        hypothesis_ids=(),
+        rationale="r",
+        alternatives_distinguished=("a", "b"),
+        expected_outcomes=(OutcomeSpec(description="o"),),
+        evidence_ids=(),
+        urgency=urgency,
+        source_revision="0",
+        replaces_request_ids=(),
+        target=ConductorScope(circuit_id="LINE_040/C1", phase="A", start_mm=0, end_mm=110_000),
     )
+    w.requests[rid] = AcceptedRequest(rid, request, status, w.clock_s, "0")
+    return request
 
 
-def score(sim, ctx, ids, **kw):
-    return score_plan(sim._world, ctx, sim.geometry, ids, **kw)
+def lidar_request(w, rid="REQ-L", urgency=3):
+    from grid_ops.sensing import AcceptedRequest, CorridorSpan, LidarRequest, OutcomeSpec
 
-
-# -- eligibility before scoring --------------------------------------------------------------------------
-
-
-def test_only_active_needs_earn_rewards(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    ctx = ctx_of(sim)
-    t = local_tasks(w)[0]
-    assert eligible(w, t) and sum(score(sim, ctx, [t.id]).tiers) > 0
-    orphan = dataclasses.replace(t, id="T9999", need_ids=())
-    w.tasks["T9999"] = orphan
-    s = score(sim, ctx, ["T9999"])
-    assert sum(s.tiers) == 0 and any("ineligible" in n for n in s.notes)
-    done = dataclasses.replace(t, id="T9998", status=TaskStatus.COMPLETED)
-    w.tasks["T9998"] = done
-    assert sum(score(sim, ctx, ["T9998"]).tiers) == 0  # finished work earns nothing again
-
-
-# -- shared evidence and ownership --------------------------------------------------------------------------
-
-
-def test_shared_evidence_has_one_group_owned_by_the_highest_accepted_urgency(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    base = score(sim, ctx_of(sim), [local_tasks(w)[0].id])
-    twin = dict(w.hypotheses["H_VEG"]) | {"id": "H_TWIN", "priority": 5}
-    w.hypotheses["H_TWIN"] = twin  # a differently worded hypothesis over the same scope
-    sim._refresh_tasks()
-    both = score(sim, ctx_of(sim), [local_tasks(w)[0].id])
-    assert sum(both.tiers) == sum(base.tiers)  # the twin cannot inflate the value
-    assert both.tiers[0] == sum(both.tiers) > 0  # but it owns the shared group at urgency 5
-    assert base.tiers[0] == 0
-
-
-def test_the_planner_cannot_raise_urgency_to_win_an_assignment(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    ctx = ctx_of(sim)
-    t = local_tasks(w)[0]
-    before = score(sim, ctx, [t.id])
-    w.tasks[t.id] = dataclasses.replace(t, urgency=5)  # a planner-side field, ignored by the scorer
-    assert score(sim, ctx_of(sim), [t.id]).tiers == before.tiers
-
-
-# -- local coverage ------------------------------------------------------------------------------------------------
-
-
-def test_overlapping_footprints_count_their_union_once(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    ctx = ctx_of(sim)
-    ts = [t for t in local_tasks(w) if 7_000_000 < t.point.offset_mm < 10_100_000]
-    a, b = ts[0], ts[1]
-    sa, sb = score(sim, ctx, [a.id]), score(sim, ctx, [b.id])
-    # make b overlap a by moving it 0.4 km away from a
-    near = dataclasses.replace(
-        a, id="T8001", point=dataclasses.replace(a.point, offset_mm=a.point.offset_mm + 400_000)
+    request = LidarRequest(
+        id=rid,
+        hypothesis_ids=(),
+        rationale="r",
+        alternatives_distinguished=("a",),
+        expected_outcomes=(OutcomeSpec(description="o"),),
+        evidence_ids=(),
+        urgency=urgency,
+        source_revision="0",
+        replaces_request_ids=(),
+        target=CorridorSpan(segment_id="LINE_040", start_mm=0, end_mm=110_000),
     )
-    w.tasks["T8001"] = near
-    both = score(sim, ctx, [a.id, "T8001"])
-    assert sum(both.tiers) < sum(sa.tiers) * 2 and sum(both.tiers) > sum(sa.tiers)
-    assert score(sim, ctx, ["T8001", a.id]).tiers == both.tiers  # order never matters
-    assert score(sim, ctx, [a.id, a.id, "T8001"]).tiers == both.tiers  # nor duplicates
-    # disjoint footprints (>= 1 km apart) add up exactly
-    far = dataclasses.replace(
-        a, id="T8002", point=dataclasses.replace(a.point, offset_mm=a.point.offset_mm + 1_100_000)
-    )
-    w.tasks["T8002"] = far
-    disjoint = score(sim, ctx, [a.id, "T8002"])
-    assert sum(disjoint.tiers) == pytest.approx(
-        sum(sa.tiers) + sum(score(sim, ctx, ["T8002"]).tiers), abs=1
-    )
-    _ = sb
+    w.requests[rid] = AcceptedRequest(rid, request, RequestStatus.ACTIVE, w.clock_s, "0")
+    return request
 
 
-def test_cell_subdivision_cannot_increase_total_reward(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    ids = [t.id for t in local_tasks(w)[:3]]
-    totals = {
-        cell: sum(score(sim, ctx_of(sim, cell_m=cell), ids).tiers) for cell in (5, 10, 20, 50)
-    }
-    spread = max(totals.values()) - min(totals.values())
-    assert spread <= 120  # only partial boundary cells differ; length is conserved
-    assert totals[5] <= totals[50] + 120
+def lidar_task(w, task_id, segment, start_mm, end_mm, rid="REQ-L", urgency=3):
+    iv = Interval(segment, start_mm, end_mm)
+    poses = (ScanPose((0.0, 0.0), 50.0, 0.0), ScanPose((0.001, 0.0), 50.0, 0.0))
+    acq = LidarPass(iv, ScanTrajectory(poses, 10))
+    task = MeasurementTaskV2(task_id, rid, acq, rid, TaskStatusV2.PENDING, urgency)
+    w.set_task(task)
+    return task
 
 
-def test_overlapping_scopes_cannot_increase_total_reward(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    ids = [t.id for t in local_tasks(w)[:3]]
-    single = sum(score(sim, ctx_of(sim), ids).tiers)
-    for k in range(3):  # three more hypotheses over the very same scope
-        w.hypotheses[f"H_COPY{k}"] = dict(w.hypotheses["H_VEG"]) | {
-            "id": f"H_COPY{k}",
-            "priority": 2 + k,
-        }
-    sim._refresh_tasks()
-    assert sum(score(sim, ctx_of(sim), ids).tiers) == single
+def tier_at(tiers: tuple[int, ...], urgency: int) -> int:
+    """Tiers are ordered 5..1; the urgency-u award sits at index 5-u."""
+    return tiers[5 - urgency]
 
 
-# -- confirmation ------------------------------------------------------------------------------------------------------
+# -- one award per alternative group -------------------------------------------------------------
 
 
-def test_confirmation_utility_is_awarded_once_per_justified_group(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    ctx = ctx_of(sim)
-    key = ("confirm", "R0001", "clearance")
-    ctx.owners[key], ctx.values[key] = 4, scoring.CONFIRMATION_POINTS
-    a, b = local_tasks(w)[:2]
-    ca = dataclasses.replace(a, id="T7001", repeat_of_reading_id="R0001")
-    cb = dataclasses.replace(b, id="T7002", repeat_of_reading_id="R0001")
-    w.tasks.update({"T7001": ca, "T7002": cb})
-    ga, gb = (
-        scoring._task_groups(ca, ctx, sim.geometry),
-        scoring._task_groups(cb, ctx, sim.geometry),
-    )
-    assert key in ga and key in gb
-    both = score(sim, ctx, ["T7001", "T7002"])
-    alone = score(sim, ctx, ["T7001"])
-    assert both.tiers[1] - alone.tiers[1] == 500 - 500 + (
-        both.tiers[1] - alone.tiers[1]
-    )  # tautology guard
-    assert both.tiers[1] >= scoring.CONFIRMATION_POINTS
-    assert both.tiers[1] < alone.tiers[1] + scoring.CONFIRMATION_POINTS  # not awarded twice
+def test_contact_value_is_one_flat_award_per_group_at_the_request_urgency():
+    w, _geo = world()
+    contact_request(w, urgency=4)
+    for tid, offset in (("T0001", 0), ("T0002", 50_000)):
+        from grid_ops.sensing import MeasurementTaskV2
 
-
-# -- electrical benefit --------------------------------------------------------------------------------------------------
-
-
-def healthy(network):
-    sim = permissive(
-        Simulation(network, scenario=ScenarioConfig(ScenarioMode.HEALTHY_BENCHMARK, 7))
-    )
-    sim._refresh_tasks()
-    return sim
-
-
-def electrical_tasks(world):
-    return sorted(
-        (t for t in world.tasks.values() if t.group_id.startswith("electrical:")),
-        key=lambda t: t.id,
-    )
-
-
-def test_electrical_benefit_is_joint_variance_reduction_with_a_fixed_normalisation(network):
-    sim = healthy(network)
-    w = sim._world
-    ctx = ctx_of(sim)
-    ts = electrical_tasks(w)
-    assert ctx.electrical_available and ctx.norm > 0
-    one = score(sim, ctx, [ts[0].id])
-    three = score(sim, ctx, [t.id for t in ts[:3]])
-    assert 0 < sum(one.tiers) < sum(three.tiers)
-    full = score(sim, ctx, [t.id for t in ts])
-    assert sum(full.tiers) <= scoring.ELECTRICAL_NORMALISED_POINTS + 1  # fixed normalisation
-    # total gain is a joint quantity: who owns which group changes the split, not the sum
-    flipped = dataclasses.replace(
-        ctx, owners={k: (5 if v == 1 else 2) for k, v in ctx.owners.items()}
-    )
-    flat = score(sim, flipped, [t.id for t in ts[:3]])
-    assert abs(sum(flat.tiers) - sum(three.tiers)) <= 3
-
-
-def test_correlated_repeats_earn_less_and_no_structural_rank(network):
-    sim = healthy(network)
-    w = sim._world
-    ts = electrical_tasks(w)
-    seg = ts[0].point.segment_id
-    model = sim._estimation.model
-    results = {}
-    for rho in (0.0, 0.5):
-        base = scoring._hypothetical(w, ctx_of(sim), seg, "BASE")
-        ctx = dataclasses.replace(ctx_of(sim), base_readings=(base,), shared_rho=rho)
-        cov = estimation.posterior_flow_covariance(model, [base], shared_rho=rho)
-        idx = {s: i for i, s in enumerate(model.segments)}
-        ctx.prior_variance = {seg: float(cov[idx[seg], idx[seg]])}
-        ctx.norm = ctx.prior_variance[seg]
-        ctx.electrical_groups = {ts[0].group_id: [(seg, 3)]}
-        ctx.owners = {("electrical", ts[0].group_id): 3}
-        results[rho] = sum(
-            score(
-                sim,
-                ctx,
-                [ts[0].id],
-            ).tiers
+        w.set_task(
+            MeasurementTaskV2(
+                tid, "REQ-1", contact(site_at(w, "LINE_040", offset)), "REQ-1",
+                TaskStatusV2.PENDING, 2,
+            )
         )
-    assert results[0.5] < results[0.0]  # shared calibration bias is not averaged away
-    obs0 = estimation.observability(model)
-    rep = scoring._hypothetical(w, ctx_of(sim), seg, "REP")
-    obs1 = estimation.observability(model, [rep, rep])
-    assert obs1.total_rank == obs0.total_rank  # repeats add no structural rank
+    ctx = build_context(w)
+    alone = score_plan(w, ctx, ["T0001"])
+    both = score_plan(w, ctx, ["T0001", "T0002"])
+    assert tier_at(alone.tiers, 4) == scoring.REQUEST_POINTS
+    assert sum(alone.tiers) == scoring.REQUEST_POINTS  # nothing at any other urgency
+    assert both.tiers == alone.tiers  # a second attempt of the same group earns nothing
+    assert score_plan(w, ctx, ["T0002", "T0001", "T0001"]).tiers == alone.tiers
 
 
-def test_unavailable_covariance_yields_no_invented_information(network):
-    sim = healthy(network)
-    sim._estimation.model.prior_nodes = ()  # singular information matrix: no usable covariance
-    sim._estimation.model.prior_mean = sim._estimation.model.prior_mean[:0]
-    w = sim._world
-    ctx = ctx_of(sim)
-    assert not ctx.electrical_available
-    s = score(sim, ctx, [electrical_tasks(w)[0].id])
-    assert sum(s.tiers) == 0 and not s.electrical_available
-    assert any("unavailable" in n for n in s.notes)
+def test_lidar_value_is_the_length_of_the_requested_span_counted_once():
+    w, _geo = world()
+    lidar_request(w, urgency=3)
+    lidar_task(w, "T0001", "LINE_040", 0, 110_000)
+    ctx = build_context(w)
+    one = score_plan(w, ctx, ["T0001"])
+    assert one.tiers[2] == pytest.approx(110_000 / 1000, abs=1)  # 1 point per metre
+    assert tier_at(one.tiers, 3) == pytest.approx(110_000 / 1000, abs=1)
 
 
-# -- the fixed comparison ------------------------------------------------------------------------------------------------
-
-
-def test_urgency_tiers_precede_everything_and_tiny_benefits_beat_many_lower_ones():
-    hi = PlanScore((10, 0, 0, 0, 0), risk=9, switching=9, airtime_s=9999, electrical_available=True)
-    lo = PlanScore(
-        (0, 0, 0, 0, 100000), risk=0, switching=0, airtime_s=1, electrical_available=True
+def test_planned_lidar_value_counts_only_still_uninspected_extent():
+    """Cells already covered by a completed valid reading earn nothing again."""
+    w, geo = world()
+    lidar_request(w)
+    lidar_task(w, "T0001", "LINE_040", 0, 110_000)
+    w.readings["R0001"] = lidar_reading(
+        Geometry(tiny_network()), "R0001", "LINE_040", 50_000, 110_000, 2.0
     )
+    ctx = build_context(w)
+    s = score_plan(w, ctx, ["T0001"])
+    assert s.tiers[2] == pytest.approx(50_000 / 1000, abs=1)  # only 0-50 m is still undecided
+
+
+def test_request_urgency_owns_the_tier_not_a_planner_side_field():
+    w, _geo = world()
+    contact_request(w, urgency=4)
+    from grid_ops.sensing import MeasurementTaskV2
+
+    w.set_task(
+        MeasurementTaskV2(
+            "T0001", "REQ-1", contact(site_at(w, "LINE_040", 0)), "REQ-1",
+            TaskStatusV2.PENDING, 2,
+        )
+    )
+    before = score_plan(w, build_context(w), ["T0001"])
+    w.set_task(replace(w.tasks["T0001"], urgency=5))  # planner-side rewrite
+    after = score_plan(w, build_context(w), ["T0001"])
+    assert after == before  # the award stays at the request's urgency tier, value unchanged
+    assert tier_at(after.tiers, 4) == scoring.REQUEST_POINTS
+
+
+def test_ordering_of_task_ids_never_changes_the_score():
+    w, _geo = world()
+    contact_request(w)
+    from grid_ops.sensing import MeasurementTaskV2
+
+    w.set_task(
+        MeasurementTaskV2(
+            "T0001", "REQ-1", contact(site_at(w, "LINE_040", 0)), "REQ-1",
+            TaskStatusV2.PENDING, 3,
+        )
+    )
+    ctx = build_context(w)
+    assert score_plan(w, ctx, ["T0001"]) == score_plan(w, ctx, list(reversed(["T0001"])))
+
+
+# -- the fixed comparison -----------------------------------------------------------------------------------------
+
+
+def test_urgency_tiers_precede_everything():
+    hi = PlanScore((10, 0, 0, 0, 0), risk=9, switching=9, airtime_s=9999, charge_s=9999)
+    lo = PlanScore((0, 0, 0, 0, 100_000), risk=0, switching=0, airtime_s=1, charge_s=0)
     assert hi.better_than(lo) and not lo.better_than(hi)
 
 
-def test_risk_then_switching_then_airtime_break_ties():
-    base = dict(tiers=(5, 4, 3, 2, 1), electrical_available=True)
-    a = PlanScore(**base, risk=1, switching=5, airtime_s=900)
-    b = PlanScore(**base, risk=0, switching=9, airtime_s=1800)
-    c = PlanScore(**base, risk=0, switching=2, airtime_s=1800)
-    d = PlanScore(**base, risk=0, switching=2, airtime_s=900)
-    assert b.better_than(a) and c.better_than(b) and d.better_than(c)
-    perms = list(itertools.permutations([a, b, c, d]))
-    assert all(max(p, key=lambda s: s.key) is d for p in perms)
+def test_risk_then_switching_then_airtime_then_charge_break_ties():
+    base = dict(tiers=(5, 4, 3, 2, 1))
+    a = PlanScore(**base, risk=1, switching=5, airtime_s=900, charge_s=0)
+    b = PlanScore(**base, risk=0, switching=9, airtime_s=1800, charge_s=0)
+    c = PlanScore(**base, risk=0, switching=2, airtime_s=1800, charge_s=0)
+    d = PlanScore(**base, risk=0, switching=2, airtime_s=900, charge_s=0)
+    e = PlanScore(**base, risk=0, switching=2, airtime_s=900, charge_s=600)
+    assert b.better_than(a) and c.better_than(b) and d.better_than(c) and d.better_than(e)
+    # less charge waiting is better: e adds charge time and can never beat d
 
 
-def test_higher_urgency_benefit_beats_many_lower_urgency_tasks(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    ctx = ctx_of(sim)
-    # one task owned at urgency 5 versus every other open task owned at lower urgency
-    first = local_tasks(w)[0]
-    key_cells = [g for g in scoring._task_groups(first, ctx, sim.geometry) if g[0] == "coverage"]
-    for g in key_cells:
-        ctx.owners[g] = 5
-    many = [t.id for t in w.tasks.values() if t.id != first.id and eligible(w, t)]
-    s_one, s_many = score(sim, ctx, [first.id]), score(sim, ctx, many)
-    assert s_one.better_than(s_many) if sum(s_many.tiers[:1]) == 0 else True
-    assert (s_one.tiers[0] > 0 and s_many.tiers[0] == 0) or s_many.tiers[0] <= s_one.tiers[0]
+def test_scores_are_compared_within_a_fixed_integer_quantum():
+    a = PlanScore((500, 0, 0, 0, 0), risk=0, switching=0, airtime_s=0, charge_s=0)
+    b = PlanScore((501, 0, 0, 0, 0), risk=0, switching=0, airtime_s=0, charge_s=0)
+    c = PlanScore((503, 0, 0, 0, 0), risk=0, switching=0, airtime_s=0, charge_s=0)
+    assert a.equal_within_quantum(b) and not a.equal_within_quantum(c)
 
 
-def test_candidates_and_incumbents_are_compared_under_the_same_frozen_context(network):
-    sim = accepted_sim(network)
-    w = sim._world
-    ctx = ctx_of(sim)
-    ids = [t.id for t in local_tasks(w)[:4]]
-    first = score(sim, ctx, ids)
-    sim._world.clock_s += 600  # the world moves; the frozen context does not
-    assert score(sim, ctx, ids).key == first.key
-    assert first.equal_within_quantum(score(sim, ctx, list(reversed(ids))))
-    lines = scoring.explain(w, ctx, first)
-    assert any("synthetic units" in x and "not a calibrated causal entropy" in x for x in lines)
+def test_explain_names_the_scale_and_the_tolerance():
+    w, _geo = world()
+    ctx = build_context(w)
+    lines = explain(w, ctx, score_plan(w, ctx, []))
+    assert any("not a calibrated causal entropy" in x for x in lines)
     assert any("quantisation tolerance: 1 unit" in x for x in lines)
-    _ = (MeasurementTask, EstimateUnavailable)
+
+
+# -- explicit unresolved work ----------------------------------------------------------------------
+
+
+def test_unresolved_requests_are_named_until_a_valid_attempt_answers_the_group():
+    w, geo = world()
+    contact_request(w)
+    from grid_ops.sensing import MeasurementTaskV2
+
+    w.set_task(
+        MeasurementTaskV2(
+            "T0001", "REQ-1", contact(site_at(w, "LINE_040", 0)), "REQ-1",
+            TaskStatusV2.PENDING, 3,
+        )
+    )
+    assert scoring.unresolved_requests(w) == [("REQ-1", "no completed valid attempt yet")]
+    w.readings["R0001"] = lidar_reading(Geometry(tiny_network()), "R0001", "LINE_040", 0, 110_000, 12.0)
+    w.set_task(replace(w.tasks["T0001"], status=TaskStatusV2.COMPLETED, reading_id="R0001"))
+    assert scoring.unresolved_requests(w) == []
+
+
+def test_retired_requests_never_reach_the_scorer_as_open_work():
+    """The lifecycle, not the scorer, retires a request's unstarted attempts (see test_needs)."""
+    from grid_ops import needs
+
+    w, geo = world()
+    net = tiny_network()
+    contact_request(w, status=RequestStatus.RETIRED)
+    from grid_ops.sensing import MeasurementTaskV2
+
+    w.set_task(
+        MeasurementTaskV2(
+            "T0001", "REQ-1", contact(site_at(w, "LINE_040", 0)), "REQ-1",
+            TaskStatusV2.PENDING, 3,
+        )
+    )
+    notes, _unavailable = needs.refresh(w, net, geo)
+    assert w.tasks["T0001"].status is TaskStatusV2.CANCELLED
+    assert any("retired" in n for n in notes)

@@ -1,4 +1,9 @@
-"""Ticket 01: public state never contains hidden physics, and only allowed modules import it."""
+"""Ticket 01: public state never contains hidden physics, and only allowed modules import it.
+
+The three-method runtime replaced the hidden switching differential with a paired-episode one:
+two simulations that differ only in their private episode construction must publish equal public
+views, and no private seed or fault label may reach the snapshot.
+"""
 
 from __future__ import annotations
 
@@ -10,10 +15,9 @@ from pathlib import Path
 import pytest
 from conftest import permissive
 
-from grid_ops.evaluation import energized_segments
-from grid_ops.grid import load_network
+import grid_ops.sim as sim_module
 from grid_ops.sim import Dispatch, SetInService, Simulation
-from grid_ops.world import Charging, Ready, Stranded
+from grid_ops.world import CommandRejected, Perched
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "grid_ops"
 HIDDEN_MODULES = {"grid_ops.truth", "grid_ops.evaluation", "pandapower"}
@@ -23,14 +27,9 @@ FORBIDDEN_KEYS = {"energized", "truth", "in_service", "_truth", "net", "ext_grid
 
 @pytest.fixture(scope="module")
 def network():
+    from grid_ops.grid import load_network
+
     return load_network()
-
-
-def drain(sim: Simulation) -> None:
-    """Apply queued commands synchronously, as the sim thread would."""
-    while not sim._commands.empty():
-        command, future = sim._commands.get_nowait()
-        future.set_result(sim._apply(command))
 
 
 def walk(obj, path="root"):
@@ -69,46 +68,44 @@ def test_public_snapshot_has_no_hidden_fields(network):
     assert not hasattr(sim.snapshot, "energized")
 
 
-def test_command_results_and_logs_do_not_leak(network):
-    sim = permissive(Simulation(network))
-    switch = sim.submit(SetInService("LINE_001", False, "scenario"))
-    sim.submit(Dispatch("DRONE_1", "LINE_041", "operator"))
-    drain(sim)
-    assert_no_hidden(switch.result(timeout=1))
-    sim.step(60)
-    assert_no_hidden([e.text for e in sim.snapshot.log])
-
-
-def test_public_view_is_independent_of_hidden_state(network):
-    """Differential probe: hidden changes away from every drone alter nothing public."""
-    a, b = permissive(Simulation(network)), permissive(Simulation(network))
-    used = {"LINE_040", "LINE_025", "LINE_026", "LINE_002", "LINE_056", "LINE_024"}
-    far = next(s for s in network.segments if s not in used)
-    b._apply(SetInService(far, False, "scenario"))
+def test_paired_episode_public_views_are_equal_before_any_measurement(network, monkeypatch):
+    """P1 isolation, restated for episodes: only the private episode differs, so nothing public
+    may differ either — before any measurement is taken."""
+    a = permissive(Simulation(network))
+    seeds = iter(((111, 222), (333, 444)))
+    monkeypatch.setattr(sim_module, "_private_seeds", lambda policy_seed: next(seeds))
+    b = permissive(Simulation(network))
     a.step(5)
     b.step(5)
     assert a.snapshot == b.snapshot
+    assert_no_hidden(a.snapshot)
+    assert_no_hidden(b.snapshot)
 
 
-def test_hidden_state_reaches_public_only_as_observable_consequence(network):
+def test_public_json_contains_no_private_episode_seeds(network):
     sim = permissive(Simulation(network))
-    assert isinstance(sim.snapshot.drones["DRONE_1"].state, Ready)
-    # Hidden switching the operator knows nothing about: a drone landing there cannot charge.
-    sim._apply(SetInService("LINE_041", False, "scenario"))
-    sim._apply(Dispatch("DRONE_1", "LINE_041", "operator"))
-    sim.step(40)
-    assert isinstance(sim.snapshot.drones["DRONE_1"].state, Stranded)
-    assert "LINE_041" not in energized_segments(sim)
-    assert_no_hidden(sim.snapshot)
+    sim.step(1)
+    blob = repr(sim.snapshot)
+    for secret in ("episode_seed", "noise_seed", "FaultEvent", "ProtectionAction"):
+        assert secret not in blob
 
 
-def test_existing_dispatch_charge_cycle_still_works(network):
+def test_set_in_service_is_not_a_runtime_command(network):
     sim = permissive(Simulation(network))
+    with pytest.raises(CommandRejected, match="not part of the three-method runtime"):
+        sim._apply(SetInService("LINE_041", False, "evaluator"))
+
+
+def test_dispatch_lands_perched_without_recharging(network):
+    """A landing is never an energy reset: the drone perches with strictly less battery."""
+    sim = permissive(Simulation(network))
+    before = sim.snapshot.drones["DRONE_1"].battery_units
     sim._apply(Dispatch("DRONE_1", "LINE_041", "operator"))
-    sim.step(31)
-    assert isinstance(sim.snapshot.drones["DRONE_1"].state, Charging)
-    sim.step(181)
-    assert isinstance(sim.snapshot.drones["DRONE_1"].state, Ready)
+    sim.step(90)
+    drone = sim.snapshot.drones["DRONE_1"]
+    assert isinstance(drone.state, Perched)
+    assert drone.state.perch.circuit_id == "LINE_041/C1"
+    assert drone.battery_units < before
 
 
 def test_no_public_handle_to_physics(network):
@@ -142,8 +139,6 @@ def test_import_boundary():
 
 
 def test_three_method_public_context_has_no_private_episode_handle():
-    import dataclasses
-
     from grid_ops.sensing import PublicEpisodeView
 
     context = PublicEpisodeView("opaque-run-id", "analytic", "1", 0)

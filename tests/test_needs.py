@@ -1,295 +1,234 @@
-"""Ticket 11: tasks exist only for accepted diagnostic needs."""
+"""Tasks exist only for accepted measurement requests, through the compiled lifecycle."""
 
 from __future__ import annotations
 
-import pytest
-from conftest import permissive
+from dataclasses import replace
 
-from grid_ops import agents, estimation
-from grid_ops.geometry import LinePoint
-from grid_ops.grid import load_network
-from grid_ops.needs import MAX_RECONSTRUCTION_NEEDS, NeedStatus, group_id
-from grid_ops.routes import SortieRequest, StopRequest
-from grid_ops.scenario import ScenarioConfig, ScenarioMode
-from grid_ops.sim import CommitDecision, CommitSorties, Simulation
-from grid_ops.world import Measurement, TaskStatus
+from fixtures_three_method import (
+    StubPhysics,
+    contact_task,
+    seed_handshakes,
+    site_at,
+    tiny_network,
+    two_drone_world,
+)
+from helpers_p2 import tiny_sim
 
-
-@pytest.fixture(scope="module")
-def network():
-    return load_network()
-
-
-def accept_startup(sim, did="D0"):
-    agents.run_scripted_turn(sim)
-    pf = sim.snapshot.proposals[-1]
-    sim.submit(CommitDecision(did, pf.id, pf.semantic_key, "operator")).result()
-    return pf
-
-
-def stops(*pairs, kind=Measurement.CLEARANCE):
-    return tuple(StopRequest(LinePoint(s, mm), kind) for s, mm in pairs)
-
-
-def tasks(world, **kw):
-    return [t for t in world.tasks.values() if all(getattr(t, k) == v for k, v in kw.items())]
-
-
-# -- accepted needs only ------------------------------------------------------------------------------
-
-
-def test_no_tasks_without_an_accepted_diagnostic_need(network):
-    sim = permissive(Simulation(network))
-    sim.step(5)
-    assert sim.snapshot.tasks == {} and sim.snapshot.needs == {}
-    agents.run_scripted_turn(sim)  # a proposal alone is not an accepted need
-    assert sim.snapshot.tasks == {} and sim.snapshot.needs == {}
+from grid_ops import needs
+from grid_ops.coordinator import Coordinator
+from grid_ops.geometry import LandingSite
+from grid_ops.proposals import ProposedStatus
+from grid_ops.routes import SortieRequest, apply_sorties, validate_sorties
+from grid_ops.sensing import (
+    AcceptedRequest,
+    ConductorScope,
+    CurrentRequest,
+    OutcomeSpec,
+    RequestStatus,
+    TaskStatusV2,
+)
+from grid_ops.world import (
+    LAND_S,
+    TAKEOFF_S,
+    GroundSample,
+    Land,
+    ScheduledStep,
+    Takeoff,
+    Transit,
+    advance_to,
+    leg_seconds,
+)
 
 
-def test_accepted_hypotheses_create_needs_that_state_their_causal_purpose(network):
-    sim = permissive(Simulation(network))
-    accept_startup(sim)
-    w = sim.snapshot
-    assert w.needs and w.tasks
-    for need in w.needs.values():
-        assert need.status is NeedStatus.ACTIVE
-        assert need.causal_uncertainty and need.alternatives_distinguished and need.result_effect
-        assert need.urgency in range(1, 6)  # copied from the manager's accepted hypothesis
-    for t in w.tasks.values():
-        assert t.status is TaskStatus.PENDING and t.assigned_drone_id is None
-        assert t.need_ids and all(n in w.needs for n in t.need_ids)  # association retained
-        assert t.purpose.startswith(("diagnostic", "confirmation", "repeat"))
-    assert w.hypotheses_version == 1
+def world():
+    return two_drone_world()
 
 
-def test_reservations_change_only_through_accepted_decisions(network):
-    sim = permissive(Simulation(network))
-    accept_startup(sim)
-    before = {t.id: t.status for t in sim.snapshot.tasks.values()}
-    sim.step(10)
-    assert {
-        t.id: t.status for t in sim.snapshot.tasks.values()
-    } == before  # refresh reserves nothing
-    # a sortie decision reserves a task by id
-    task = next(t for t in sim.snapshot.tasks.values() if t.kind == "clearance")
-    perch = sim._world.drones["DRONE_2"].state.perch
-    req = SortieRequest(
-        "DRONE_2", (StopRequest(task.point, task.kind, task.purpose, None, task.id),), perch
+def refresh(w, geo):
+    return needs.refresh(w, tiny_network(), geo)
+
+
+def request_only(w, rid, urgency=3):
+    """Register an active request without pre-creating its tasks, so refresh must compile."""
+    request = CurrentRequest(
+        id=rid,
+        hypothesis_ids=(),
+        rationale="r",
+        alternatives_distinguished=("a",),
+        expected_outcomes=(OutcomeSpec(description="o"),),
+        evidence_ids=(),
+        urgency=urgency,
+        source_revision="0",
+        replaces_request_ids=(),
+        target=ConductorScope(circuit_id="LINE_040/C1", phase="A", start_mm=0, end_mm=110_000),
     )
-    sim.submit(CommitSorties((req,), "operator")).result()
-    assert sim.snapshot.tasks[task.id].status is TaskStatus.RESERVED
-    sim.step(0.1)
-    assert sim.snapshot.tasks[task.id].status in (TaskStatus.RESERVED, TaskStatus.MEASURING)
-    assert sim.snapshot.tasks[task.id].assigned_drone_id == "DRONE_2"
+    w.requests[rid] = AcceptedRequest(rid, request, RequestStatus.ACTIVE, w.clock_s, "0")
+    return request
 
 
-# -- deterministic refresh without hypothesis change ----------------------------------------------------------
-
-
-def test_new_coverage_refreshes_tasks_even_though_hypotheses_are_unchanged(network):
-    sim = permissive(Simulation(network))
-    accept_startup(sim)
-    version = sim.snapshot.hypotheses_version
-    open_before = {
-        t.id
-        for t in tasks(sim.snapshot, status=TaskStatus.PENDING)
-        if t.point.segment_id == "LINE_064"
-    }
-    assert open_before
-    perch = sim._world.drones["DRONE_2"].state.perch
-    sim._apply(
-        CommitSorties(
-            (SortieRequest("DRONE_2", stops(("LINE_064", 9_000_000)), perch),), "operator"
-        )
-    )
-    sim.step(15)
-    w = sim.snapshot
-    assert w.hypotheses_version == version  # same meaning
-    cleared = [
-        t
-        for t in w.tasks.values()
-        if t.point.segment_id == "LINE_064"
-        and 8_800_000 < t.point.offset_mm < 9_500_000
-        and t.status is TaskStatus.PENDING
-        and t.kind == "clearance"
-    ]
-    assert cleared == []  # a qualified negative retired the sites it covers
-    assert any("LINE_064" in n for _, n in w.task_log)
-    # completed work and its reading stay in history
-    assert [t for t in w.tasks.values() if t.status is TaskStatus.COMPLETED]
-
-
-def test_repeating_a_refresh_is_idempotent(network):
-    sim = permissive(Simulation(network))
-    accept_startup(sim)
-    ids = sorted(sim.snapshot.tasks)
-    sim._refresh_tasks()
-    sim._refresh_tasks()
-    assert sorted(sim._world.tasks) == ids
-
-
-# -- confirmation, repeat, unavailable covariance ---------------------------------------------------------------
-
-
-def test_positive_evidence_creates_a_linked_confirmation_attempt(network):
-    sim = permissive(Simulation(network))
-    perch = sim._world.drones["DRONE_2"].state.perch
-    sim._apply(
-        CommitSorties(
-            (
-                SortieRequest(
-                    "DRONE_2", stops(("LINE_058", 28_000), ("LINE_064", 9_000_000)), perch
-                ),
-            ),
-            "operator",
-        )
-    )
-    sim.step(25)
-    agents.run_scripted_turn(sim)
-    pf = sim.snapshot.proposals[-1]
-    sim.submit(CommitDecision("D1", pf.id, pf.semantic_key, "operator")).result()
-    w = sim.snapshot
-    confirm = [t for t in w.tasks.values() if t.purpose.startswith("confirmation")]
-    assert confirm and all(t.repeat_of_reading_id == "R0001" for t in confirm)
-    assert all(t.status is TaskStatus.PENDING for t in confirm)
-    need = w.needs[confirm[0].need_ids[0]]
-    assert need.purpose == "confirmation" and need.repeat_of_reading_id == "R0001"
-
-
-# -- canonical groups and local identity ---------------------------------------------------------------------------
-
-
-def test_electrical_observations_share_one_group_and_local_sites_keep_exact_identity(network):
-    a, b = LinePoint("LINE_026", 100_000), LinePoint("LINE_026", 9_000_000)
-    assert group_id("current", a) == group_id("current", b) == "electrical:LINE_026:current"
-    assert group_id("clearance", a) != group_id("clearance", b)
-    assert "100000mm" in group_id("clearance", a)
-
-
-def test_healthy_benchmark_alone_activates_reconstruction_tasks(network):
-    sim = permissive(
-        Simulation(network, scenario=ScenarioConfig(ScenarioMode.HEALTHY_BENCHMARK, 7))
-    )
-    sim._refresh_tasks()
-    w = sim._world
-    h0 = [t for t in w.tasks.values() if t.purpose.startswith("reconstruction")]
-    # the nominal independent minimum is 28; work is staged so it fits under the attempt cap
-    assert len(h0) == MAX_RECONSTRUCTION_NEEDS < 28
-    assert len({t.group_id for t in h0}) == len(h0) and all(
-        t.group_id.startswith("electrical:") for t in h0
-    )
-    assert all(n.startswith("N-H0-") for t in h0 for n in t.need_ids)
-    # a real reading on one selected segment retires its need and cancels the unstarted attempt
-    task = (
-        next(t for t in h0 if t.point.segment_id == "LINE_026")
-        if any(t.point.segment_id == "LINE_026" for t in h0)
-        else h0[0]
-    )
-    seg = task.point.segment_id
-    drone = min(
-        w.drones.values(),
-        key=lambda d: (
-            estimation.__name__ and abs(d.position[0] - sim.geometry.position_of(task.point)[0])
+def run_one_attempt(w, geo, task_id, drone_id="DRONE_1"):
+    """Validate, apply and complete one contact attempt, publishing its reading."""
+    conductor = w.tasks[task_id].acquisition.conductor
+    landing = LandingSite(conductor.point, conductor.circuit_id)
+    pos = geo.position_of(conductor.point)
+    start = w.drones[drone_id].state.perch
+    start_pos = geo.position_of(start.point)
+    leg = leg_seconds(start_pos, pos, w.drones[drone_id].speed_km_per_min)
+    t0, t1, t2 = TAKEOFF_S, TAKEOFF_S + leg, TAKEOFF_S + leg + LAND_S
+    steps = (
+        ScheduledStep(0, 0, t0, Takeoff(start, start_pos)),
+        ScheduledStep(1, t0, t1, Transit(start_pos, pos)),
+        ScheduledStep(2, t1, t2, Land(landing, pos)),
+        ScheduledStep(
+            3,
+            t2,
+            t2 + 10,
+            GroundSample((w.tasks[task_id].acquisition,), landing, (task_id,), pos),
         ),
     )
-    perch = drone.state.perch
     req = SortieRequest(
-        drone.id, (StopRequest(task.point, task.kind, task.purpose, None, task.id),), perch
+        drone_id, steps, landing, w.revision, w.energy_model.revision, w.capabilities.revision
     )
-    try:
-        sim.submit(CommitSorties((req,), "operator")).result()
-    except Exception:
-        pytest.skip("nearest drone cannot reach the segment")
-    sim.step(40)
-    done = sim.snapshot
-    assert done.tasks[task.id].status is TaskStatus.COMPLETED
-    need = done.needs[f"N-H0-{seg}"]
-    assert need.status is NeedStatus.RETIRED
+    result = validate_sorties(w, geo, None, (req,))
+    assert result.ok, [str(r) for r in result.rejections]
+    physics = StubPhysics()
+    apply_sorties(w, physics, result.plans)
+    advance_to(w, physics, steps[-1].end_s)
+    return req
 
 
-def test_incident_flow_gaps_alone_create_no_task(network):
-    sim = permissive(Simulation(network))  # incident_demo
-    sim._refresh_tasks()
-    assert sim._world.tasks == {} and sim._world.needs == {}
-    assert estimation.observability(sim._estimation.model).independent_readings > 0  # gaps exist
+# -- accepted requests only ------------------------------------------------------------------------
 
 
-def test_unavailable_covariance_labels_options_without_information_gain(network):
-    sim = permissive(
-        Simulation(network, scenario=ScenarioConfig(ScenarioMode.HEALTHY_BENCHMARK, 7))
-    )
-    sim._estimation.estimate = estimation.EstimateUnavailable("injected")
-    sim._world.estimate = sim._estimation.estimate
-    sim._refresh_tasks()
-    labelled = [u for u in sim._world.unavailable_work if "no information gain" in u.reason]
-    assert labelled and all(u.need_id.startswith("N-H0-") for u in labelled)
-    assert all(not hasattr(t, "information_gain") for t in sim._world.tasks.values())
-
-
-# -- retirement --------------------------------------------------------------------------------------------------------
-
-
-def hypothesis(world, hid):
-    return dict(world.hypotheses[hid])
-
-
-def test_retired_needs_lose_unstarted_work_and_route_stops_but_shared_tasks_survive(network):
-    sim = permissive(Simulation(network))
-    accept_startup(sim)
-    w = sim._world
-    veg = [
-        t
-        for t in w.tasks.values()
-        if "N-H_VEG" in t.need_ids[0] and t.point.segment_id == "LINE_058"
-    ]
-    assert veg
-    # reserve one VEG task for DRONE_2 through the normal path, and keep another pending
-    target = veg[0]
-    perch = w.drones["DRONE_2"].state.perch
-    req = SortieRequest(
-        "DRONE_2", (StopRequest(target.point, target.kind, target.purpose, None, target.id),), perch
-    )
-    sim.submit(CommitSorties((req,), "operator")).result()
-    assert w.tasks[target.id].status in (TaskStatus.RESERVED, TaskStatus.MEASURING)
-    # a second active hypothesis independently justifies the same site
-    twin = hypothesis(w, "H_VEG") | {"id": "H_TWIN"}
-    w.hypotheses["H_TWIN"] = twin
-    sim._refresh_tasks()
-    assert (
-        set(w.tasks[target.id].need_ids)
-        >= {n for n in w.tasks[target.id].need_ids if "H_TWIN" in n}
-        != set()
-    )
-    # retire H_VEG only
-    w.hypotheses["H_VEG"] = hypothesis(w, "H_VEG") | {"lifecycle": "RETIRED"}
-    sim._refresh_tasks()
-    assert w.tasks[target.id].status is TaskStatus.RESERVED  # still justified by H_TWIN
-    assert all(
-        n.status is NeedStatus.RETIRED for k, n in w.needs.items() if k.startswith("N-H_VEG-")
-    )
-    # retire the twin as well: nothing justifies the reserved attempt, so it goes, and so does the stop
-    w.hypotheses["H_TWIN"] = twin | {"lifecycle": "RETIRED"}
-    sim._refresh_tasks()
-    assert (
-        w.tasks[target.id].status is TaskStatus.CANCELLED and "retired" in w.tasks[target.id].note
-    )
-    drone = w.drones["DRONE_2"]
-    assert all(s.task_id != target.id for s in drone.state.route.stops)
-
-
-def test_locked_measuring_attempt_finishes_even_if_its_need_retires(network):
-    sim = permissive(Simulation(network))
-    accept_startup(sim)
-    w = sim._world
-    t = next(t for t in w.tasks.values() if t.point.segment_id == "LINE_058")
-    perch = w.drones["DRONE_2"].state.perch
-    req = SortieRequest("DRONE_2", (StopRequest(t.point, t.kind, t.purpose, None, t.id),), perch)
-    sim.submit(CommitSorties((req,), "operator")).result()
-    sim.step(0.2)  # the drone is a few metres away: it arrives and the dwell begins
-    assert w.tasks[t.id].status is TaskStatus.MEASURING
-    for hid in list(w.hypotheses):
-        w.hypotheses[hid] = hypothesis(w, hid) | {"lifecycle": "RETIRED"}
-    sim._refresh_tasks()
-    assert w.tasks[t.id].status is TaskStatus.MEASURING
+def test_no_tasks_without_an_accepted_request():
+    sim = tiny_sim()
     sim.step(5)
-    assert sim.snapshot.tasks[t.id].status is TaskStatus.COMPLETED and sim.snapshot.readings
+    assert sim.snapshot.tasks == {} and sim.snapshot.requests == {}
+    Coordinator(sim, auto_accept=False).run_turn_now()  # a proposal alone is not accepted
+    w = sim.snapshot
+    assert w.requests == {} and w.tasks == {}
+    assert any(p.status is ProposedStatus.PROPOSED_NOT_ACCEPTED for p in w.proposals)
+
+
+def test_accepted_requests_compile_pending_tasks():
+    w, geo = world()
+    request_only(w, "REQ-1", urgency=4)
+    refresh(w, geo)
+    made = [t for t in w.tasks.values() if t.request_id == "REQ-1"]
+    assert made and all(t.status is TaskStatusV2.PENDING for t in made)
+    t = made[0]
+    assert t.assigned_drone_id is None and t.urgency == 4
+    assert t.alternative_group_id == "REQ-1"  # the request owns the alternative group
+    assert "compiled from request REQ-1" in t.note
+
+
+def test_refresh_is_idempotent_without_new_information():
+    w, geo = world()
+    contact_task(w, "T0001", site_at(w, "LINE_040", 0), "REQ-1")
+    refresh(w, geo)
+    ids = sorted(w.tasks)
+    refresh(w, geo)
+    refresh(w, geo)
+    assert sorted(w.tasks) == ids
+
+
+def test_an_answered_group_cancels_its_remaining_unstarted_attempts():
+    w, geo = world()
+    contact_task(w, "T0001", site_at(w, "LINE_040", 50_000), "REQ-1")
+    contact_task(w, "T0002", site_at(w, "LINE_040", 100_000), "REQ-1")
+    run_one_attempt(w, geo, "T0001")
+    assert w.tasks["T0001"].status is TaskStatusV2.COMPLETED and w.tasks["T0001"].reading_id
+    notes, _unavailable = refresh(w, geo)
+    assert w.tasks["T0002"].status is TaskStatusV2.CANCELLED
+    assert any("already answered" in n for n in notes)
+    assert w.tasks["T0001"].status is TaskStatusV2.COMPLETED  # completed work and readings stay
+
+
+def test_a_locked_attempt_survives_refresh_and_locks_its_group():
+    w, geo = world()
+    contact_task(w, "T0001", site_at(w, "LINE_040", 0), "REQ-1")
+    contact_task(w, "T0002", site_at(w, "LINE_040", 50_000), "REQ-1")
+    # a reservation is applied through a validated itinerary (test_routes_v2); fake the lock
+    w.set_task(replace(w.tasks["T0001"], status=TaskStatusV2.RESERVED, assigned_drone_id="DRONE_1"))
+    notes, _unavailable = refresh(w, geo)
+    assert w.tasks["T0001"].status is TaskStatusV2.RESERVED
+    assert w.tasks["T0002"].status is TaskStatusV2.CANCELLED  # the group is already being served
+    assert any("T0002" in n for n in notes)
+
+
+def test_completed_attempts_stay_completed_through_refresh():
+    w, geo = world()
+    seed_handshakes(w)
+    contact_task(w, "T0001", site_at(w, "LINE_040", 50_000), "REQ-1")
+    run_one_attempt(w, geo, "T0001")
+    before = dict(w.readings)
+    refresh(w, geo)
+    assert w.tasks["T0001"].status is TaskStatusV2.COMPLETED
+    assert w.readings == before
+
+
+def test_retired_requests_lose_unstarted_work_but_locked_attempts_finish():
+    w, geo = world()
+    contact_task(w, "T0001", site_at(w, "LINE_040", 0), "REQ-1")
+    # a second unstarted attempt of the same group, without re-accepting the request
+    from fixtures_three_method import contact
+    from grid_ops.sensing import MeasurementTaskV2
+
+    w.set_task(
+        MeasurementTaskV2(
+            "T0002", "REQ-1", contact(site_at(w, "LINE_040", 50_000)), "REQ-1",
+            TaskStatusV2.PENDING, 3,
+        )
+    )
+    w.set_task(replace(w.tasks["T0001"], status=TaskStatusV2.RESERVED))
+    w.requests["REQ-1"] = replace(
+        w.requests["REQ-1"], status=RequestStatus.RETIRED, retired_reason="stand down"
+    )
+    notes, _unavailable = refresh(w, geo)
+    assert w.tasks["T0001"].status is TaskStatusV2.RESERVED  # the drone is already flying it
+    assert w.tasks["T0002"].status is TaskStatusV2.CANCELLED
+    assert any("retired" in n for n in notes)
+
+
+def test_rejected_requests_are_reported_as_explicitly_unavailable_work():
+    from grid_ops.sensing import CorridorSpan, LidarRequest
+
+    w, geo = world()
+    request = LidarRequest(
+        id="REQ-BAD",
+        hypothesis_ids=(),
+        rationale="r",
+        alternatives_distinguished=("a",),
+        expected_outcomes=(OutcomeSpec(description="o"),),
+        evidence_ids=(),
+        urgency=2,
+        source_revision="0",
+        replaces_request_ids=(),
+        target=CorridorSpan(segment_id="LINE_999", start_mm=0, end_mm=110_000),
+    )
+    w.requests["REQ-BAD"] = AcceptedRequest("REQ-BAD", request, RequestStatus.ACTIVE, 0, "0")
+    notes, unavailable = refresh(w, geo)
+    assert w.tasks == {}  # nothing was compiled for a request that cannot run
+    assert [u.request_id for u in unavailable] == ["REQ-BAD"] and all(u.reason for u in unavailable)
+    assert notes == []
+
+
+def test_the_open_task_cap_is_reported_not_hidden():
+    w, geo = world()
+    for i in range(needs.MAX_OPEN_TASKS):
+        request_only(w, f"REQ-{i:02d}")
+    request_only(w, "REQ-OVER")
+    _notes, unavailable = refresh(w, geo)
+    assert len([t for t in w.tasks.values() if t.status is TaskStatusV2.PENDING]) <= (
+        needs.MAX_OPEN_TASKS
+    )
+    assert any(u.request_id == "REQ-OVER" and "cap" in u.reason for u in unavailable)
+
+
+def test_refresh_never_invents_a_method():
+    w, geo = world()
+    refresh(w, geo)  # no requests: nothing appears at all
+    assert w.tasks == {} and w.unavailable_work == []
+    contact_task(w, "T0001", site_at(w, "LINE_040", 0), "REQ-1")
+    refresh(w, geo)
+    assert {t.acquisition.method.value for t in w.tasks.values()} == {"contact_current"}

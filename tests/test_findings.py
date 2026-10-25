@@ -1,9 +1,10 @@
-"""Ticket 06: coverage and scoped condition findings, driven through the real simulation."""
+"""Coverage and scoped findings from LiDAR readings (the only local method)."""
 
 from __future__ import annotations
 
 import pytest
-from conftest import permissive
+from fixtures_three_method import two_drone_world
+from helpers_p2 import inject_lidar, tiny_sim
 
 from grid_ops import assessment
 from grid_ops.assessment import (
@@ -12,248 +13,117 @@ from grid_ops.assessment import (
     Verdict,
     assess_scope,
     coverage_report,
-    detection_probability,
+    interpret_lidar,
 )
-from grid_ops.geometry import MM_PER_KM, LandingSite, LinePoint, union_length_mm
-from grid_ops.grid import load_network
-from grid_ops.knowledge import LandingPolicy, assess_landing
-from grid_ops.routes import SortieRequest, StopRequest
-from grid_ops.scenario import DETECTION_REQUIREMENT
-from grid_ops.sim import CommitSorties, Simulation
-from grid_ops.world import Measurement, Ready
+from grid_ops.geometry import Interval
+from grid_ops.knowledge import assess_landing, assess_perch
+from grid_ops.manager_tools import build_toolbox
 
 
-@pytest.fixture(scope="module")
-def network():
-    return load_network()
+def world():
+    return two_drone_world()
 
 
-def fresh(network):
-    return permissive(Simulation(network))
+def reading(
+    w, geo, rid, segment, clearance_m, start=0, end=110_000, missing=(), inspected=None
+):
+    from helpers_p2 import lidar_reading
 
-
-def pt(seg, km):
-    return LinePoint(seg, round(km * MM_PER_KM))
-
-
-def fly(sim, drone, stops, minutes=29):
-    """Commit one sortie ending back on the drone's own perch, then run the clock."""
-    perch = sim._world.drones[drone].state.perch
-    reqs = tuple(StopRequest(p, k) for p, k in stops)
-    sim._apply(CommitSorties((SortieRequest(drone, reqs, perch),), "operator"))
-    sim.step(minutes)
-    return sim.snapshot
-
-
-def reading_at(w, segment, offset_mm=None, kind=None):
-    for r in w.readings.values():
-        same_kind = kind is None or r.kind == kind
-        if r.point.segment_id == segment and same_kind and offset_mm in (None, r.point.offset_mm):
-            return r
-    raise AssertionError("no such reading")
-
-
-def veg_sim(network):
-    sim = fresh(network)
-    w = fly(
-        sim,
-        "DRONE_2",
-        [
-            (pt("LINE_058", 0.03), Measurement.CLEARANCE),
-            (pt("LINE_064", 9.0), Measurement.CLEARANCE),
-            (pt("LINE_064", 9.4), Measurement.CLEARANCE),
-            (pt("LINE_064", 8.3), Measurement.CLEARANCE),
-        ],
+    r = lidar_reading(
+        geo, rid, segment, start, end, clearance_m, missing=missing, inspected=inspected
     )
-    return sim, w
+    w.readings[rid] = r
+    assessment.ingest_lidar(w, r)
+    return r
 
 
-# -- payloads and coverage -----------------------------------------------------------------------
-
-
-def test_readings_retain_numbers_visibility_conditions_and_epoch(network):
-    _, w = veg_sim(network)
-    r = reading_at(w, "LINE_058")
-    assert dict(r.payload)["clearance_m"] == pytest.approx(0.4, abs=0.2)
-    assert r.operating_epoch == "E0"
-    assert dict(r.conditions)["visible_fraction"] == 1.0
-    assert r.inspected and r.id and r.sensor_model_revision
-
-
-def test_vegetation_fixture_gives_a_detected_hazard_that_blocks_landing(network):
-    sim, w = veg_sim(network)
-    r = reading_at(w, "LINE_058")
-    interp = w.interpretations[r.id]
+def test_below_threshold_clearance_is_a_detected_hazard():
+    w, geo = world()
+    r = reading(w, geo, "R0001", "LINE_040", 0.4)
+    interp = interpret_lidar(r)
     assert interp.outcome is Outcome.POSITIVE
-    assert [h.segment_id for h in w.hazards] == ["LINE_058"]
+    assert interp.value == pytest.approx(0.4)
+    assert [h.segment_id for h in w.hazards] == ["LINE_040"]
     hz = w.hazards[0]
     assert hz.verdict == "FAIL" and hz.evidence_ids == (r.id,)
-    # a known hazard forbids landing on its interval, whatever the policy
-    site = LandingSite(pt("LINE_058", 0.03), "LINE_058/C1")
-    sim._world.landing_policy = LandingPolicy(allow_uncertain=True)
-    verdict = assess_landing(sim._world, site, sim._world.clock_s + 60)
+    assert "0.5" in " ".join(hz.assumptions)  # the declared threshold is on the record
+    cov = w.coverage[0]
+    assert cov.reading_id == r.id and cov.inspected == (Interval("LINE_040", 0, 110_000),)
+
+
+def test_a_known_hazard_forbids_landing_on_its_interval_only():
+    w, geo = world()
+    reading(w, geo, "R0001", "LINE_040", 0.4)
+    from grid_ops.geometry import LandingSite, LinePoint
+
+    blocked = LandingSite(LinePoint("LINE_040", 50_000), "LINE_040/C1")
+    verdict = assess_perch(w, blocked)
     assert not verdict.eligible and "hazard" in " ".join(verdict.reasons)
+    assert not assess_landing(w, blocked, w.clock_s + 60).eligible
+    free = LandingSite(LinePoint("LINE_025", 0), "LINE_025/C1")
+    assert assess_perch(w, free).eligible  # hazards are interval-scoped, not line-scoped
 
 
-def test_qualified_negative_clears_only_the_inspected_scope(network):
-    _, w = veg_sim(network)
-    r = reading_at(w, "LINE_064", 9_000_000)
-    interp = w.interpretations[r.id]
-    assert interp.outcome is Outcome.QUALIFIED_NEGATIVE
-    assert interp.detection_probability >= DETECTION_REQUIREMENT
-    # footprint 8.5-9.5 km minus the 7.8-8.8 km canopy leaves 8.8-9.5 km inspected
-    assert [(i.start_mm, i.end_mm) for i in interp.inspected] == [(8_800_000, 9_500_000)]
-    inside = assess_scope(w, SpanRef("LINE_064", 8_800_000, 9_500_000), "vegetation_clearance")
-    assert inside.verdict is Verdict.PASS and inside.evidence_ids
-    assert "do not prove mechanical integrity" in inside.explanation
-    wider = assess_scope(w, SpanRef("LINE_064", 8_000_000, 9_500_000), "vegetation_clearance")
-    assert wider.verdict is Verdict.INDETERMINATE  # does not clear what was not inspected
-    assert wider.untested  # the occluded canopy interval is explicit
-    whole = assess_scope(
-        w, SpanRef("LINE_064", 0, w.segment_lengths["LINE_064"]), "vegetation_clearance"
-    )
-    assert (
-        whole.verdict is Verdict.INDETERMINATE and whole.untested
-    )  # regional alternative preserved
-
-
-def test_overlapping_inspections_do_not_multiply_length(network):
-    _, w = veg_sim(network)
-    scope = SpanRef("LINE_064", 8_000_000, 10_000_000)
-    rep = coverage_report(w, scope, "clearance")
-    nominal_sum = sum(
-        c.nominal.end_mm - c.nominal.start_mm for c in w.coverage if c.segment_id == "LINE_064"
-    )
-    inspected_sum = sum(
-        i.end_mm - i.start_mm for c in w.coverage if c.segment_id == "LINE_064" for i in c.inspected
-    )
-    assert rep.inspected_mm == union_length_mm(list(rep.inspected))
-    assert rep.inspected_mm < inspected_sum <= nominal_sum  # 9.0 and 9.4 km overlap
-    assert rep.inspected_mm == 1_100_000  # 8.8-9.9 km, counted once
-    assert rep.stop_count == 3
-
-
-def test_occluded_and_uninspected_intervals_stay_visible(network):
-    _, w = veg_sim(network)
-    r = reading_at(w, "LINE_064", 8_300_000)
-    interp = w.interpretations[r.id]
-    assert interp.outcome is Outcome.INCONCLUSIVE and "not visible" in interp.reasons[0]
-    rep = coverage_report(w, SpanRef("LINE_064", 7_000_000, 10_000_000), "clearance")
-    assert [(i.start_mm, i.end_mm) for i in rep.occluded] == [(7_800_000, 8_800_000)]
-    assert (7_000_000, 8_800_000) in {(i.start_mm, i.end_mm) for i in rep.uninspected}
-    assert rep.scope_mm == 3_000_000
-
-
-# -- thermal ---------------------------------------------------------------------------------------
-
-
-def joint_mid(sim):
-    a = next(a for a in sim._truth.local.anomalies if a.kind == "hot_joint")
-    return a, (a.interval.start_mm + a.interval.end_mm) // 2
-
-
-def test_low_load_thermal_negative_is_inconclusive(network):
-    sim = fresh(network)
-    _, mid = joint_mid(sim)
-    w = fly(sim, "DRONE_1", [(LinePoint("LINE_029", mid), Measurement.CONDUCTOR_TEMP)])
-    r = reading_at(w, "LINE_029")
-    assert r.clock_s < 20 * 60  # inside the light-loading window
-    interp = w.interpretations[r.id]
-    assert interp.outcome is Outcome.INCONCLUSIVE and "excitation" in interp.reasons[0]
-    assert interp.detection_probability == 0.0
+def test_above_threshold_is_inconclusive_and_never_clears_the_scope():
+    w, geo = world()
+    r = reading(w, geo, "R0001", "LINE_040", 2.0)
+    assert w.interpretations[r.id].outcome is Outcome.INCONCLUSIVE
     assert w.hazards == []
-    a = assess_scope(w, SpanRef("LINE_029", 0, w.segment_lengths["LINE_029"]), "hot_joint")
-    assert a.verdict is Verdict.INDETERMINATE and a.inconclusive
+    a = assess_scope(w, SpanRef("LINE_040", 0, 110_000), "vegetation_clearance")
+    assert a.verdict is Verdict.INDETERMINATE
+    assert a.inconclusive == (Interval("LINE_040", 0, 110_000),)  # inspected but not conclusive
+    assert a.untested == ()  # nothing was uninspected; nothing is cleared either
+    assert "never a clear" in a.explanation
 
 
-def test_loaded_thermal_positive_and_clean_negative(network):
-    sim = fresh(network)
-    anomaly, mid = joint_mid(sim)
-    sim.step(21)  # past the light-loading window
-    w = fly(
-        sim,
-        "DRONE_1",
-        [
-            (LinePoint("LINE_029", mid), Measurement.CONDUCTOR_TEMP),
-            (LinePoint("LINE_029", 200_000), Measurement.CONDUCTOR_TEMP),
-        ],
-        minutes=15,
-    )
-    hot = reading_at(w, "LINE_029", mid)
-    clean = reading_at(w, "LINE_029", 200_000)
-    assert w.interpretations[hot.id].outcome is Outcome.POSITIVE
-    assert w.interpretations[clean.id].outcome is Outcome.QUALIFIED_NEGATIVE
-    assert assess_scope(w, SpanRef("LINE_029", 0, 700_000), "hot_joint").verdict is Verdict.PASS
-    scope = SpanRef("LINE_029", 0, 1_200_000)
-    a = assess_scope(w, scope, "hot_joint")
-    assert a.verdict is Verdict.INDETERMINATE  # partly covered: the rest stays open
-    joint_scope = SpanRef("LINE_029", anomaly.interval.start_mm, anomaly.interval.end_mm)
-    assert assess_scope(w, joint_scope, "hot_joint").verdict is Verdict.FAIL
-    # the hazard blocks landing exactly on the failed interval only
-    assert any(h.segment_id == "LINE_029" for h in w.hazards)
-
-
-# -- motion ---------------------------------------------------------------------------------------
-
-
-def test_motion_outside_a_gust_is_inconclusive_and_inside_is_qualified(network):
-    quiet = fresh(network)
-    anomaly = next(a for a in quiet._truth.local.anomalies if a.kind == "motion")
-    mid = (anomaly.interval.start_mm + anomaly.interval.end_mm) // 2
-    w = fly(quiet, "DRONE_5", [(LinePoint("LINE_054", mid), Measurement.MOTION)])
-    r = reading_at(w, "LINE_054")
-    assert r.clock_s < 20 * 60
-    interp = w.interpretations[r.id]
-    assert interp.outcome is Outcome.INCONCLUSIVE and "gust" in interp.reasons[0]
-    assert w.hazards == []
-
-    gusty = fresh(network)
-    gusty.step(25)  # inside the 20-50 min gust window
-    w = fly(
-        gusty,
-        "DRONE_5",
-        [
-            (LinePoint("LINE_054", mid), Measurement.MOTION),
-            (LinePoint("LINE_054", 3_000_000), Measurement.MOTION),
-        ],
-        minutes=20,
-    )
-    pos = reading_at(w, "LINE_054", mid)
-    neg = reading_at(w, "LINE_054", 3_000_000)
-    assert w.interpretations[pos.id].outcome is Outcome.POSITIVE
-    assert w.interpretations[neg.id].outcome is Outcome.QUALIFIED_NEGATIVE
-    span = SpanRef("LINE_054", 2_500_000, 3_500_000)
-    assert assess_scope(w, span, "conductor_motion").verdict is Verdict.PASS
-
-
-# -- scope and support ------------------------------------------------------------------------
-
-
-def test_unsupported_conditions_are_not_cleared(network):
-    _, w = veg_sim(network)
-    a = assess_scope(w, SpanRef("LINE_064", 0, 1_000_000), "ice_accretion")
+def test_unsupported_conditions_are_not_cleared():
+    w, geo = world()
+    reading(w, geo, "R0001", "LINE_040", 2.0)
+    a = assess_scope(w, SpanRef("LINE_040", 0, 110_000), "ice_accretion")
     assert a.verdict is Verdict.NOT_SUPPORTED and a.untested
+    assert "can test" in a.explanation
 
 
-def test_detection_requirement_gates_qualified_negatives():
-    full = {"visible_fraction": 1.0}
-    assert detection_probability("clearance", full) >= DETECTION_REQUIREMENT
-    assert detection_probability("clearance", {"visible_fraction": 0.0}) == 0.0
-    assert detection_probability("conductor_temp", {**full, "excitation_current_a": 10}) == 0.0
-    assert detection_probability("conductor_temp", {**full, "excitation_current_a": 40}) >= 0.95
-    assert detection_probability("motion", {**full, "qualifying_gust": 0.0}) == 0.0
-    assert detection_probability("motion", {**full, "qualifying_gust": 1.0}) >= 0.95
-
-
-def test_findings_never_claim_causation(network):
-    _, w = veg_sim(network)
+def test_findings_never_claim_causation():
+    w, geo = world()
+    reading(w, geo, "R0001", "LINE_040", 0.4)
+    reading(w, geo, "R0002", "LINE_025", 2.0)
     for a in assessment.segment_assessments(w):
         assert "do not show this condition caused the outage" in a.explanation
 
 
-def test_ready_state_unchanged_by_local_findings(network):
-    _sim, w = veg_sim(network)
-    assert isinstance(
-        w.drones["DRONE_2"].state, __import__("grid_ops.world", fromlist=["Charging"]).Charging
+def test_overlapping_inspections_count_their_union_once():
+    w, geo = world()
+    reading(w, geo, "R0001", "LINE_040", 2.0, start=0, end=110_000)
+    reading(w, geo, "R0002", "LINE_040", 2.0, start=50_000, end=110_000)
+    rep = coverage_report(w, SpanRef("LINE_040", 0, 110_000))
+    assert rep.inspected_mm == 110_000  # the overlap is counted once
+    assert rep.stop_count == 2
+    assert rep.scope_mm == 110_000
+
+
+def test_missing_extent_stays_explicitly_uninspected():
+    w, geo = world()
+    iv = Interval("LINE_040", 0, 110_000)
+    r = reading(
+        w, geo, "R0001", "LINE_040", 2.0,
+        inspected=(Interval("LINE_040", 0, 40_000),),
+        missing=(Interval("LINE_040", 40_000, 110_000),),
     )
-    assert isinstance(w.drones["DRONE_3"].state, Ready)
+    assert w.interpretations[r.id].inspected == (Interval("LINE_040", 0, 40_000),)
+    rep = coverage_report(w, SpanRef("LINE_040", 0, 110_000))
+    assert (40_000, 110_000) in {(i.start_mm, i.end_mm) for i in rep.uninspected}
+    assert rep.inspected_mm == 40_000
+
+
+def test_published_readings_reach_the_public_surfaces_with_no_truth_leak():
+    sim = tiny_sim()
+    inject_lidar(sim, "R0001", "LINE_040", 0, 110_000, 0.4)
+    sim.step(0)
+    w = sim.snapshot
+    assert w.readings and w.hazards and w.interpretations
+    tb = build_toolbox(w, sim.network, sim.circuits)
+    text = tb.get_reading("R0001")
+    assert "clearance_m" in text and "lidar" in text
+    for secret in ("episode_seed", "noise_seed", "manifest", "energized"):
+        assert secret not in text

@@ -154,6 +154,10 @@ def validate_sorties(
             occupancy.setdefault(st.itinerary.final_perch, []).append(
                 (st.itinerary.end_s, 10**12, d.id)
             )
+    incumbent_perch: dict[str, LandingSite | None] = {
+        d.id: (d.state.itinerary.final_perch if isinstance(d.state, Executing) else None)
+        for d in world.drones.values()
+    }
 
     for req in requests:
         reject = lambda code, detail, drone_id=req.drone_id: rejections.append(  # noqa: E731
@@ -186,6 +190,15 @@ def validate_sorties(
             reject("drone_unavailable", started)
             continue
         start_s, airborne, current_site, mode = started
+        if (
+            incumbent_perch.get(req.drone_id) is not None
+            and req.final_perch != incumbent_perch[req.drone_id]
+        ):
+            # this batch replaces the drone's itinerary: its incumbent perch claim lapses
+            occupancy[incumbent_perch[req.drone_id]] = [
+                (s, e, d) for (s, e, d) in occupancy.get(incumbent_perch[req.drone_id], [])
+                if d != req.drone_id
+            ]
         steps = req.steps
         if not steps:
             reject("empty_itinerary", "an itinerary must end with the drone perched")

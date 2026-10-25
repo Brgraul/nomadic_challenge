@@ -1,4 +1,10 @@
-"""Ticket 09: read-only pinned manager tools and the evidence-linked proposal contract."""
+"""Ticket 09: read-only pinned manager tools and the evidence-linked proposal contract.
+
+Measured evidence is built by injecting LiDAR readings into a live Simulation (helpers_p2), so
+the tests exercise the proposal contract without routing drones: citation completeness, tied and
+contrary readings, unsupported numbers, independent recommendation checks and the rejected-
+proposal trail.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +14,10 @@ from pathlib import Path
 
 import pytest
 from conftest import permissive
+from helpers_p2 import inject_lidar
 from pydantic import ValidationError
 
-from grid_ops import agents, proposals, scripted_manager
-from grid_ops.geometry import LinePoint
+from grid_ops import agents, coordinator, proposals, scripted_manager
 from grid_ops.grid import load_network
 from grid_ops.hypotheses import (
     Assessment,
@@ -23,9 +29,7 @@ from grid_ops.hypotheses import (
 )
 from grid_ops.manager_tools import Toolbox, build_toolbox
 from grid_ops.proposals import ProposedStatus, validate
-from grid_ops.routes import SortieRequest, StopRequest
-from grid_ops.sim import CommitSorties, SetLandingPolicy, Simulation
-from grid_ops.world import Measurement
+from grid_ops.sim import RecordProposal, SetLandingPolicy, Simulation
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "grid_ops"
 
@@ -40,16 +44,10 @@ def startup_sim(network):
 
 
 def measured_sim(network):
-    """DRONE_2 reads LINE_058 (vegetation) and LINE_064 (clean) clearance; real readings."""
+    """DRONE_2's two lidar readings, injected: LINE_058 vegetation hazard, LINE_064 clean."""
     sim = permissive(Simulation(network))
-    perch = sim._world.drones["DRONE_2"].state.perch
-    stops = tuple(
-        StopRequest(LinePoint(seg, mm), Measurement.CLEARANCE)
-        for seg, mm in (("LINE_058", 28_000), ("LINE_064", 9_000_000))
-    )
-    sim._apply(CommitSorties((SortieRequest("DRONE_2", stops, perch),), "operator"))
-    sim.step(25)
-    assert len(sim.snapshot.readings) == 2
+    inject_lidar(sim, "R0001", "LINE_058", 0, sim.geometry.length_mm("LINE_058"), 0.3)
+    inject_lidar(sim, "R0002", "LINE_064", 8_950_000, 9_050_000, 2.0)
     return sim
 
 
@@ -57,7 +55,25 @@ def toolbox(sim) -> Toolbox:
     return build_toolbox(sim.snapshot, sim.network, sim.circuits)
 
 
-# -- read-only and pinned ---------------------------------------------------------------------------
+def record(sim, out, *, status=ProposedStatus.PROPOSED_NOT_ACCEPTED, note="test proposal"):
+    key = coordinator.decisions_semantic_key(sim.snapshot, out)
+    return sim.submit(
+        RecordProposal("manager-scripted", sim.snapshot.revision, out, status, note, key)
+    ).result()
+
+
+def good_output(sim):
+    tb = toolbox(sim)
+    return scripted_manager.measurement_proposal(tb, agents.assessment_trigger_ids(tb))
+
+
+def with_revision(output: ManagerOutput, **changes) -> ManagerOutput:
+    out = copy.deepcopy(output)
+    out.revisions[0] = out.revisions[0].model_copy(update=changes)
+    return out
+
+
+# -- read-only and pinned -----------------------------------------------------------------------------------------------
 
 
 def test_tools_are_read_only_and_pinned_to_an_immutable_snapshot(network):
@@ -112,13 +128,15 @@ def test_pinned_snapshot_is_a_copy_not_a_handle(network):
     assert "LINE_999" not in sim._world.known_switching
 
 
-# -- startup ---------------------------------------------------------------------------------------------
+# -- startup -------------------------------------------------------------------------------------------------------------
 
 
 def test_startup_proposal_cites_reports_and_states_no_measurements(network):
     sim = startup_sim(network)
-    turn = agents.run_scripted_turn(sim)
+    tb = toolbox(sim)
+    turn = agents.run_scripted_turn(tb)
     assert turn.errors == []
+    record(sim, turn.output)
     pf = sim.snapshot.proposals[0]
     assert pf.status is ProposedStatus.PROPOSED_NOT_ACCEPTED and pf.author == "manager-scripted"
     assert pf.snapshot_revision == sim.snapshot.revision
@@ -146,42 +164,32 @@ def test_urgency_and_assessment_are_separate_fields():
         SpanModel(segment_id="L", start_km=2, end_km=1)
 
 
-# -- measurement-triggered --------------------------------------------------------------------------------
+# -- measurement-triggered -----------------------------------------------------------------------------------------------
 
 
-def test_measurement_revision_cites_triggers_every_latest_tied_reading_and_contrary_evidence(
-    network,
-):
+def test_measurement_revision_cites_triggers_every_latest_tied_reading_and_the_hazard(network):
     sim = measured_sim(network)
-    turn = agents.run_scripted_turn(sim)
+    tb = toolbox(sim)
+    turn = agents.run_scripted_turn(tb, agents.assessment_trigger_ids(tb))
     assert turn.errors == [], turn.errors
     veg = next(r for r in turn.output.revisions if r.hypothesis_id == "H_VEG")
     assert veg.trigger_kind == "measurement" and veg.trigger_event_ids
     assert {"R0001", "R0002"} == set(veg.latest_measurement_ids)
     assert veg.after.assessment is Assessment.SUPPORTED and veg.after.priority == 5
     cited = {v.reading_id: v for v in veg.cited_values}
-    assert cited["R0001"].unit == "m" and "LINE_058" in cited["R0001"].location
-    assert "visible_fraction" in cited["R0001"].conditions
-    assert veg.contrary_evidence_ids == ["R0002"]  # the clean reading is contrary, and cited
+    assert cited["R0001"].quantity == "clearance_m" and cited["R0001"].unit == "m"
+    assert cited["R0001"].location == "lidar inspected intervals"
+    assert "visibility" in cited["R0001"].conditions
+    assert veg.contrary_evidence_ids == []  # an above-threshold reading is inconclusive, not contrary
     assert "does not show the condition caused the outage" in veg.finding_summary
     rec = turn.output.recommendations[0]
-    assert rec.scope is not None and rec.urgency == 5 and rec.evidence_ids[0].startswith("HZ")
+    assert rec.scope is not None and rec.urgency == 5 and rec.evidence_ids[0].startswith("R")
+    assert "HZ001" in sim.snapshot.hazards[0].id
+    record(sim, turn.output)
     assert sim.snapshot.proposals[-1].status is ProposedStatus.PROPOSED_NOT_ACCEPTED
 
 
-# -- structured validation rejects bad output ---------------------------------------------------------------
-
-
-def good_output(sim):
-    return scripted_manager.measurement_proposal(
-        toolbox(sim), ["EVT0001"] if False else agents.trigger_events(toolbox(sim))
-    )
-
-
-def with_revision(output: ManagerOutput, **changes) -> ManagerOutput:
-    out = copy.deepcopy(output)
-    out.revisions[0] = out.revisions[0].model_copy(update=changes)
-    return out
+# -- structured validation rejects bad output ----------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -221,15 +229,13 @@ def test_validation_rejects(measured, changes, needle):
     assert any(needle in e for e in errors), (needle, errors)
 
 
-def test_missing_latest_measurement_and_contrary_evidence_are_rejected(measured):
+def test_omitted_latest_measurements_and_unsupported_cited_values_are_rejected(measured):
     sim, out = measured
     veg = out.revisions[0]
     short = with_revision(out, latest_measurement_ids=["R0001"])
     assert any(
         "omits the latest tied measurements ['R0002']" in e for e in validate(short, toolbox(sim))
     )
-    no_contrary = with_revision(out, contrary_evidence_ids=[])
-    assert any("contrary evidence ['R0002']" in e for e in validate(no_contrary, toolbox(sim)))
     nov = with_revision(out, cited_values=[v for v in veg.cited_values if v.reading_id != "R0002"])
     assert any(
         "no cited value/unit/location/conditions for R0002" in e
@@ -292,10 +298,17 @@ def test_recommendations_are_independently_checked(measured):
         bad = copy.deepcopy(out)
         bad.recommendations[0] = rec.model_copy(update=changes)
         assert any(needle in e for e in validate(bad, tb)), (changes, validate(bad, tb))
-    repair = rec.model_copy(update={"action_kind": "repair"})
+    # the detected hazard itself does justify a scoped repair over its own interval
+    repair = rec.model_copy(
+        update={
+            "action_kind": "repair",
+            "evidence_ids": ["HZ001"],
+            "scope": SpanModel(segment_id="LINE_058", start_km=0.0, end_km=0.058),
+        }
+    )
     ok = copy.deepcopy(out)
     ok.recommendations[0] = repair
-    assert validate(ok, tb) == []  # a detected hazard over the scope does justify it
+    assert validate(ok, tb) == []
     clean = RecommendationModel(
         id="X",
         action_kind="repair",
@@ -323,47 +336,27 @@ def test_unchanged_hypotheses_and_before_values(measured):
     assert any("before-values do not match" in e for e in validate(stale, tb))
 
 
-def test_electrical_candidates_must_be_tested_first_and_tests_are_isolated(network):
-    sim = measured_sim(network)
-    tb = toolbox(sim)
-    out = good_output(sim)
-    untested = with_revision(
-        out,
-        update_reason="Candidate: LINE_041 is out of service per the topology reading.",
-        change_kinds=["creation", "assessment"],
-    )
-    assert any("must cite a tested diagnostic" in e for e in validate(untested, tb))
-    before = copy.deepcopy(sim.snapshot)
-    result = tb.test_electrical_candidate(["LINE_041"])
-    assert "DX-r" in result and "candidate" in result
-    diag_id = next(iter(tb.diagnostics))
-    tested = with_revision(
-        out,
-        update_reason="Candidate: LINE_041 is out of service per the topology reading.",
-        change_kinds=["creation", "assessment"],
-        diagnostic_ids=[diag_id],
-    )
-    assert validate(tested, tb) == []
-    assert tb.diagnostics[diag_id].candidate_out_of_service == ("LINE_041",)
-    assert sim.snapshot == before  # testing a candidate changes nothing outside the toolbox
-    # with too little redundancy the candidates are indistinguishable, and the tool says so
-    assert "indistinguishable" in tb.test_electrical_candidate(["LINE_042"]) or "chi2" in result
+# -- the rejected-proposal trail -----------------------------------------------------------------------------------------
 
 
 def test_rejected_proposals_are_retained_with_their_errors(network):
     sim = startup_sim(network)
     tb = toolbox(sim)
     bad = with_revision(scripted_manager.startup_proposal(tb), update_reason="")
-    turn = agents._record(sim, tb, bad, "manager-scripted", [])
+    errs = validate(bad, tb)
+    assert any("missing update_reason" in e for e in errs)
+    record(sim, bad, status=ProposedStatus.REJECTED, note="; ".join(errs))
     pf = sim.snapshot.proposals[-1]
-    assert turn.errors and pf.status is ProposedStatus.REJECTED
+    assert pf.status is ProposedStatus.REJECTED
     assert "missing update_reason" in pf.history[0][1]
     assert sim.snapshot.hypotheses == {}
 
 
 def test_operator_view_data_for_the_console_exists(network):
     sim = startup_sim(network)
-    agents.run_scripted_turn(sim)
+    tb = toolbox(sim)
+    turn = agents.run_scripted_turn(tb)
+    record(sim, turn.output)
     assert proposals.ProposedStatus.PROPOSED_NOT_ACCEPTED in {
         p.status for p in sim.snapshot.proposals
     }

@@ -98,6 +98,9 @@ def two_drone_world() -> tuple[World, Geometry]:
     w.circuits_by_segment = {
         sid: (fake_circuit(sid),) for sid in net.segments
     }
+    from grid_ops import knowledge as _knowledge
+
+    _knowledge.recompute(w)
     return w, geo
 
 

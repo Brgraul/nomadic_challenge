@@ -563,7 +563,10 @@ def _expire_evidence(world: World, events: list[Event]) -> bool:
 
 def _commit_energy(world: World, drone: Drone, step: ScheduledStep) -> None:
     op = step.operation
-    kind = OPERATION_KIND[type(op)]
+    if isinstance(op, Wait):
+        kind = OperationKind.WAIT_AIRBORNE if op.airborne else OperationKind.WAIT_PERCHED
+    else:
+        kind = OPERATION_KIND[type(op)]
     if isinstance(op, Charge):
         charge = world.knowledge.chargeability.get(op.site.circuit_id)
         observed = charge is not None and charge.state is ChargeState.CONFIRMED
