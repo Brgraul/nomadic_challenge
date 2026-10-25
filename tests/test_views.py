@@ -136,7 +136,9 @@ def _world(**kw) -> World:
             Stranded(SITE_B),
         ),
     }
-    return World(clock_s=0, drones=drones, belief=dict.fromkeys(network.segments, LineStatus.UNKNOWN), **kw)
+    return World(
+        clock_s=0, drones=drones, belief=dict.fromkeys(network.segments, LineStatus.UNKNOWN), **kw
+    )
 
 
 def _reading(rid: str, acquisition, payload, task_id="T0001", drone="DRONE_1") -> Reading:
@@ -207,11 +209,22 @@ def _world_with_tasks() -> World:
     w = _world()
     w.tasks = {
         "T0001": MeasurementTaskV2(
-            "T0001", "REQ-1", LIDAR_ACQ, "REQ-1", TaskStatusV2.MEASURING, 3,
-            assigned_drone_id="DRONE_1", note="compiled from request REQ-1",
+            "T0001",
+            "REQ-1",
+            LIDAR_ACQ,
+            "REQ-1",
+            TaskStatusV2.MEASURING,
+            3,
+            assigned_drone_id="DRONE_1",
+            note="compiled from request REQ-1",
         ),
         "T0002": MeasurementTaskV2(
-            "T0002", "REQ-2", CONTACT_ACQ, "REQ-2", TaskStatusV2.PENDING, 4,
+            "T0002",
+            "REQ-2",
+            CONTACT_ACQ,
+            "REQ-2",
+            TaskStatusV2.PENDING,
+            4,
             note="compiled from request REQ-2",
         ),
     }
@@ -324,12 +337,20 @@ def test_empty_and_partial_panels_render_without_raising():
     assert score_rows(w) == []  # no preview published on a bare world
     assert coverage_rows(w) == []
     w.score_preview = [
-        {"task": "T0001", "tier_points_5_to_1": (0, 0, 500, 0, 0), "owner_urgency": 3, "notes": "req:REQ-1"}
+        {
+            "task": "T0001",
+            "tier_points_5_to_1": (0, 0, 500, 0, 0),
+            "owner_urgency": 3,
+            "notes": "req:REQ-1",
+        }
     ]
     w.coverage = [
         LidarCoverage(
-            "R0001", "LINE_040", Interval("LINE_040", 0, 600_000),
-            (Interval("LINE_040", 0, 500_000),), (Interval("LINE_040", 500_000, 600_000),),
+            "R0001",
+            "LINE_040",
+            Interval("LINE_040", 0, 600_000),
+            (Interval("LINE_040", 0, 500_000),),
+            (Interval("LINE_040", 500_000, 600_000),),
             "epoch",
         )
     ]
@@ -343,3 +364,72 @@ def test_map_renders_every_phase_without_raising():
     network = tiny_network()
     build_deck(network, _world(), Geometry(network), None)
     build_deck(network, _world(), None, None)
+
+
+# -- the reconstruction views (P3) -----------------------------------------------------------------------------
+
+
+def _reconstructed_world(zero_on="LINE_026"):
+    """A real simulation's public world plus a published zero-current reading on one branch."""
+    import copy
+
+    from grid_ops.outage import assess_stop, reconstruct
+    from grid_ops.sim import Simulation
+
+    sim = Simulation(tiny_network())
+    w = copy.deepcopy(sim.snapshot)
+    point = ConductorPoint(LinePoint(zero_on, 400_000), f"{zero_on}/C1")
+    w.readings["R0001"] = Reading(
+        "R0001",
+        "T0001",
+        (),
+        "DRONE_1",
+        ContactCurrent(point),
+        0,
+        10,
+        CurrentPayload(point, 0.0, 1.0, 10),
+        AcquisitionQuality(True),
+    )
+    w.outage_belief = reconstruct(sim.outage_model, w.readings, ())
+    w.outage_stop = assess_stop(sim.outage_model, w.outage_belief, best_eig_bits=1.0)
+    return w, sim
+
+
+def test_reconstruction_rows_keep_current_service_and_fault_records_separate():
+    from grid_ops.views import alternative_rows, fact_rows, reconstruction_lines, region_rows
+
+    w, _ = _reconstructed_world()
+    kinds = {r["kind"] for r in fact_rows(w)}
+    assert {"fault_segment", "service_state"} <= kinds
+    service = next(r for r in fact_rows(w) if r["kind"] == "service_state")
+    assert service["status"] == "not supported" and "never certifies" in service["statement"]
+    assert region_rows(w)[0]["segment"] == "LINE_026"
+    assert alternative_rows(w)
+    text = " ".join(reconstruction_lines(w))
+    assert "CONTINUE" in text and "Model limit" in text
+
+
+def test_zero_current_never_paints_a_line_as_de_energized_on_the_map():
+    from grid_ops.views import reconstruction_status
+    from grid_ops.world import LineStatus
+
+    w, _ = _reconstructed_world()
+    status = reconstruction_status(w)
+    assert status.get("LINE_026") is LineStatus.SUSPECTED
+    assert LineStatus.DE_ENERGIZED not in status.values()
+    deck = build_deck(tiny_network(), w, Geometry(tiny_network()), None)
+    assert "(reconstruction)" in str(deck.to_json())
+
+
+def test_reconstruction_views_carry_no_voltage_power_or_optical_claims():
+    from grid_ops.views import alternative_rows, experiment_rows, fact_rows, region_rows
+
+    w, _ = _reconstructed_world()
+    blob = " ".join(
+        str(v)
+        for rows in (fact_rows(w), alternative_rows(w), region_rows(w), experiment_rows(w))
+        for row in rows
+        for v in (*row.keys(), *row.values())
+    ).lower()
+    for banned in ("voltage", " mw", "mvar", "rgb", "infrared", "temperature"):
+        assert banned not in blob

@@ -10,6 +10,7 @@ import pydeck as pdk
 
 from grid_ops.geometry import Geometry, Interval, LinePoint
 from grid_ops.grid import Network
+from grid_ops.views import reconstruction_status
 from grid_ops.world import Executing, LineStatus, World, format_clock, position_at
 
 BELIEF_COLORS = {
@@ -47,12 +48,20 @@ def build_deck(
         for area in network.areas.values()
         if area.id != "SYN_REPORT_01"
     ]
+    inferred = reconstruction_status(world)
+
+    def shown(seg_id: str) -> LineStatus:
+        """The operator's label wins; otherwise the reconstruction's (never 'de-energized')."""
+        status = world.belief[seg_id]
+        return inferred.get(seg_id, status) if status is LineStatus.UNKNOWN else status
+
     segments = [
         {
             "path": [list(p) for p in seg.path],
-            "color": BELIEF_COLORS[world.belief[seg.id]],
+            "color": BELIEF_COLORS[shown(seg.id)],
             "width": 4 if seg.voltage_kv >= 380 else 2,
-            "tooltip": f"{seg.id} · {world.belief[seg.id]}",
+            "tooltip": f"{seg.id} · {shown(seg.id)}"
+            + (" (reconstruction)" if shown(seg.id) is not world.belief[seg.id] else ""),
         }
         for seg in network.segments.values()
     ]

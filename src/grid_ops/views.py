@@ -644,3 +644,134 @@ def resilience_lines(world) -> list[str]:
     actions = resilience.operator_actions(world)
     lines += [f"ACTION REQUIRED: {a}" for a in actions] or ["No operator action required."]
     return lines
+
+
+# -- reconstruction (P3) ------------------------------------------------------------
+
+
+def fact_rows(world: World) -> list[dict]:
+    """Supported facts by kind. Observed current, inferred service state, fault geometry and
+    charge availability are separate records, each with its evidence."""
+    belief = world.outage_belief
+    if belief is None:
+        return []
+    return [
+        {
+            "kind": f.kind,
+            "subject": f.subject,
+            "statement": f.statement,
+            "probability": round(f.probability, 3),
+            "status": "SUPPORTED" if f.supported else "not supported",
+            "interval": ""
+            if f.interval is None
+            else f"{f.interval.segment_id} {f.interval.start_mm}-{f.interval.end_mm} mm",
+            "evidence": ", ".join(f.evidence_ids),
+        }
+        for f in belief.supported_facts
+    ]
+
+
+def alternative_rows(world: World) -> list[dict]:
+    belief = world.outage_belief
+    if belief is None:
+        return []
+    return [
+        {
+            "alternatives not yet separated": a.label,
+            "candidates": len(a.candidate_ids),
+            "posterior mass": round(a.mass, 3),
+            "methods that could separate them": ", ".join(a.distinguishing_methods),
+        }
+        for a in belief.unresolved_classes
+    ]
+
+
+def region_rows(world: World) -> list[dict]:
+    belief = world.outage_belief
+    if belief is None:
+        return []
+    return [
+        {
+            "segment": r.segment_id,
+            "fault mass": round(r.fault_mass, 3),
+            "live-unloaded mass": round(r.unloaded_mass, 3),
+            "current observed (live there)": r.observed_energized,
+            "lidar inspected": f"{round(100 * r.lidar_covered_fraction)}%",
+        }
+        for r in sorted(belief.regions, key=lambda r: (-r.fault_mass, r.segment_id))
+    ]
+
+
+def experiment_rows(world: World) -> list[dict]:
+    """Ranked candidate measurements and the value the optimizer was given for open tasks."""
+    rows = [
+        {
+            "ranked candidate": f"{p.method} {p.segment_id}"
+            + (f" {p.circuit_id}" if p.circuit_id else "")
+            + f" {p.start_mm}"
+            + (f"-{p.end_mm}" if p.end_mm != p.start_mm else "")
+            + " mm",
+            "expected discrimination (bits)": p.eig_bits,
+            "joint pick": p.batch_order or "",
+        }
+        for p in world.experiment_proposals
+    ]
+    rows += [
+        {
+            "ranked candidate": f"open task {tid}",
+            "expected discrimination (bits)": round(bits, 4),
+            "joint pick": "",
+        }
+        for tid, bits in sorted(world.experiment_values.items())
+    ]
+    return rows
+
+
+def reconstruction_lines(world: World) -> list[str]:
+    belief, stop = world.outage_belief, world.outage_stop
+    if belief is None or stop is None:
+        return ["No reconstruction is available in this snapshot."]
+    checks = belief.model_checks
+    lines = [
+        f"Reconstruction ({belief.model_version}): {str(stop.reason).upper()} - {stop.detail}",
+        f"Evidence used: {len(belief.evidence_ids)} item(s); broad residual mass "
+        f"{checks.residual_mass:.2f}; model mismatch: {'YES' if checks.mismatch else 'no'}.",
+    ]
+    if belief.truncated:
+        lines.append("The candidate pool is TRUNCATED: no claim is unconditional.")
+    lines += [f"Model limit: {x}" for x in belief.limits]
+    lines += [f"Check: {n}" for n in checks.notes]
+    timing = world.outage_timing
+    if timing:
+        lines.append(
+            "Update cost: belief {:.0f} ms, request value {:.0f} ms".format(
+                1000 * timing.get("belief_update_s", 0.0), 1000 * timing.get("request_value_s", 0.0)
+            )
+        )
+    if world.experiment_omitted:
+        lines.append(
+            f"Value omitted under the declared cap for: {', '.join(world.experiment_omitted)}"
+        )
+    return lines
+
+
+def reconstruction_status(world: World) -> dict:
+    """Map labels from the reconstruction: observed live current, suspected and supported
+    fault segments. Zero current never produces a de-energized label."""
+    from grid_ops.world import LineStatus
+
+    belief = world.outage_belief
+    if belief is None:
+        return {}
+    out = {}
+    supported = {
+        f.subject for f in belief.supported_facts if f.kind == "fault_interval" and f.supported
+    }
+    for r in belief.regions:
+        if r.segment_id in supported:
+            out[r.segment_id] = LineStatus.FAULT_CONFIRMED
+        elif r.fault_mass >= 0.2:
+            out[r.segment_id] = LineStatus.SUSPECTED
+        elif r.observed_energized:
+            out[r.segment_id] = LineStatus.LIVE
+    return out

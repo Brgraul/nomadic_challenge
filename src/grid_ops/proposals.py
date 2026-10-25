@@ -26,6 +26,12 @@ LOCAL_KINDS = ("lidar",)
 # Declared thresholds and levels the text may legitimately quote.
 DECLARED_NUMBERS = (0.5, 0.4, 2.0, 10.0, 15.0, 20.0, 0.2, 0.3, 5.0, 95.0, 30.0, 4.0, 1.0)
 NUMBER = re.compile(r"(-?\d+(?:\.\d+)?)\s*(km|mm|kV|MW|Mvar|°C|A|m)\b")
+RANGE_DASH = re.compile(r"(?<=\d)\s*[-\u2013]\s*(?=\d)")
+
+
+def quoted_numbers(text: str) -> list[tuple[str, str]]:
+    """Numbers with units the text states. A dash between digits is a range, not a minus sign."""
+    return NUMBER.findall(RANGE_DASH.sub(" to ", text))
 
 
 class ProposedStatus(StrEnum):
@@ -112,6 +118,7 @@ def _allowed_numbers(tb: Toolbox, rev: RevisionModel) -> list[float]:
             continue
         allowed += list(payload_values(r).values())
     allowed += [v.value for v in rev.cited_values]
+    allowed += _reconstruction_numbers(tb)
     for sp in rev.after.scope + (rev.before.scope if rev.before else []):
         allowed += [sp.start_km, sp.end_km]
     for did in rev.diagnostic_ids:
@@ -121,6 +128,23 @@ def _allowed_numbers(tb: Toolbox, rev: RevisionModel) -> list[float]:
                 x for r in d.summary.values() for x in r.values() if isinstance(x, int | float)
             ]
     return allowed
+
+
+def _reconstruction_numbers(tb: Toolbox) -> list[float]:
+    """Positions the system itself published for the manager to cite (km and mm)."""
+    w = tb.world
+    spans = []
+    belief = w.outage_belief
+    if belief is not None:
+        spans += [
+            (f.interval.start_mm, f.interval.end_mm) for f in belief.supported_facts if f.interval
+        ]
+        spans += [(i.start_mm, i.end_mm) for i in belief.unknown_regions]
+    spans += [(p.start_mm, p.end_mm) for p in w.experiment_proposals]
+    out: list[float] = []
+    for lo, hi in spans:
+        out += [lo / 1e6, hi / 1e6, float(lo), float(hi), (hi - lo) / 1e6, float(hi - lo)]
+    return out
 
 
 def validate(output: ManagerOutput, tb: Toolbox) -> list[str]:
@@ -227,7 +251,7 @@ def validate(output: ManagerOutput, tb: Toolbox) -> list[str]:
                 errors.append(f"{tag}: every semantic revision needs a trigger")
         # numerical claims
         allowed = _allowed_numbers(tb, rev)
-        for num, unit in NUMBER.findall(
+        for num, unit in quoted_numbers(
             f"{rev.finding_summary} {rev.update_reason} {rev.remaining_uncertainty}"
         ):
             if not any(_close(float(num), a) for a in allowed):
@@ -300,7 +324,7 @@ def _request_errors(output: ManagerOutput, tb: Toolbox) -> list[str]:
         for eid in evidence:
             if eid not in known_ids(tb):
                 errs.append(f"measurement request {req.id}: evidence link {eid} does not exist")
-        if req.source_revision != str(tb.snapshot.revision):
+        if req.source_revision.removeprefix("r") != str(tb.snapshot.revision):
             errs.append(
                 f"measurement request {req.id}: source_revision {req.source_revision} is not "
                 f"the pinned revision {tb.snapshot.revision}"

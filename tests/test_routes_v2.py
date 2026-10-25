@@ -178,13 +178,35 @@ def test_overlapping_occupancy_rejected_sequential_allowed():
     )
     assert not result.ok
     assert any(r.code == "site_occupied" for r in result.rejections)
-    # a later start removes the overlap entirely
+    # staying on the site as a final perch holds it for good, however late drone 2 arrives
     delay = s1[-1].end_s - s2[0].start_s
-    sequential = tuple(
+    late = tuple(
         ScheduledStep(st.index, st.start_s + delay, st.end_s + delay, st.operation) for st in s2
     )
     result = validate_sorties(
         world, geo, None, (request_for(world, "DRONE_1", s1, final),
+                           request_for(world, "DRONE_2", late, final))
+    )
+    assert any(r.code == "site_occupied" for r in result.rejections)
+    # once drone 1 has taken off and perched elsewhere, drone 2 may use the site afterwards
+    from grid_ops.world import leg_seconds
+
+    other = site_at(world, "LINE_025", 650_000)
+    pos, opos = geo.position_of(site.point), geo.position_of(other.point)
+    leg = leg_seconds(pos, opos, world.drones["DRONE_1"].speed_km_per_min)
+    t = s1[-1].end_s
+    s1_leaves = (
+        *s1,
+        ScheduledStep(4, t, t + TAKEOFF_S, Takeoff(site, pos)),
+        ScheduledStep(5, t + TAKEOFF_S, t + TAKEOFF_S + leg, Transit(pos, opos)),
+        ScheduledStep(6, t + TAKEOFF_S + leg, t + TAKEOFF_S + leg + LAND_S, Land(other, opos)),
+    )
+    delay = t + TAKEOFF_S + 1 - s2[2].start_s
+    sequential = tuple(
+        ScheduledStep(st.index, st.start_s + delay, st.end_s + delay, st.operation) for st in s2
+    )
+    result = validate_sorties(
+        world, geo, None, (request_for(world, "DRONE_1", s1_leaves, other),
                            request_for(world, "DRONE_2", sequential, final))
     )
     assert result.ok, [str(r) for r in result.rejections]

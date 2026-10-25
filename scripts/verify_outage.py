@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -44,6 +45,8 @@ CASES = (
     "runtime",
     "perf",
     "full",
+    "p3",
+    "p3-perf",
 )
 
 
@@ -404,8 +407,35 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", choices=CASES, default="all")
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--trunk", type=Path, help="checkout of the previous unit (P2) to compare")
+    parser.add_argument("--llm", action="store_true", help="also run lane 10 on a real model")
+    parser.add_argument("--llm-rounds", type=int, default=4)
+    parser.add_argument("--lane", type=int, action="append", help="run only these P3 lanes")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
+    if args.case in ("p3", "p3-perf"):
+        sys.path.insert(0, str(Path(__file__).parent))
+        import outage_lanes
+
+        if args.case == "p3-perf":
+            result = outage_lanes.perf_probe(args.out, args.trunk)
+            print(json.dumps({"case": "p3-perf", "out": str(args.out), **result["verdict"]}))
+            return
+        results = outage_lanes.run(
+            args.out, args.trunk, args.llm, args.llm_rounds, args.lane or list(outage_lanes.LANES)
+        )
+        summary = [
+            {
+                "lane": r["lane"],
+                "name": r["name"],
+                "passed": all(a["passed"] for a in r["assertions"]),
+                "assertions": len(r["assertions"]),
+            }
+            for r in results
+        ]
+        (args.out / "summary.json").write_text(json.dumps(summary, indent=2))
+        print(json.dumps({"case": "p3", "lanes": summary}))
+        raise SystemExit(0 if all(s["passed"] for s in summary) else 1)
     if args.case == "runtime":
         public, private = run_runtime_lanes()
         perf = {"mode": "runtime lanes"}

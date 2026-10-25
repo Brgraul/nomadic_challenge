@@ -33,7 +33,9 @@ class Lifecycle(StrEnum):
 ChangeKind = Literal["creation", "assessment", "scope", "prediction", "priority", "lifecycle"]
 TriggerKind = Literal["startup", "measurement", "operator", "none"]
 ActionKind = Literal["inspect", "repair", "measure", "monitor", "none"]
-MeasurementName = Literal["voltage_presence", "current", "conductor_temp", "clearance", "motion"]
+MeasurementName = Literal[
+    "voltage_presence", "current", "conductor_temp", "clearance", "motion", "echo"
+]
 
 
 class SpanModel(BaseModel):

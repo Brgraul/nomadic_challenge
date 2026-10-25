@@ -1,32 +1,39 @@
 """One fixed joint scorer for itineraries: unique diagnostic benefit under manager-owned urgency.
 
 Rewards go only to accepted active requests (or their compiled tasks) and are earned once per
-alternative group. LiDAR benefit is the length of not-yet-inspected 10 m cells inside the
-requested span, so overlapping scans and interrupted repeats cannot inflate value; contact and
-TDR requests earn one flat group award however many candidate sites serve them. Urgency comes
-from the request, which the manager owns. Scores are integer synthetic units compared
-lexicographically: urgency tiers 5 to 1 first, then risk, switching, airtime and charge waiting.
-They are not a calibrated causal entropy; calibrated reconstruction is P3.
+alternative group. Benefit is the public expected discrimination of the acquisition
+(`outage.conditioned_values`, bits about the candidate outage, 1 bit = 1,000 points); a task
+whose value was omitted under the declared cap falls back to the legacy flat award and says so.
+LiDAR benefit is spread over the not-yet-inspected 10 m cells of the requested span, so
+overlapping scans and interrupted repeats cannot inflate value; contact and TDR requests earn
+one group award however many candidate sites serve them. Urgency comes from the request, which
+the manager owns. Scores are integer units compared lexicographically: urgency tiers 5 to 1
+first, then acquisition attempts, risk, switching, airtime and charge waiting. Bits are
+conditional on the declared model and are not calibrated frequencies.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from grid_ops.geometry import Interval
 from grid_ops.sensing import LidarPass, RequestStatus
 from grid_ops.world import TaskStatusV2, World
 
 CELL_MM = 10_000  # fixed 10 m local coverage grid
-POINTS_PER_M = 1.0  # length-conserving: a metre of undecided scope is worth one point
-REQUEST_POINTS = 500  # one award per contact/TDR alternative group
+POINTS_PER_M = 1.0  # legacy award when no belief value exists: a metre is worth one point
+REQUEST_POINTS = 500  # legacy award per contact/TDR alternative group
+POINTS_PER_BIT = 1000  # one bit of expected discrimination about the outage candidate
+# A manager-authorised acquisition never scores zero: work the model cannot value (outside the
+# declared family, or a repeat) still ranks below anything that discriminates, but is not dropped.
+AUTHORISED_FLOOR_POINTS = 100
 QUANTUM = 1  # integer tolerance: scores within one unit are equal
 TIERS = (5, 4, 3, 2, 1)
 OPEN = (TaskStatusV2.PENDING, TaskStatusV2.RESERVED, TaskStatusV2.MEASURING)
 
 SCALE_NOTE = (
-    "synthetic units: lidar coverage 1 point per metre of undecided scope, contact/tdr 500 per "
-    "request group; not a calibrated causal entropy"
+    "units: 1,000 points per bit of expected discrimination under the declared outage model "
+    "(conditioned over the best three acquisitions); not a calibrated frequency"
 )
 
 
@@ -39,11 +46,20 @@ class PlanScore:
     charge_s: int
     quantum: int = QUANTUM
     notes: tuple[str, ...] = ()
+    acquisitions: int = 0
 
     @property
     def key(self) -> tuple[int, ...]:
-        """Lexicographic key: benefit tiers, then lower risk, switching, airtime, charge."""
-        return (*self.tiers, -self.risk, -self.switching, -self.airtime_s, -self.charge_s)
+        """Lexicographic key: benefit tiers, then fewer acquisition attempts, lower risk,
+        switching, airtime, charge."""
+        return (
+            *self.tiers,
+            -self.acquisitions,
+            -self.risk,
+            -self.switching,
+            -self.airtime_s,
+            -self.charge_s,
+        )
 
     def better_than(self, other: PlanScore) -> bool:
         return self.key > other.key
@@ -104,6 +120,9 @@ class ScoringContext:
     cell_owners: dict[tuple, int]
     covered: dict[str, list[Interval]]
     open_tasks: tuple[str, ...]
+    request_points: dict[str, int] = field(default_factory=dict)  # request id -> group points
+    cell_rate: dict[tuple, float] = field(default_factory=dict)  # lidar cell -> points per metre
+    unvalued: tuple[str, ...] = ()  # open tasks scored with the legacy flat award
 
 
 def build_context(world: World) -> ScoringContext:
@@ -114,21 +133,40 @@ def build_context(world: World) -> ScoringContext:
     request_by_task = {t.id: t.request_id for t in world.tasks.values()}
     cell_values: dict[tuple, float] = {}
     cell_owners: dict[tuple, int] = {}
+    cell_rate: dict[tuple, float] = {}
+    request_points: dict[str, int] = {}
+    unvalued: list[str] = []
     groups: dict[str, tuple[str, int, tuple[str, ...]]] = {}
     by_group: dict[str, list[str]] = {}
     for task in world.tasks.values():
         if task.status not in OPEN:
             continue
         by_group.setdefault(task.alternative_group_id, []).append(task.id)
+        bits = world.experiment_values.get(task.id)
+        if bits is None:
+            unvalued.append(task.id)
+        else:
+            points = max(round(bits * POINTS_PER_BIT), AUTHORISED_FLOOR_POINTS)
         if not isinstance(task.acquisition, LidarPass):
+            if bits is not None:
+                request_points[task.request_id] = max(
+                    request_points.get(task.request_id, 0), points
+                )
             continue
         urgency = request_urgency.get(task.request_id, task.urgency)
         target = task.acquisition.target
         span = Interval(target.segment_id, target.start_mm, target.end_mm)
+        rate = POINTS_PER_M
+        if bits is not None:
+            fresh = _uncovered_length_mm(world, span, covered.get(target.segment_id, []))
+            rate = points / max(fresh / 1000, 1e-9) if fresh > 0 else 0.0
         for cell, length in _cells(span.start_mm, span.end_mm):
             key = ("cell", target.segment_id, cell)
             cell_owners[key] = max(cell_owners.get(key, 0), urgency)
-            cell_values[key] = max(cell_values.get(key, 0.0), length / 1000 * POINTS_PER_M)
+            value = length / 1000 * rate
+            if value >= cell_values.get(key, -1.0):
+                cell_values[key] = value
+                cell_rate[key] = rate
     for group_id, task_ids in by_group.items():
         sample = next(t for t in world.tasks.values() if t.id == task_ids[0])
         groups[group_id] = (
@@ -138,7 +176,16 @@ def build_context(world: World) -> ScoringContext:
         )
     open_tasks = tuple(t.id for t in world.tasks.values() if t.status in OPEN)
     return ScoringContext(
-        request_urgency, request_by_task, groups, cell_values, cell_owners, covered, open_tasks
+        request_urgency,
+        request_by_task,
+        groups,
+        cell_values,
+        cell_owners,
+        covered,
+        open_tasks,
+        request_points,
+        cell_rate,
+        tuple(unvalued),
     )
 
 
@@ -162,7 +209,7 @@ def score_plan(
         kind, tier, _ = ctx.groups.get(group_id, ("ground", 0, ()))
         if kind == "lidar":
             continue
-        tiers[tier] += REQUEST_POINTS
+        tiers[tier] += ctx.request_points.get(group_id, REQUEST_POINTS)
     for task in tasks:
         if not isinstance(task.acquisition, LidarPass):
             continue
@@ -180,7 +227,10 @@ def score_plan(
             )
             if span_len <= 0:
                 continue
-            tiers[ctx.cell_owners[key]] += min(length, span_len) / 1000 * POINTS_PER_M
+            rate = ctx.cell_rate.get(key, POINTS_PER_M)
+            tiers[ctx.cell_owners[key]] += min(length, span_len) / 1000 * rate
+    if ctx.unvalued and any(t.id in ctx.unvalued for t in tasks):
+        notes.append("some tasks have no belief value (declared cap) and earn the legacy award")
     return PlanScore(
         tuple(round(t) for t in (tiers[u] for u in TIERS)),
         risk,
@@ -189,6 +239,7 @@ def score_plan(
         charge_s,
         QUANTUM,
         tuple(notes),
+        len(tasks),
     )
 
 

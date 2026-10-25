@@ -380,6 +380,13 @@ class World:
     coordinator_turns: list = field(default_factory=list)  # async manager turns (latest state each)
     planner_previews: list = field(default_factory=list)  # previews that authorise nothing
     investigation: Investigation = field(default_factory=Investigation)
+    outage_belief: object | None = None  # outage.OutageBelief; public evidence only
+    experiment_values: dict = field(default_factory=dict)  # task id -> conditioned bits
+    experiment_omitted: tuple = ()  # task ids whose value was left out under the declared cap
+    experiment_proposals: tuple = ()  # outage.ExperimentProposal, ranked, bounded
+    outage_stop: object | None = None  # outage.StopAssessment
+    # wall seconds spent in belief / value updates: telemetry, not part of public state equality
+    outage_timing: dict = field(default_factory=dict, compare=False)
 
     @property
     def clock(self) -> float:

@@ -16,7 +16,7 @@ import uuid
 from concurrent.futures import Future
 from dataclasses import dataclass
 
-from grid_ops import assessment, decisions, fleet, knowledge, needs, planning, scoring
+from grid_ops import assessment, decisions, fleet, knowledge, needs, outage, planning, scoring
 from grid_ops.circuits import CircuitRegistry, build_registry
 from grid_ops.conclusion import Investigation, InvestigationStatus, reopen_relevance
 from grid_ops.energy import DEFAULT_ENERGY_MODEL
@@ -32,7 +32,7 @@ from grid_ops.scenario import (
     SensorModel,
     public_brief,
 )
-from grid_ops.sensing import ConductorPoint, SensorCapabilities
+from grid_ops.sensing import ConductorPoint, SensorCapabilities, TaskStatusV2
 from grid_ops.truth import Episode, EpisodeSpec, build_episode
 from grid_ops.world import (
     LAND_S,
@@ -46,6 +46,7 @@ from grid_ops.world import (
     RejectionRecord,
     ScheduledReport,
     ScheduledStep,
+    Stranded,
     Takeoff,
     Transit,
     World,
@@ -334,6 +335,16 @@ class Simulation:
                     f"Dispatch reports {CONTRADICTED_SEGMENT} switched to de-energized.",
                 )
             )
+        self.outage_model = outage.build_model(
+            network, self.circuits, self.geometry, w.capabilities
+        )
+        self.belief_valued_scheduling = True
+        self._outage_key: tuple | None = None
+        self._value_key: tuple | None = None
+        self._proposal_key: tuple | None = None
+        self._best_eig = 0.0
+        self._update_outage()
+        self._update_values()
         self.snapshot: World = copy.deepcopy(self._world)
 
     def submit(self, command: Command) -> Future[str]:
@@ -400,6 +411,7 @@ class Simulation:
         self._ingest_readings(first_new)
         if events:
             w.revision += 1
+        self._update_outage()
         self._refresh_tasks(events)
         inv = w.investigation
         if inv.status is not InvestigationStatus.OPEN and events and inv.concluded_s is not None:
@@ -517,7 +529,95 @@ class Simulation:
         notes, _ = needs.refresh(w, self.network, self.geometry)
         for n in notes:
             w.task_log.append((w.clock_s, n))
+        self._update_values()
         w.score_preview = self._score_preview()
+
+    def _operational_evidence(self) -> list[outage.OperationalEvidence]:
+        """Public operational events only. The t=0 switching report is already a prior."""
+        w = self._world
+        out = [
+            outage.OperationalEvidence(f"SW:{seg}", "switching_report", seg, clock_s=t)
+            for seg, t in sorted(w.known_switching.items())
+            if t > 0
+        ]
+        for e in sorted(w.knowledge.evidence.values(), key=lambda e: e.id):
+            if e.source == "handshake":
+                ok = e.claim is knowledge.Claim.CHARGE_OK
+                kind = "handshake_ok" if ok else "handshake_failed"
+                out.append(
+                    outage.OperationalEvidence(
+                        e.id, kind, e.circuit_id.split("/")[0], e.circuit_id, e.clock_s
+                    )
+                )
+        return out
+
+    def _update_outage(self) -> None:
+        """Refresh the public posterior when (and only when) the evidence set changed."""
+        w = self._world
+        operational = self._operational_evidence()
+        key = (tuple(sorted(w.readings)), tuple(e.id for e in operational))
+        if key == self._outage_key:
+            return
+        t0 = time.perf_counter()
+        w.outage_belief = outage.reconstruct(self.outage_model, w.readings, operational)
+        w.outage_timing["belief_update_s"] = time.perf_counter() - t0
+        self._outage_key = key
+        self._value_key = None
+
+    def _fleet_blocked(self, open_tasks) -> bool:
+        """Open requests exist, the whole fleet is perched, and the latest route pass after the
+        tasks were compiled found nothing it could fly (energy, reach or eligibility)."""
+        w = self._world
+        pending = [t for t in open_tasks if t.status is TaskStatusV2.PENDING]
+        if not pending or not w.route_passes:
+            return False
+        if not all(isinstance(d.state, Perched | Stranded) for d in w.drones.values()):
+            return False
+        last_pass = w.route_passes[-1]
+        compiled = max((c for c, n in w.task_log if "compiled" in n), default=0)
+        return last_pass.outcome != "accepted-plan" and last_pass.sim_clock_s >= compiled
+
+    def _update_values(self) -> None:
+        """Condition expected-discrimination values on the current belief for the open tasks."""
+        w = self._world
+        belief = w.outage_belief
+        open_tasks = sorted(
+            (t for t in w.tasks.values() if t.status in scoring.OPEN), key=lambda t: t.id
+        )
+        blocked = self._fleet_blocked(open_tasks)
+        key = (belief.digest, tuple((t.id, t.status) for t in open_tasks), blocked)
+        if key == self._value_key:
+            return
+        t0 = time.perf_counter()
+        values = outage.conditioned_values(
+            self.outage_model, belief, [(t.id, t.acquisition) for t in open_tasks], w.readings
+        )
+        # routing-only scheduling is an ablation switch: tasks then earn the legacy flat award
+        w.experiment_values = (
+            {v.key: v.eig_bits for v in values.values} if self.belief_valued_scheduling else {}
+        )
+        w.experiment_omitted = values.omitted
+        held = frozenset(
+            (d.state.perch.circuit_id, d.state.perch.point.offset_mm)
+            for d in w.drones.values()
+            if isinstance(d.state, Perched | Stranded)
+        )
+        if self._proposal_key != (belief.digest, held):
+            proposals, scored = outage.propose_experiments(
+                self.outage_model, belief, w.readings, occupied=held
+            )
+            w.experiment_proposals = proposals
+            self._best_eig = max((v.eig_bits for v in scored.values), default=0.0)
+            self._proposal_key = (belief.digest, held)
+        w.outage_stop = outage.assess_stop(
+            self.outage_model,
+            belief,
+            best_eig_bits=self._best_eig,
+            experiments_available=bool(w.experiment_proposals) and not blocked,
+            budget_exhausted=w.finished,
+        )
+        w.outage_timing["request_value_s"] = time.perf_counter() - t0
+        self._value_key = key
 
     def _score_preview(self) -> list[dict]:
         """Standalone synthetic score of each open task: a preview, never an authorisation."""

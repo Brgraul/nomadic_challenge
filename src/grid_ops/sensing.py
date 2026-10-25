@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Annotated, Literal, Self
@@ -276,6 +276,55 @@ class TdrAccessSite:
 def tdr_access(conductor: ConductorPoint) -> TdrAccessSite:
     key = f"{conductor.circuit_id}/{conductor.phase}@{conductor.point.offset_mm}mm"
     return TdrAccessSite(f"access:{key}", conductor, (f"return:{key}",))
+
+
+@dataclass(frozen=True)
+class EchoEdge:
+    """One conductor span between two electrical nodes, as the reflectometer sees it."""
+
+    key: Hashable
+    a: Hashable
+    b: Hashable
+    length_mm: int
+
+
+def trace_echoes(
+    adjacency: Mapping[Hashable, Sequence[EchoEdge]],
+    start: EchoEdge,
+    a_distance_mm: int,
+    *,
+    range_m: float,
+    max_paths: int,
+) -> tuple[tuple[tuple[float, float], ...], bool]:
+    """Round-trip reflection distances (metres) and amplitudes from a coupling point.
+
+    The pulse leaves along both directions of `start`, `a_distance_mm` from node `a`. A dead end
+    reflects +1; a junction with several onward spans reflects a negative partial echo. An open
+    protective device is simply a node with one span, so it masks everything beyond it. The walk
+    is capped at `max_paths` expansions; the boolean reports that the cap left work undone.
+    """
+    stack: list[tuple[Hashable, float, tuple[Hashable, ...]]] = [
+        (start.a, a_distance_mm / 1000, (start.key,)),
+        (start.b, (start.length_mm - a_distance_mm) / 1000, (start.key,)),
+    ]
+    found: list[tuple[float, float]] = []
+    explored = 0
+    while stack and explored < max_paths:
+        node, distance, visited = stack.pop()
+        explored += 1
+        if distance > range_m:
+            continue
+        outgoing = [e for e in adjacency.get(node, ()) if e.key not in visited]
+        if not outgoing:
+            if distance > 1e-9:
+                found.append((distance, 1.0))
+            continue
+        if len(outgoing) > 1:
+            found.append((distance, -min(0.8, len(outgoing) / 4)))
+        for e in outgoing:
+            other = e.b if e.a == node else e.a
+            stack.append((other, distance + e.length_mm / 1000, (*visited, e.key)))
+    return tuple(sorted(set(found))), bool(stack)
 
 
 CONTACT_GRID_MM = 2_000_000

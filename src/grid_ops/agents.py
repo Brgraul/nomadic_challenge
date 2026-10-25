@@ -51,7 +51,27 @@ Rules:
 - Say what you could not distinguish in untested_alternatives.
 - Measurement requests must cite the hypothesis they serve and the evidence they rest on, with
   rationale, alternatives_distinguished and expected_outcomes filled in.
+- Never propose a conclusion on a startup turn or while reconstruction.stop_assessment.state is
+  "continue": request the measurement instead. Propose a cause only when the state is
+  "supported", and an unresolved stop only for the other stop states.
+- A startup revision (no readings yet) must list at least one report id (SYN_REPORT_xx) in
+  contributing_evidence_ids and say "no drone measurements" in its text. Every recommendation of
+  kind measure or inspect needs a scope span (segment_id, start_km, end_km). Always finish by
+  calling the ManagerOutput tool; never end with prose.
+- A new hypothesis has before = null and change_kinds ["creation"]; a revision of an accepted one
+  copies its current values into before. Set each request's source_revision to the snapshot
+  revision number from the tool labels.
+- Write ranges with "to" (0.2 to 0.7 km) and quote only numbers copied from tool output.
+- Call reconstruction before each turn's requests. It returns the system's supported facts, the
+  alternatives it cannot yet separate and a stop assessment; never state a posterior probability
+  or an information score yourself. Request the measurement that separates the leading
+  alternatives (suggest_experiments ranks candidates), not one that repeats an equivalent
+  sample. A hazard, a zero-current reading or a truncated candidate pool never completes a
+  diagnosis; stop only as the stop assessment allows and report the unresolved remainder.
 Keep the number of hypotheses small (at most 3) and scopes to the 6 most relevant spans."""
+
+
+SYSTEM_MESSAGE = {"role": "system", "content": SYSTEM}
 
 
 def llm_available() -> bool:
@@ -66,8 +86,10 @@ def make_model():
         model=MODEL_NAME,
         base_url="https://openrouter.ai/api/v1",
         api_key=os.environ["OPENROUTER_API_KEY"],
-        max_tokens=8000,
+        max_tokens=16000,
         timeout=180,
+        # a reasoning model can spend the whole budget thinking and never write the answer
+        extra_body={"reasoning": {"effort": "low"}},
     )
 
 
@@ -121,6 +143,18 @@ def _tools(tb: Toolbox):
         return tb.capabilities()
 
     @tool
+    def reconstruction() -> str:
+        """Supported outage facts, alternatives not yet separated, unknown regions, model
+        checks and the stop assessment. Computed by the system from executed readings only."""
+        return tb.reconstruction()
+
+    @tool
+    def suggest_experiments() -> str:
+        """Ranked candidate measurements by expected discrimination between the remaining
+        alternatives. Request one (or another you can justify); you do not invent the scores."""
+        return tb.suggest_experiments()
+
+    @tool
     def list_events(limit: int = 30) -> str:
         """Recent observable events with ids you can cite as triggers."""
         return tb.list_events(limit)
@@ -140,6 +174,8 @@ def _tools(tb: Toolbox):
         scan_coverage,
         charge_sites,
         capabilities,
+        reconstruction,
+        suggest_experiments,
         list_events,
         list_hypotheses,
     ]
@@ -174,12 +210,36 @@ def run_scripted_turn(
     return TurnResult(output, errors, [])
 
 
+def run_adaptive_scripted_turn(
+    tb: Toolbox, trigger_ids: tuple[str, ...] = (), conclude: bool = False
+) -> TurnResult:
+    """The scripted policy plus requests chosen from the public reconstruction's ranking."""
+    triggers = list(trigger_ids) or assessment_trigger_ids(tb)
+    output = ManagerOutput(summary="the report-driven hypotheses are not tracked by this policy.")
+    output = scripted_manager.add_adaptive(tb, output, triggers, conclude)
+    return TurnResult(output, proposals.validate(output, tb), [])
+
+
+def _finalize(history) -> ManagerOutput | None:
+    """The tool phase ended without a structured answer (the model stopped on an empty reply):
+    ask once, with no tools, for the complete proposal from what it already gathered."""
+    try:
+        structured = make_model().with_structured_output(ManagerOutput)
+        ask = {
+            "role": "user",
+            "content": "You have gathered the evidence. Return the complete ManagerOutput now.",
+        }
+        return structured.invoke([SYSTEM_MESSAGE, *history, ask])
+    except Exception:
+        return None
+
+
 def run_llm_turn(
     tb: Toolbox,
     trigger_ids: tuple[str, ...] = (),
     instruction: str | None = None,
     record: bool = False,
-    max_repairs: int = 2,
+    max_repairs: int = 3,
 ) -> TurnResult:
     """One manager turn with a real model. If validation rejects the output, the errors are fed
     back for up to `max_repairs` corrections; the final output is what the coordinator records."""
@@ -215,8 +275,13 @@ def run_llm_turn(
     for _ in range(max_repairs + 1):
         result = agent.invoke({"messages": messages})
         output = result.get("structured_response")
+        if output is None and result.get("messages"):
+            output = _finalize(result["messages"])
         if output is None:
-            errors = ["the response was not a structured ManagerOutput"]
+            errors = [
+                "the response was not a structured ManagerOutput: call the ManagerOutput tool "
+                "with the complete proposal instead of replying in prose"
+            ]
         else:
             errors = proposals.validate(output, tb)
         attempts.append(errors)

@@ -57,6 +57,15 @@ def test_app_boots_with_three_method_panels():
     assert phases <= {"perched", "executing", "stranded"}
     for banned in ("PRIOR-ONLY", "degrees of freedom", "Discrepancy envelope"):
         assert banned not in frames, banned
+    # the reconstruction panel is conditional on a declared model and certifies nothing at start
+    assert "Reconstruction (outage-v1): CONTINUE" in app.text()
+    assert "fault mass" in frames and "live-unloaded mass" in frames
+    statuses = {
+        r["status"]
+        for r in app.rows()
+        if "status" in r and r.get("kind") in ("fault_segment", "fault_interval", "service_state")
+    }
+    assert statuses <= {"not supported"}
 
 
 def test_startup_turn_requests_route_pass_reading_and_battery_drain():
@@ -106,8 +115,10 @@ def test_startup_turn_requests_route_pass_reading_and_battery_drain():
     assert done["method"] in METHODS
     served = wait_row(
         app,
-        lambda r: r.get("request") == done["request"]
-        and "EXPLICITLY UNRESOLVED" not in str(r.get("unresolved", "")),
+        lambda r: (
+            r.get("request") == done["request"]
+            and "EXPLICITLY UNRESOLVED" not in str(r.get("unresolved", ""))
+        ),
         what="served request",
     )
     assert served["method"] == done["method"]

@@ -37,6 +37,7 @@ from grid_ops.sim import (
 from grid_ops.views import (
     SCORE_ASSUMPTIONS,
     accepted_revision_rows,
+    alternative_rows,
     assessment_rows,
     coordinator_turn_rows,
     coverage_rows,
@@ -44,6 +45,8 @@ from grid_ops.views import (
     disposition_rows,
     drone_rows,
     endpoint_rows,
+    experiment_rows,
+    fact_rows,
     hazard_rows,
     hold_text,
     hypothesis_rows,
@@ -57,6 +60,8 @@ from grid_ops.views import (
     proposal_rows,
     reading_rows,
     recommendation_rows,
+    reconstruction_lines,
+    region_rows,
     rejection_rows,
     request_rows,
     resilience_lines,
@@ -270,9 +275,9 @@ with st.sidebar:
     sim.auto_replan = st.toggle("Autonomous replanning on events", value=True, key="auto_replan")
 
     st.header("Autonomous manager")
-    modes = (
-        ["off", "scripted", "LLM"] if os.environ.get("OPENROUTER_API_KEY") else ["off", "scripted"]
-    )
+    modes = ["off", "scripted", "scripted (reconstruction-driven)"]
+    if os.environ.get("OPENROUTER_API_KEY"):
+        modes.append("LLM")
     chosen = st.selectbox("Asynchronous manager + planner", modes, key="auto_manager")
     coords = get_coordinators(sim, f"{mode}-{seed}")
     running = coords.get("running")
@@ -285,18 +290,24 @@ with st.sidebar:
         from grid_ops import agents
         from grid_ops.coordinator import Coordinator
 
-        fn = (
-            agents.run_scripted_turn
-            if chosen == "scripted"
-            else (
-                lambda tb, trigger_ids=(): agents.run_llm_turn(
-                    tb, trigger_ids=trigger_ids, record=True
-                )
-            )
-        )
+        def adaptive(tb, trigger_ids=()):
+            return agents.run_adaptive_scripted_turn(tb, trigger_ids, conclude=True)
+
+        def language_model(tb, trigger_ids=()):
+            return agents.run_llm_turn(tb, trigger_ids=trigger_ids, record=True)
+
+        adaptive.author = "manager-scripted (reconstruction-driven)"
+        language_model.author = "manager-llm"
+        fn = {
+            "scripted": agents.run_scripted_turn,
+            "scripted (reconstruction-driven)": adaptive,
+        }.get(chosen, language_model)
         co = Coordinator(sim, manager_fn=fn)
         co.start()
         coords["running"] = (chosen, co)
+        if chosen != "scripted" and not sim.snapshot.requests:
+            # these managers ask for their first measurement before any reading exists
+            threading.Thread(target=co.run_turn_now, name="manager-startup", daemon=True).start()
     st.caption("Runs on pinned snapshots while the fleet keeps flying; never gates routing.")
 
     st.header("Manager")
@@ -361,6 +372,7 @@ def live_view(preview_point: LinePoint) -> None:
         fleet_tab,
         landing_tab,
         coverage_tab,
+        reconstruction_tab,
         findings_tab,
         plan_tab,
         coordinator_tab,
@@ -376,6 +388,7 @@ def live_view(preview_point: LinePoint) -> None:
             "Fleet",
             "Landing",
             "Coverage",
+            "Reconstruction",
             "Findings",
             "Plan",
             "Coordinator",
@@ -383,6 +396,22 @@ def live_view(preview_point: LinePoint) -> None:
             "Investigation",
         ]
     )
+    with reconstruction_tab:
+        st.caption(
+            "A deterministic posterior over a declared candidate family, built only from executed "
+            "readings and operational events. Probabilities are conditional on that model; the "
+            "manager cannot write them, and zero current never certifies a de-energized line."
+        )
+        for line in reconstruction_lines(world):
+            st.markdown(f"- {line}")
+        st.caption("Supported facts: observed current, service, fault geometry, charge")
+        st.dataframe(fact_rows(world), hide_index=True)
+        st.caption("Alternatives the evidence cannot yet separate")
+        st.dataframe(alternative_rows(world), hide_index=True)
+        st.caption("Where the fault could be, and what has been inspected")
+        st.dataframe(region_rows(world), hide_index=True)
+        st.caption("Ranked measurements by expected discrimination, and what the optimizer sees")
+        st.dataframe(experiment_rows(world), hide_index=True)
     with requests_tab:
         st.caption(
             "Accepted measurement requests (lidar, TDR, contact current) with their compiled "

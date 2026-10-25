@@ -38,6 +38,7 @@ from grid_ops.world import (
     LAND_S,
     Charge,
     Executing,
+    GroundSample,
     Itinerary,
     Land,
     Perched,
@@ -139,11 +140,15 @@ def _brute_force_best(w, geo, ctx):
     for t in chosen:
         opts = [(None, None)]
         opts += [
-            (vi, ("t", i)) for i, s in enumerate(scans) if s.task_id == t.id
+            (vi, ("t", i))
+            for i, s in enumerate(scans)
+            if s.task_id == t.id
             for vi in range(len(vehicles))
         ]
         opts += [
-            (vi, ("p", j)) for j, p in enumerate(perches) if p.task_id == t.id
+            (vi, ("p", j))
+            for j, p in enumerate(perches)
+            if p.task_id == t.id
             for vi in range(len(vehicles))
         ]
         options.append(opts)
@@ -151,7 +156,7 @@ def _brute_force_best(w, geo, ctx):
     best = None
     for combo in product(*options):
         per_drone: dict[int, list] = {}
-        for (_t, (vi, node)) in zip(chosen, combo, strict=True):
+        for _t, (vi, node) in zip(chosen, combo, strict=True):
             if vi is not None:
                 per_drone.setdefault(vi, []).append(node)
         for orders in product(
@@ -188,9 +193,10 @@ def test_exact_planner_matches_brute_force_enumeration():
     assert result.best is not None and result.best.valid
     planner_key = result.best.score.key
     assert planner_key >= brute  # never worse than the exhaustive optimum
-    assert all(
-        abs(a - b) <= scoring.QUANTUM for a, b in zip(planner_key, brute, strict=True)
-    ), (planner_key, brute)
+    assert all(abs(a - b) <= scoring.QUANTUM for a, b in zip(planner_key, brute, strict=True)), (
+        planner_key,
+        brute,
+    )
 
 
 def test_charge_chosen_only_when_energy_requires_it():
@@ -202,9 +208,9 @@ def test_charge_chosen_only_when_energy_requires_it():
     result = planning.plan_sorties(w, geo, None)
     best = result.best
     assert best is not None and best.valid, result.stop_reason
-    assert not any(
-        isinstance(step.operation, Charge) for r in best.sorties for step in r.steps
-    ), "no gratuitous charge"
+    assert not any(isinstance(step.operation, Charge) for r in best.sorties for step in r.steps), (
+        "no gratuitous charge"
+    )
     # a second task on the other segment makes the no-charge plan infeasible under the filter
     contact_task(w, "T2", site_at(w, "LINE_025", 555_000), "REQ-2")
     result = planning.plan_sorties(w, geo, None)
@@ -212,7 +218,10 @@ def test_charge_chosen_only_when_energy_requires_it():
     assert best is not None and best.valid, result.stop_reason
     assert {"T1", "T2"} <= set(best.task_ids)
     charges = [
-        step.operation for r in best.sorties for step in r.steps if isinstance(step.operation, Charge)
+        step.operation
+        for r in best.sorties
+        for step in r.steps
+        if isinstance(step.operation, Charge)
     ]
     assert charges, "a charge step is required to serve both tasks"
     check = validate_sorties(w, geo, None, best.sorties)
@@ -263,3 +272,95 @@ def test_over_capacity_is_blocked():
     assert result.blocked is not None
     assert result.stop_reason == "PlanningBlocked"
     assert "exceeds the 2-attempt capacity" in result.blocked.reason
+
+
+# -- P3: scan-ending paths, in-place charging and one drone per exact site ---------------------------------
+
+
+def _pending_lidar(w, geo, task_id, request_id, seg, start_mm, end_mm):
+    _lidar_task(w, geo, task_id, request_id, seg, start_mm, end_mm)
+    task = w.tasks[task_id]
+    w.set_task(
+        MeasurementTaskV2(
+            **{**task.__dict__, "status": TaskStatusV2.PENDING, "assigned_drone_id": None}
+        )
+    )
+
+
+def test_a_scan_only_request_is_planned_and_the_drone_flies_back_to_its_perch():
+    w, geo = two_drone_world()
+    seed_handshakes(w)
+    del w.drones["DRONE_2"]
+    home = w.drones["DRONE_1"].state.perch
+    _pending_lidar(w, geo, "T-L", "REQ-L", "LINE_040", 300_000, 700_000)
+    result = planning.plan_sorties(w, geo, None)
+    best = result.best
+    assert best is not None and best.source != "incumbent", result.stop_reason
+    assert "T-L" in best.task_ids
+    (sortie,) = best.sorties
+    kinds = [type(s.operation).__name__ for s in sortie.steps]
+    assert kinds[0] == "Takeoff" and "Scan" in kinds and kinds[-1] == "Land"
+    assert sortie.final_perch == home
+    check = validate_sorties(w, geo, None, best.sorties)
+    assert check.ok, [str(r) for r in check.rejections]
+
+
+def test_a_nearly_empty_drone_charges_in_place_before_it_can_fly_a_task():
+    w, geo = two_drone_world()
+    seed_handshakes(w)
+    del w.drones["DRONE_2"]
+    w.drones["DRONE_1"].battery = BatteryState(remaining_units=15_000)
+    contact_task(w, "T1", site_at(w, "LINE_040", 555_000), "REQ-1")
+    result = planning.plan_sorties(w, geo, None)
+    best = result.best
+    assert best is not None and best.valid and "T1" in best.task_ids, result.stop_reason
+    (sortie,) = best.sorties
+    first = sortie.steps[0]
+    assert (
+        isinstance(first.operation, Charge)
+        and first.operation.site == sortie.steps[1].operation.site
+    )
+    assert first.operation.charge_s > 0
+    # the drone gains only what it charged for: the whole itinerary replays on the energy law
+    assert validate_sorties(w, geo, None, best.sorties).ok
+
+
+def test_a_full_drone_is_never_asked_to_charge_before_a_task():
+    w, geo = two_drone_world()
+    seed_handshakes(w)
+    del w.drones["DRONE_2"]
+    contact_task(w, "T1", site_at(w, "LINE_040", 555_000), "REQ-1")
+    best = planning.plan_sorties(w, geo, None).best
+    assert best is not None and "T1" in best.task_ids
+    assert not any(isinstance(s.operation, Charge) for r in best.sorties for s in r.steps)
+
+
+def test_unconfirmed_charging_never_plans_a_start_charge():
+    w, geo = two_drone_world()
+    del w.drones["DRONE_2"]
+    w.drones["DRONE_1"].battery = BatteryState(remaining_units=15_000)
+    contact_task(w, "T1", site_at(w, "LINE_040", 555_000), "REQ-1")
+    veh = planning._vehicles(w, geo)[0]
+    assert veh.charge_options_s == (0,)
+    best = planning.plan_sorties(w, geo, None).best
+    assert best is None or "T1" not in best.task_ids
+
+
+def test_no_two_planned_visits_hold_the_same_exact_site():
+    w, geo = two_drone_world()
+    seed_handshakes(w)
+    shared = site_at(w, "LINE_040", 555_000)
+    contact_task(w, "T1", shared, "REQ-1")
+    contact_task(w, "T2", shared, "REQ-2")
+    result = planning.plan_sorties(w, geo, None)
+    best = result.best
+    assert best is not None and best.valid
+    sites = [
+        step.operation.site
+        for r in best.sorties
+        for step in r.steps
+        if isinstance(step.operation, GroundSample)
+    ]
+    assert len(sites) == len(set(sites))
+    assert validate_sorties(w, geo, None, best.sorties).ok
+    assert not result.replay.get("rejected"), result.replay.get("rejected")

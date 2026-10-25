@@ -90,6 +90,8 @@ class PlanVehicle:
     site: LandingSite | None  # where a grounded vehicle takes off from
     battery_units: int
     speed: float
+    # seconds a grounded drone may charge in place before its first takeoff (confirmed sites only)
+    charge_options_s: tuple[int, ...] = (0,)
 
 
 @dataclass(frozen=True)
@@ -255,6 +257,7 @@ def _vehicles(world: World, geometry: Geometry) -> tuple[PlanVehicle, ...]:
                     st.perch,
                     d.battery.remaining_units,
                     d.speed_km_per_min,
+                    _start_charge_options(world, st.perch, d.battery.remaining_units),
                 )
             )
         elif isinstance(st, Executing):
@@ -275,6 +278,20 @@ def _vehicles(world: World, geometry: Geometry) -> tuple[PlanVehicle, ...]:
                 )
             )
     return tuple(out)
+
+
+def _start_charge_options(world: World, site: LandingSite, battery_units: int) -> tuple[int, ...]:
+    """Seconds a perched drone may charge in place: only while its charging evidence is still
+    confirmed (charging telemetry renews it, so the duration is not bounded by the expiry), and
+    never more than the battery can still hold. Zero is always an option."""
+    ch = world.knowledge.chargeability.get(site.circuit_id)
+    if ch is None or ch.state is not ChargeState.CONFIRMED:
+        return (0,)
+    if ch.expires_s is not None and ch.expires_s <= world.clock_s:
+        return (0,)
+    model = world.energy_model
+    room_s = (model.capacity_units - battery_units) // max(model.net_charge_units_per_s, 1)
+    return tuple(o for o in CHARGE_OPTIONS_S if o <= room_s)
 
 
 def _site_pool(
@@ -385,7 +402,8 @@ def _build_groups(world: World, ctx, scans, perches) -> dict:
         if key in groups:
             groups[key][2].append(("p", j))
         else:
-            groups[key] = (tier, scoring.REQUEST_POINTS, [("p", j)])
+            points = ctx.request_points.get(task.request_id, scoring.REQUEST_POINTS)
+            groups[key] = (tier, points, [("p", j)])
     for i, s in enumerate(scans):
         target = s.acquisition.target
         for cell, _length in scoring._cells(target.start_mm, target.end_mm):
@@ -436,6 +454,12 @@ def _build_sortie(
         if site is None:
             return None
         at = geometry.position_of(site.point)
+        start_charge_s = charge_of(vi, -1)
+        if start_charge_s > 0:
+            steps.append(
+                ScheduledStep(len(steps), t, t + start_charge_s, Charge(site, start_charge_s, at))
+            )
+            t += start_charge_s
         steps.append(ScheduledStep(len(steps), t, t + TAKEOFF_S, Takeoff(site, at)))
         t += TAKEOFF_S
         pos = at
@@ -637,6 +661,15 @@ class _Model:
                 if allowed is None or owner_vi.get(allowed) == vi:
                     self.visit[vi, n] = m.NewBoolVar(f"visit_{vi}_{n}")
         self._make_charge_vars(m)
+        self.charge0: dict[int, cp_model.IntVar] = {}
+        for vi, veh in enumerate(vehicles):
+            if len(veh.charge_options_s) > 1:
+                c0 = m.NewIntVarFromDomain(
+                    cp_model.Domain.FromValues(list(veh.charge_options_s)), f"charge0_{vi}"
+                )
+                self.charge0[vi] = c0
+                self.charge_vars.append(c0)
+        self.end_scan: dict[tuple, cp_model.IntVar] = {}
         self.arc: dict[tuple, cp_model.IntVar] = {}
         self.arc_air: dict[tuple, int] = {}
         self.arc_cost: dict[tuple, int] = {}
@@ -653,12 +686,13 @@ class _Model:
             self.time[vi, "s"] = m.NewIntVar(0, DEADLINE_S, f"t_{vi}_s")
             for n in self.nodes:
                 self.time[vi, n] = m.NewIntVar(0, DEADLINE_S, f"t_{vi}_{n}")
-            m.Add(self.time[vi, "s"] == veh.start_s)
+            c0 = self.charge0.get(vi, 0)
+            m.Add(self.time[vi, "s"] == veh.start_s + c0)
             # prefix-ordered energy ledger shadow: gross cost and charge gain per node
             self.gross[vi, "s"] = m.NewIntVar(0, 10**8, f"gross_{vi}_s")
             self.gain[vi, "s"] = m.NewIntVar(0, energy.capacity_units, f"gain_{vi}_s")
             m.Add(self.gross[vi, "s"] == 0)
-            m.Add(self.gain[vi, "s"] == 0)
+            m.Add(self.gain[vi, "s"] == energy.net_charge_units_per_s * c0)
             for n in self.nodes:
                 self.gross[vi, n] = m.NewIntVar(0, 10**8, f"gross_{vi}_{n}")
                 self.gain[vi, n] = m.NewIntVar(0, energy.capacity_units, f"gain_{vi}_{n}")
@@ -680,7 +714,10 @@ class _Model:
                     cost = energy.units_per_airborne_s * (travel + takeoff_s)
                     if a == "s" and not veh.airborne:
                         cost += energy.takeoff_units
-                    if cost > veh.battery_units:
+                    reach = veh.battery_units + energy.net_charge_units_per_s * max(
+                        veh.charge_options_s
+                    )
+                    if cost > reach:
                         continue
                     x = m.NewBoolVar(f"arc_{vi}_{a}_{b}")
                     self.arc[vi, a, b] = x
@@ -715,11 +752,29 @@ class _Model:
             w = m.NewBoolVar(f"wait_{vi}")
             m.Add(used + w == 1)  # a vehicle either flies a perched-ending path or waits
             self.wait.append(w)
+            if vi in self.charge0:
+                m.Add(self.charge0[vi] == 0).OnlyEnforceIf(w)  # no flight, no start charge
             air_terms = [x * self.arc_air[key] for key, x in self.arc.items() if key[0] == vi]
             for i in range(self.ns):
                 if (vi, ("t", i)) not in self.visit:
                     continue
                 air_terms.append(self.visit[vi, ("t", i)] * scans[i].duration_s)
+                if not veh.airborne and veh.site is not None:
+                    # a grounded drone may end on a scan by flying back to its own perch; the
+                    # return leg is charged here exactly as the executed terminal landing is
+                    e = m.NewBoolVar(f"endscan_{vi}_{i}")
+                    self.end_scan[vi, i] = e
+                    back_s = leg_seconds(self.exit[("t", i)], veh.position, veh.speed) + LAND_S
+                    back_units = energy.units_per_airborne_s * back_s + energy.landing_units
+                    node = ("t", i)
+                    m.AddImplication(e, self.visit[vi, node])
+                    m.Add(
+                        self.time[vi, node] + self.dwell[node] + back_s <= DEADLINE_S
+                    ).OnlyEnforceIf(e)
+                    m.Add(
+                        self.gross[vi, node] - self.gain[vi, node] + back_units <= veh.battery_units
+                    ).OnlyEnforceIf(e)
+                    air_terms.append(e * back_s)
             for j in range(self.np):
                 if (vi, ("p", j)) not in self.visit:
                     continue
@@ -746,8 +801,13 @@ class _Model:
                 if (vi, ("t", i)) not in self.visit:
                     continue
                 v = self.visit[vi, ("t", i)]
+                stop = self.end_scan.get((vi, i))
+                if stop is not None:
+                    ends.append(stop)
                 m.Add(sum(self.into.get((vi, ("t", i)), [])) == v)
-                m.Add(sum(self.out.get((vi, ("t", i)), [])) == v)
+                m.Add(
+                    sum(self.out.get((vi, ("t", i)), [])) == v - (stop if stop is not None else 0)
+                )
                 m.Add(
                     self.time[vi, ("t", i)] + self.dwell[("t", i)] <= DEADLINE_S
                 ).OnlyEnforceIf(v)
@@ -762,6 +822,12 @@ class _Model:
             by_task.setdefault(self.task_of[n], []).append(n)
         for _tid, ns in by_task.items():  # unique ownership across every node serving the task
             m.Add(sum(self.any[n] for n in ns) <= 1)
+        by_site: dict[LandingSite, list] = {}
+        for j in range(self.np):
+            by_site.setdefault(perches[j].site, []).append(("p", j))
+        for ns in by_site.values():  # one drone holds an exact site; the validator checks timing
+            if len(ns) > 1:
+                m.AddAtMostOne([self.any[n] for n in ns])
         self.group_vars = {}
         for i, (key, (tier, value, nodes_)) in enumerate(groups.items()):
             g = m.NewBoolVar(f"g_{i}")
@@ -853,6 +919,8 @@ class _Model:
             used = vi in paths
             m.AddHint(self.used[vi], int(used))
             m.AddHint(self.wait[vi], int(not used))
+            if vi in self.charge0:
+                m.AddHint(self.charge0[vi], 0)
             m.AddHint(self.time[vi, "s"], self.vehicles[vi].start_s)
             for n in self.nodes:
                 m.AddHint(self.time[vi, n], self.hint_time.get((vi, n), self.vehicles[vi].start_s))
@@ -876,6 +944,7 @@ class _Model:
         for u in scoring.TIERS:
             terms = [value * g for g, tier, value, _ in self.group_vars.values() if tier == u]
             out.append((f"tier-{u}", terms, "max"))
+        out.append(("acquisitions", list(self.visit.values()), "min"))
         out.append(("risk", [] if isinstance(self.risk, int) else [self.risk], "min"))
         out.append(("switching", self.switching, "min"))
         out.append(("airtime", self.air, "min"))
@@ -1031,7 +1100,7 @@ def _round_requests(world, geometry, vehicles, model, solution, revision) -> tup
     solver = solution["solver"]
 
     def charge_of(vi, j):
-        var = model.charge.get((vi, j))
+        var = model.charge0.get(vi) if j == -1 else model.charge.get((vi, j))
         return solver.Value(var) if var is not None else 0
 
     reqs = []

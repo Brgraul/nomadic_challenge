@@ -104,5 +104,17 @@ def inject_lidar(
     return reading
 
 
+def declare_stop(sim: Simulation, reason=None, detail: str = "fixture-declared stop state") -> None:
+    """Fix the reconstruction's stop state, for tests of rules that sit downstream of it.
+
+    The injected readings bypass the sim thread's belief refresh, so the state is set directly
+    on the live world and republished.
+    """
+    from grid_ops.outage import StopAssessment, StopReason
+
+    sim._world.outage_stop = StopAssessment(reason or StopReason.SUPPORTED, detail)
+    sim.snapshot = copy.deepcopy(sim._world)
+
+
 def publish(w: World, sim: Simulation) -> None:
     sim.snapshot = copy.deepcopy(w)

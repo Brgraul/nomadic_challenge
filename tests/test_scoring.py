@@ -188,7 +188,7 @@ def test_explain_names_the_scale_and_the_tolerance():
     w, _geo = world()
     ctx = build_context(w)
     lines = explain(w, ctx, score_plan(w, ctx, []))
-    assert any("not a calibrated causal entropy" in x for x in lines)
+    assert any("not a calibrated frequency" in x for x in lines)
     assert any("quantisation tolerance: 1 unit" in x for x in lines)
 
 
@@ -230,3 +230,77 @@ def test_retired_requests_never_reach_the_scorer_as_open_work():
     notes, _unavailable = needs.refresh(w, net, geo)
     assert w.tasks["T0001"].status is TaskStatusV2.CANCELLED
     assert any("retired" in n for n in notes)
+
+# -- belief-valued benefit (P3) ---------------------------------------------------------------------------------------
+
+
+def _two_contact_tasks(w):
+    contact_request(w, urgency=4)
+    for tid, offset in (("T0001", 0), ("T0002", 50_000)):
+        w.set_task(
+            MeasurementTaskV2(
+                tid, "REQ-1", contact(site_at(w, "LINE_040", offset)), "REQ-1",
+                TaskStatusV2.PENDING, 2,
+            )
+        )
+
+
+def test_a_ground_group_earns_its_expected_discrimination_in_bits():
+    w, _geo = world()
+    _two_contact_tasks(w)
+    w.experiment_values = {"T0001": 0.5, "T0002": 0.25}
+    ctx = build_context(w)
+    assert tier_at(score_plan(w, ctx, ["T0001"]).tiers, 4) == 500
+    # alternatives of one group earn the best of them once, not the sum
+    assert tier_at(score_plan(w, ctx, ["T0001", "T0002"]).tiers, 4) == 500
+
+
+def test_work_the_model_cannot_value_is_not_dropped_but_ranks_below_discrimination():
+    w, _geo = world()
+    _two_contact_tasks(w)
+    w.experiment_values = {"T0001": 0.0, "T0002": 0.0}
+    floor = tier_at(score_plan(w, build_context(w), ["T0001"]).tiers, 4)
+    assert floor == scoring.AUTHORISED_FLOOR_POINTS > 0
+    w.experiment_values = {"T0001": 0.3, "T0002": 0.0}
+    assert tier_at(score_plan(w, build_context(w), ["T0001"]).tiers, 4) > floor
+
+
+def test_a_task_with_no_belief_value_says_so_and_keeps_the_legacy_award():
+    w, _geo = world()
+    _two_contact_tasks(w)
+    w.experiment_values = {}
+    ctx = build_context(w)
+    assert ctx.unvalued == ("T0001", "T0002")
+    s = score_plan(w, ctx, ["T0001"])
+    assert tier_at(s.tiers, 4) == scoring.REQUEST_POINTS
+    assert any("no belief value" in n for n in s.notes)
+
+
+def test_lidar_benefit_is_the_bits_spread_over_the_uninspected_span_whatever_its_length():
+    w, _geo = world()
+    lidar_request(w, urgency=3)
+    lidar_task(w, "T0001", "LINE_040", 0, 110_000)
+    w.experiment_values = {"T0001": 0.4}
+    assert tier_at(score_plan(w, build_context(w), ["T0001"]).tiers, 3) == pytest.approx(400, abs=2)
+    w.readings["R0001"] = lidar_reading(
+        Geometry(tiny_network()), "R0001", "LINE_040", 50_000, 110_000, 2.0
+    )
+    # the value was computed for what is still uninspected, so it is not cut again
+    assert tier_at(score_plan(w, build_context(w), ["T0001"]).tiers, 3) == pytest.approx(400, abs=2)
+
+
+def test_fewer_acquisition_attempts_win_among_plans_of_equal_benefit():
+    base = dict(tiers=(500, 0, 0, 0, 0), risk=0, switching=0, airtime_s=900, charge_s=0)
+    lean = PlanScore(**base, acquisitions=1)
+    wasteful = PlanScore(**base, acquisitions=3)
+    assert lean.better_than(wasteful)
+    more_value = PlanScore(**{**base, "tiers": (900, 0, 0, 0, 0)}, acquisitions=3)
+    assert more_value.better_than(lean)  # benefit still outranks the count
+
+
+def test_a_task_listed_twice_is_one_acquisition_attempt():
+    w, _geo = world()
+    _two_contact_tasks(w)
+    ctx = build_context(w)
+    assert score_plan(w, ctx, ["T0001", "T0001"]).acquisitions == 1
+    assert score_plan(w, ctx, ["T0001", "T0002"]).acquisitions == 2

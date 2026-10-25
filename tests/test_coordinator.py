@@ -243,3 +243,35 @@ def test_old_cycles_cannot_release_newer_holds():
     w.next_cycle += 1
     with pytest.raises(CommandRejected, match="Late or unauthorised"):
         sim.submit(Release(cycle_a, "D1", "operator")).result()
+
+def test_a_manager_function_declares_its_own_author_label(monkeypatch):
+    """A wrapped language-model call must still be recorded as language-model agency, and a
+    scripted policy must never be recorded as one."""
+    monkeypatch.setattr(agents, "llm_available", lambda: True)
+    labels = {}
+    for author in ("manager-llm", "manager-scripted (reconstruction-driven)"):
+        sim = tiny_sim()
+
+        def manager(tb, trigger_ids=()):
+            return agents.run_adaptive_scripted_turn(tb, trigger_ids)
+
+        manager.author = author
+        Coordinator(sim, manager_fn=manager).run_turn_now()
+        labels[author] = sim.snapshot.proposals[-1].author
+    assert labels["manager-llm"] == "manager-llm"
+    assert labels["manager-scripted (reconstruction-driven)"].startswith("manager-scripted")
+    sim = tiny_sim()
+    Coordinator(sim, manager_fn=agents.run_scripted_turn).run_turn_now()
+    assert sim.snapshot.proposals[-1].author == "manager-scripted"
+
+
+def test_without_model_credentials_a_language_model_label_is_downgraded(monkeypatch):
+    monkeypatch.setattr(agents, "llm_available", lambda: False)
+    sim = tiny_sim()
+
+    def manager(tb, trigger_ids=()):
+        return agents.run_adaptive_scripted_turn(tb, trigger_ids)
+
+    manager.author = "manager-llm"
+    Coordinator(sim, manager_fn=manager).run_turn_now()
+    assert sim.snapshot.proposals[-1].author == "manager-scripted (no model credentials)"

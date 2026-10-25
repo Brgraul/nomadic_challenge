@@ -22,6 +22,7 @@ from grid_ops.sensing import (
     AcquisitionSample,
     ContactCurrent,
     CurrentPayload,
+    EchoEdge,
     ExecutedAcquisition,
     LidarPass,
     LidarPayload,
@@ -31,6 +32,7 @@ from grid_ops.sensing import (
     TdrPayload,
     TdrTest,
     tdr_access,
+    trace_echoes,
 )
 from grid_ops.truth.local import LidarScene, SceneHazard
 
@@ -256,39 +258,29 @@ class Episode:
         for switch in self.net.switch.itertuples():
             if switch.et == "b" and switch.closed:
                 parents[root(int(switch.element))] = root(int(switch.bus))
-        adjacency: dict[int, list[ConductorSpan]] = {}
+        kv = self.registry.circuits[circuit_id].nominal_kv
+        adjacency: dict[int, list[EchoEdge]] = {}
+        edges: dict[int, EchoEdge] = {}
         for span in self.spans:
-            if self.registry.circuits[span.circuit_id].nominal_kv != (
-                self.registry.circuits[circuit_id].nominal_kv
-            ):
+            if self.registry.circuits[span.circuit_id].nominal_kv != kv:
                 continue
-            adjacency.setdefault(root(span.from_bus), []).append(span)
-            adjacency.setdefault(root(span.to_bus), []).append(span)
+            edge = EchoEdge(
+                span.line_index,
+                root(span.from_bus),
+                root(span.to_bus),
+                span.end_mm - span.start_mm,
+            )
+            edges[span.line_index] = edge
+            adjacency.setdefault(edge.a, []).append(edge)
+            adjacency.setdefault(edge.b, []).append(edge)
         cap = self.public.capabilities
-        stack = [
-            (root(current.from_bus), (offset_mm - current.start_mm) / 1000, (current.line_index,)),
-            (root(current.to_bus), (current.end_mm - offset_mm) / 1000, (current.line_index,)),
-        ]
-        found = []
-        explored = 0
-        while stack and explored < cap.tdr_max_paths:
-            node, distance, visited = stack.pop()
-            explored += 1
-            if distance > cap.tdr_range_m:
-                continue
-            outgoing = [s for s in adjacency[node] if s.line_index not in visited]
-            if not outgoing:
-                if distance > 1e-9:
-                    found.append((distance, 1.0))
-                continue
-            if len(outgoing) > 1:
-                found.append((distance, -min(0.8, len(outgoing) / 4)))
-            for s in outgoing:
-                other = root(s.to_bus) if root(s.from_bus) == node else root(s.from_bus)
-                stack.append(
-                    (other, distance + (s.end_mm - s.start_mm) / 1000, (*visited, s.line_index))
-                )
-        return tuple(sorted(set(found))), bool(stack)
+        return trace_echoes(
+            adjacency,
+            edges[current.line_index],
+            offset_mm - current.start_mm,
+            range_m=cap.tdr_range_m,
+            max_paths=cap.tdr_max_paths,
+        )
 
     def _lidar(self, executed: ExecutedAcquisition) -> AcquisitionSample:
         a = executed.acquisition

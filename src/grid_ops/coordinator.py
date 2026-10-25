@@ -170,7 +170,11 @@ class Coordinator:
             except Exception as e:
                 note = f"manager error: {type(e).__name__}: {e}"
                 break
-            author = "manager-llm" if self.manager_fn is agents.run_llm_turn else "manager-scripted"
+            author = getattr(
+                self.manager_fn,
+                "author",
+                "manager-llm" if self.manager_fn is agents.run_llm_turn else "manager-scripted",
+            )
             if not agents.llm_available() and author == "manager-llm":
                 author = "manager-scripted (no model credentials)"
             finding = self._record(result, author, snap.revision)

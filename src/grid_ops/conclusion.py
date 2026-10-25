@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from grid_ops.outage import StopReason
 from grid_ops.scenario import ScenarioMode
 from grid_ops.sensing import ContactCurrent, LidarPass, TdrTest
 
@@ -84,6 +85,7 @@ def check_conclusion(output: ManagerOutput, tb: Toolbox) -> list[str]:
     recs = {r.id: r for r in output.recommendations}
     if not c.remaining_uncertainty.strip():
         errs.append("conclusion: explicit remaining uncertainty is required")
+    errs += _reconstruction_errors(c, output, w)
     if c.kind == "unresolved_ambiguous":
         rec = recs.get(c.discriminating_recommendation_id or "")
         if rec is None or rec.action_kind not in ("measure", "inspect") or rec.scope is None:
@@ -109,15 +111,21 @@ def check_conclusion(output: ManagerOutput, tb: Toolbox) -> list[str]:
     hazard_segs = {_evidence_segment(tb, e) for e in c.causal_link_evidence_ids}
     has_local = any(
         e.startswith("HZ")
-        or (e in w.readings and isinstance(w.readings[e].acquisition, LidarPass))
+        or (e in w.readings and isinstance(w.readings[e].acquisition, LidarPass | TdrTest))
         for e in c.causal_link_evidence_ids
     )
     link = [
         e
         for e in c.causal_link_evidence_ids
-        if e in w.knowledge.evidence
-        and w.knowledge.evidence[e].source in ("reading", "report", "handshake")
-        and not (e in w.readings and isinstance(w.readings[e].acquisition, LidarPass))
+        if (
+            e in w.knowledge.evidence
+            and w.knowledge.evidence[e].source in ("reading", "report", "handshake")
+        )
+        or (
+            e in w.readings
+            and w.readings[e].quality.valid
+            and isinstance(w.readings[e].acquisition, ContactCurrent | TdrTest)
+        )
     ]
     for e in c.causal_link_evidence_ids:
         if (
@@ -160,6 +168,47 @@ def check_conclusion(output: ManagerOutput, tb: Toolbox) -> list[str]:
     if rec is None or rec.scope is None or rec.action_kind == "none":
         errs.append("conclusion: a scoped recommendation is required")
     return errs
+
+
+def _reconstruction_errors(c, output: ManagerOutput, w: World) -> list[str]:
+    """The conclusion may not outrun the deterministic reconstruction of executed evidence."""
+    stop = w.outage_stop
+    if w.outage_belief is None or stop is None:
+        return []
+    reason = stop.reason
+    if c.kind == "unresolved_ambiguous":
+        if reason is StopReason.SUPPORTED:
+            return ["conclusion: the reconstruction already supports a cause; report it instead"]
+        if reason is StopReason.CONTINUE:
+            return [
+                "conclusion: the reconstruction can still separate the alternatives "
+                f"({stop.detail}); request that measurement before stopping as ambiguous"
+            ]
+        return []
+    if reason is not StopReason.SUPPORTED:
+        return [
+            f"conclusion: the reconstruction is {reason} ({stop.detail}); a cause cannot be "
+            "concluded from this evidence"
+        ]
+    fact = next(
+        (f for f in w.outage_belief.supported_facts if f.kind == "fault_interval" and f.supported),
+        None,
+    )
+    revised = {r.hypothesis_id: r.after for r in output.revisions}
+    cause = revised.get(c.cause_hypothesis_id or "")
+    if fact is not None and cause is not None and fact.interval is not None:
+        lo, hi = fact.interval.start_mm, fact.interval.end_mm
+        if not any(
+            s.segment_id == fact.interval.segment_id
+            and s.start_km * 1e6 <= hi
+            and s.end_km * 1e6 >= lo
+            for s in cause.scope
+        ):
+            return [
+                "conclusion: the cause hypothesis scope does not cover the supported fault "
+                f"interval on {fact.interval.segment_id}"
+            ]
+    return []
 
 
 # -- reopening ------------------------------
@@ -249,7 +298,15 @@ def investigation_report(world: World) -> dict:
     """Three separately scoped results, plus what remains if time is up."""
     inv = world.investigation
     local = [h for h in world.hazards]
+    stop = world.outage_stop
     report = {
+        "reconstruction": None
+        if stop is None
+        else {
+            "state": str(stop.reason),
+            "detail": stop.detail,
+            "unresolved": list(stop.unresolved),
+        },
         "incident_status": str(inv.status),
         "operating_assessment": f"{len(world.readings)} three-method readings",
         "local_investigation": f"{len(local)} detected hazard(s); "

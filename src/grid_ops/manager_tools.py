@@ -273,6 +273,99 @@ class Toolbox:
             }
         )
 
+    def reconstruction(self) -> str:
+        """The deterministic public posterior: supported facts, alternatives and what is unknown."""
+        w = self.world
+        b = w.outage_belief
+        if b is None:
+            return self._out({"error": "no reconstruction is available in this snapshot"})
+        stop = w.outage_stop
+        return self._out(
+            {
+                "model_version": b.model_version,
+                "evidence_ids": list(b.evidence_ids),
+                "supported_facts": [
+                    {
+                        "kind": f.kind,
+                        "subject": f.subject,
+                        "statement": f.statement,
+                        "probability": round(f.probability, 3),
+                        "supported": f.supported,
+                        "interval": None
+                        if f.interval is None
+                        else {
+                            "segment_id": f.interval.segment_id,
+                            "start_mm": f.interval.start_mm,
+                            "end_mm": f.interval.end_mm,
+                        },
+                        "conditional_on": list(f.conditional_on),
+                        "evidence_ids": list(f.evidence_ids),
+                    }
+                    for f in b.supported_facts
+                ],
+                "alternatives_not_yet_separated": [
+                    {
+                        "label": a.label,
+                        "mass": round(a.mass, 3),
+                        "candidates": len(a.candidate_ids),
+                        "distinguishing_methods": list(a.distinguishing_methods),
+                    }
+                    for a in b.unresolved_classes
+                ],
+                "unknown_regions": [
+                    {"segment_id": i.segment_id, "start_mm": i.start_mm, "end_mm": i.end_mm}
+                    for i in b.unknown_regions[:20]
+                ],
+                "regions": [
+                    {
+                        "segment_id": r.segment_id,
+                        "fault_mass": round(r.fault_mass, 3),
+                        "unloaded_mass": round(r.unloaded_mass, 3),
+                        "observed_current_live": r.observed_energized,
+                        "lidar_covered_fraction": round(r.lidar_covered_fraction, 3),
+                    }
+                    for r in sorted(b.regions, key=lambda r: -r.fault_mass)[:12]
+                ],
+                "model_checks": {
+                    "residual_mass": round(b.model_checks.residual_mass, 3),
+                    "mismatch": b.model_checks.mismatch,
+                    "notes": list(b.model_checks.notes),
+                },
+                "stop_assessment": None
+                if stop is None
+                else {"state": str(stop.reason), "detail": stop.detail},
+                "candidate_pool_truncated": b.truncated,
+                "limits": list(b.limits),
+                "note": "Probabilities are conditional on the declared model and are computed "
+                "by the system; do not restate or invent them.",
+            }
+        )
+
+    def suggest_experiments(self) -> str:
+        """Ranked candidate measurements by public expected discrimination, for you to request."""
+        w = self.world
+        rows = [
+            {
+                "method": p.method,
+                "segment_id": p.segment_id,
+                "circuit_id": p.circuit_id,
+                "start_mm": p.start_mm,
+                "end_mm": p.end_mm,
+                "expected_discrimination_bits": p.eig_bits,
+                "note": p.note,
+            }
+            for p in w.experiment_proposals
+        ]
+        return self._out(
+            {
+                "experiments": rows,
+                "omitted_open_tasks": list(w.experiment_omitted),
+                "note": "Bits are the system's expected discrimination between remaining "
+                "alternatives. You choose method and scope; the optimizer chooses drones, "
+                "routes and charging.",
+            }
+        )
+
     def list_events(self, limit: int = 30) -> str:
         return self._out(
             [

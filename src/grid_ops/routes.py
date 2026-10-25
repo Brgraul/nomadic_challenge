@@ -453,9 +453,9 @@ def _validate_steps(
         )
         return None
     if perched_since is not None:
-        occupancy.setdefault(req.final_perch, []).append(
-            (perched_since, steps[-1].end_s, drone.id)
-        )
+        # the drone stays on its final perch after the itinerary ends: another drone's later
+        # visit would still collide, exactly as for perches already held
+        occupancy.setdefault(req.final_perch, []).append((perched_since, 10**12, drone.id))
     itinerary = Itinerary(tuple(steps), req.final_perch)
     return SortiePlan(req.drone_id, itinerary)
 

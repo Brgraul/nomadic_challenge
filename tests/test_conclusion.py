@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import pytest
 from conftest import permissive
-from helpers_p2 import inject_lidar
+from helpers_p2 import declare_stop, inject_lidar
 
 from grid_ops import agents, coordinator, scripted_manager
 from grid_ops.conclusion import InvestigationStatus, investigation_report, reopen_relevance
 from grid_ops.grid import load_network
 from grid_ops.hypotheses import AlternativeDisposition, ReopenModel
 from grid_ops.manager_tools import build_toolbox
+from grid_ops.outage import StopReason
 from grid_ops.proposals import ProposedStatus, validate
 from grid_ops.scenario import ScenarioConfig, ScenarioMode
 from grid_ops.sensing import TaskStatusV2
@@ -70,6 +71,7 @@ def hazard_sim(network):
     sim = permissive(Simulation(network))
     startup_commit(sim)
     inject_lidar(sim, "R0001", "LINE_058", 0, sim.geometry.length_mm("LINE_058"), 0.3)
+    declare_stop(sim)
     return sim
 
 
@@ -104,6 +106,41 @@ def test_a_valid_conclusion_has_a_causal_link_alternatives_a_recommendation_and_
 ):
     sim = hazard_sim(network)
     assert errors(sim) == []
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        StopReason.CONTINUE,
+        StopReason.AMBIGUOUS,
+        StopReason.MODEL_MISMATCHED,
+        StopReason.MODEL_LIMITED,
+        StopReason.BUDGET_EXHAUSTED,
+        StopReason.NO_SAFE_EXPERIMENT,
+    ],
+)
+def test_a_cause_cannot_be_concluded_unless_the_reconstruction_supports_it(network, reason):
+    sim = hazard_sim(network)
+    declare_stop(sim, reason)
+    errs = errors(sim)
+    assert any("a cause cannot be concluded from this evidence" in e for e in errs)
+
+
+def test_ambiguity_is_premature_while_a_discriminating_experiment_remains(network):
+    sim = hazard_sim(network)
+    kwargs = dict(
+        kind="unresolved_ambiguous",
+        cause_hypothesis_id=None,
+        causal_link_evidence_ids=[],
+        alternatives=[],
+        discriminating_recommendation_id="REC-H-VEG",
+    )
+    declare_stop(sim, StopReason.CONTINUE)
+    assert any("can still separate the alternatives" in e for e in errors(sim, **kwargs))
+    declare_stop(sim, StopReason.SUPPORTED)
+    assert any("already supports a cause" in e for e in errors(sim, **kwargs))
+    declare_stop(sim, StopReason.MODEL_MISMATCHED)
+    assert errors(sim, **kwargs) == []
 
 
 def test_a_detected_local_hazard_alone_cannot_complete_the_diagnosis(network):
@@ -151,6 +188,7 @@ def test_material_alternatives_must_be_addressed(network):
 
 def test_ambiguous_causes_stay_unresolved_with_a_discriminating_recommendation(network):
     sim = hazard_sim(network)
+    declare_stop(sim, StopReason.AMBIGUOUS)
     tb, out = conclusion_output(
         sim,
         kind="unresolved_ambiguous",
