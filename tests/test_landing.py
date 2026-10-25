@@ -5,7 +5,6 @@ from __future__ import annotations
 from fixtures_three_method import contact, site_at, two_drone_world
 from helpers_p2 import real_sim
 
-from grid_ops import knowledge
 from grid_ops.knowledge import (
     EVIDENCE_LIFETIME_S,
     ChargeState,

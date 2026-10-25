@@ -1,4 +1,8 @@
-"""pydeck map of the network, report areas and drones for one World snapshot."""
+"""pydeck map of the network, report areas and drones for one World snapshot.
+
+Three-method rendering: drones show their itinerary phase and battery; inspected lidar
+coverage is drawn from the recorded coverage records.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,7 @@ import pydeck as pdk
 
 from grid_ops.geometry import Geometry, Interval, LinePoint
 from grid_ops.grid import Network
-from grid_ops.world import Flying, LineStatus, Measuring, World, format_clock
+from grid_ops.world import Executing, LineStatus, World, format_clock, position_at
 
 BELIEF_COLORS = {
     LineStatus.UNKNOWN: [140, 140, 140],
@@ -18,10 +22,8 @@ BELIEF_COLORS = {
 }
 TRUTH_COLORS = {True: [46, 160, 67], False: [210, 40, 40]}
 PHASE_COLORS = {
-    "ready": [40, 110, 220],
-    "flying": [150, 60, 200],
-    "measuring": [240, 190, 20],
-    "charging": [46, 160, 67],
+    "perched": [40, 110, 220],
+    "executing": [240, 190, 20],
     "stranded": [210, 40, 40],
 }
 
@@ -31,11 +33,9 @@ VIEW = pdk.ViewState(longitude=10.665, latitude=48.235, zoom=10)
 def build_deck(
     network: Network,
     world: World,
-    truth_energized: frozenset[str] | None = None,
     geometry: Geometry | None = None,
     preview: LinePoint | None = None,
 ) -> pdk.Deck:
-    """`truth_energized` is the evaluator overlay; None draws only the operator's beliefs."""
     areas = [
         {
             "polygon": [list(p) for p in area.polygon],
@@ -50,11 +50,9 @@ def build_deck(
     segments = [
         {
             "path": [list(p) for p in seg.path],
-            "color": TRUTH_COLORS[seg.id in truth_energized]
-            if truth_energized is not None
-            else BELIEF_COLORS[world.belief[seg.id]],
+            "color": BELIEF_COLORS[world.belief[seg.id]],
             "width": 4 if seg.voltage_kv >= 380 else 2,
-            "tooltip": f"{seg.id} · {seg.voltage_kv:.0f} kV · {world.belief[seg.id]}",
+            "tooltip": f"{seg.id} · {world.belief[seg.id]}",
         }
         for seg in network.segments.values()
     ]
@@ -72,18 +70,26 @@ def build_deck(
             "label": drone.id.removeprefix("DRONE_"),
             "position": list(drone.position),
             "color": PHASE_COLORS[drone.phase],
-            "tooltip": f"{drone.id} · {drone.phase} · {format_clock(world.clock)}",
+            "tooltip": (
+                f"{drone.id} · {drone.phase} · battery "
+                f"{round(100 * drone.battery.remaining_units / drone.battery.capacity_units)}% · "
+                f"{format_clock(world.clock)}"
+            ),
         }
         for drone in world.drones.values()
     ]
     flights = []
     for d in world.drones.values():
-        if isinstance(d.state, Flying | Measuring):
-            route = d.state.route
-            here = d.position if isinstance(d.state, Flying) else d.state.stop.position
-            for stop_pos in (*(s.position for s in route.stops), route.perch_position):
-                flights.append({"from": list(here), "to": list(stop_pos)})
-                here = stop_pos
+        match d.state:
+            case Executing(itinerary=it, step_index=i):
+                remaining = it.steps[i:]
+            case _:
+                continue
+        here = d.position
+        for step in remaining:
+            anchor = position_at(step, 1.0)
+            flights.append({"from": list(here), "to": list(anchor)})
+            here = anchor
 
     site_rows = [
         {

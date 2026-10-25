@@ -1,16 +1,32 @@
-"""Plain-data views of a public World for the console and for tests."""
+"""Plain-data views of a public World for the console and for tests.
+
+Three-method rendering only: lidar / tdr / contact_current payloads, itinerary phases and
+battery units. Electrical inference (estimates, consistency, envelopes, MW) and the legacy
+dwell/charging model have no view here.
+"""
 
 from __future__ import annotations
 
+from grid_ops.sensing import (
+    CurrentPayload,
+    LidarPayload,
+    RequestStatus,
+    TdrPayload,
+)
 from grid_ops.world import (
-    DWELL_MINUTES,
-    Charging,
-    Flying,
-    Measuring,
-    Ready,
+    Charge,
+    Executing,
+    GroundSample,
+    Land,
+    Perched,
+    Scan,
     Stranded,
+    Takeoff,
+    Transit,
+    Wait,
     World,
     format_clock,
+    position_at,
 )
 
 
@@ -18,51 +34,98 @@ def _t(seconds: int) -> str:
     return format_clock(seconds / 60)
 
 
+def _op_label(op) -> str:
+    """A short human label for one scheduled operation."""
+    match op:
+        case Transit(origin, destination):
+            return (
+                f"transit to {destination[0]:.4f},{destination[1]:.4f}"
+                if origin != destination
+                else "transit"
+            )
+        case Scan(acquisition=acq, task_id=task_id):
+            return f"lidar scan {task_id} @ {acq.target.segment_id}"
+        case Land(site):
+            return f"land {site.circuit_id}"
+        case Takeoff(site):
+            return f"takeoff {site.circuit_id}"
+        case GroundSample(task_ids=task_ids):
+            return f"ground sample {', '.join(task_ids)}"
+        case Charge(site):
+            return f"charge {site.circuit_id}"
+        case Wait(airborne=airborne):
+            return "wait airborne" if airborne else "wait perched"
+    return type(op).__name__.lower()
+
+
 def drone_rows(world: World) -> list[dict]:
+    """Per drone: phase, position, battery units and % of capacity, the current operation with
+    its step bounds, the remaining itinerary length and the completed-task count. A landing
+    never adds energy and no charging state exists."""
     rows = []
-    for d in world.drones.values():
+    for d in sorted(world.drones.values(), key=lambda d: d.id):
+        row = {
+            "drone": d.id,
+            "phase": d.phase,
+            "position": f"{d.position[0]:.4f},{d.position[1]:.4f}",
+            "battery_units": d.battery.remaining_units,
+            "battery_pct": round(100 * d.battery.remaining_units / d.battery.capacity_units, 1),
+            "operation": "",
+            "step_end": "",
+            "itinerary_left": 0,
+            "tasks_done": len(d.history),
+        }
         match d.state:
-            case Ready(perch) | Stranded(perch):
-                where, until = perch.circuit_id, ""
-            case Charging(perch, until_s):
-                where, until = perch.circuit_id, f"charged {_t(until_s)}"
-            case Flying(arrives_s=a, route=r):
-                where = f"→ {len(r.stops)} stop(s) then {r.perch.circuit_id}"
-                until = f"arrives {_t(a)}"
-            case Measuring(stop=s, until_s=u, route=r):
-                where = f"{s.kind} @ {s.point.segment_id}"
-                until = f"dwell ends {_t(u)}"
-        rows.append(
-            {
-                "drone": d.id,
-                "phase": d.phase,
-                "battery_min": round(d.battery_min, 1),
-                "where": where,
-                "next": until,
-            }
-        )
+            case Perched(perch):
+                row["operation"] = f"perched {perch.circuit_id}"
+            case Stranded(perch):
+                row["operation"] = f"stranded {perch.circuit_id}"
+            case Executing(itinerary=it, step_index=i):
+                step = it.steps[i]
+                row["operation"] = _op_label(step.operation)
+                row["step_end"] = _t(step.end_s)
+                row["itinerary_left"] = len(it.steps) - i
+        rows.append(row)
     return rows
 
 
 def route_rows(world: World) -> list[dict]:
+    """The live itinerary of every executing drone: its remaining steps and final perch."""
     rows = []
-    for d in world.drones.values():
+    for d in sorted(world.drones.values(), key=lambda d: d.id):
         match d.state:
-            case Flying(route=r):
-                locked = ""
-            case Measuring(stop=s, until_s=u, route=r):
-                locked = f"locked {s.task_id} until {_t(u)} ({(u - world.clock_s) // 60}m left)"
+            case Executing(itinerary=it, step_index=i):
+                remaining = it.steps[i:]
             case _:
                 continue
         rows.append(
             {
                 "drone": d.id,
-                "locked": locked,
-                "stops": " → ".join(
-                    f"{s.task_id}:{s.kind}@{s.point.segment_id}/{s.point.offset_km:.3f}km"
-                    for s in r.stops
+                "locked": f"step {i + 1}/{len(it.steps)} ends {_t(it.steps[i].end_s)}",
+                "steps": " > ".join(
+                    f"{_t(s.start_s)}-{_t(s.end_s)} {_op_label(s.operation)}" for s in remaining
                 ),
-                "landing": f"{r.perch.circuit_id} @ {r.perch.point.offset_km:.3f} km",
+                "final_perch": f"{it.final_perch.circuit_id} "
+                f"@ {it.final_perch.point.offset_km:.3f} km",
+            }
+        )
+    return rows
+
+
+def itinerary_rows(world: World, drone_id: str) -> list[dict]:
+    """Every step of one drone's itinerary with its anchor position and task ids."""
+    d = world.drones.get(drone_id)
+    if d is None or not isinstance(d.state, Executing):
+        return []
+    rows = []
+    for step in d.state.itinerary.steps:
+        anchor = position_at(step, 1.0)
+        rows.append(
+            {
+                "step": step.index,
+                "window": f"{_t(step.start_s)}-{_t(step.end_s)}",
+                "operation": _op_label(step.operation),
+                "at": f"{anchor[0]:.4f},{anchor[1]:.4f}",
             }
         )
     return rows
@@ -72,42 +135,110 @@ def task_rows(world: World) -> list[dict]:
     return [
         {
             "task": t.id,
-            "site": t.site_id,
-            "kind": t.kind,
-            "dwell_min": DWELL_MINUTES[t.kind],
+            "method": str(t.acquisition.method),
+            "request": t.request_id,
             "status": t.status,
             "drone": t.assigned_drone_id or "",
-            "repeat_of": t.repeat_of_reading_id or "",
-            "needs": ", ".join(t.need_ids),
-            "group": t.group_id,
+            "urgency": t.urgency,
+            "group": t.alternative_group_id,
+            "repeat_of": t.repeat_of_task_id or "",
+            "reading": t.reading_id or "",
             "note": t.note,
-            "purpose": t.purpose,
         }
-        for t in world.tasks.values()
+        for t in sorted(world.tasks.values(), key=lambda t: t.id)
     ]
+
+
+def _target_summary(request) -> str:
+    if request.method == "lidar":
+        target = request.target
+        return f"{target.segment_id} span {target.start_mm / 1e6:.3f}-{target.end_mm / 1e6:.3f} km"
+    target = request.target
+    return (
+        f"{target.circuit_id} phase {target.phase} "
+        f"{target.start_mm / 1e6:.3f}-{target.end_mm / 1e6:.3f} km"
+    )
+
+
+def request_rows(world: World) -> list[dict]:
+    """Accepted requests with their compiled tasks and the explicit unresolved flag."""
+    from grid_ops import scoring
+
+    unresolved = dict(scoring.unresolved_requests(world))
+    tasks_by_request: dict[str, list[str]] = {}
+    for t in world.tasks.values():
+        tasks_by_request.setdefault(t.request_id, []).append(t.id)
+    rows = []
+    for a in sorted(world.requests.values(), key=lambda a: a.id):
+        unresolved_now = a.status is RequestStatus.ACTIVE and a.id in unresolved
+        rows.append(
+            {
+                "request": a.id,
+                "method": str(a.request.method),
+                "target": _target_summary(a.request),
+                "status": a.status,
+                "urgency": a.request.urgency,
+                "rationale": a.request.rationale[:120],
+                "tasks": ", ".join(sorted(tasks_by_request.get(a.id, []))),
+                "unresolved": "EXPLICITLY UNRESOLVED" if unresolved_now else "",
+                "retired_reason": a.retired_reason,
+            }
+        )
+    return rows
 
 
 def reading_rows(world: World) -> list[dict]:
-    return [
-        {
+    """Payload-type-specific rows. Voltage, P/Q, power direction, RGB/IR and temperature have
+    no column: the three methods do not produce them."""
+    rows = []
+    for r in sorted(world.readings.values(), key=lambda r: r.id):
+        quality = "valid" if r.quality.valid else f"invalid: {r.quality.reason}"
+        row = {
             "reading": r.id,
-            "time": _t(r.clock_s),
+            "time": _t(r.acquired_start_s),
             "drone": r.drone_id,
             "task": r.task_id,
-            "site": r.site_id,
-            "kind": r.kind,
-            "epoch": r.operating_epoch,
-            "values": r.summary,
-            "repeat": r.repeat_index,
-            "conditions": ", ".join(f"{k}={v:.3g}" for k, v in r.conditions),
-            "inspected_m": round(sum(b - a for a, b in r.inspected) / 1000, 1)
-            if r.inspected
-            else "",
-            "sensor_model": r.sensor_model_revision,
-            "covariance_dim": len(r.covariance.names) if r.covariance else "",
+            "requests": ", ".join(r.request_ids),
+            "method": str(r.acquisition.method),
+            "quality": quality,
+            "epoch": r.evidence_epoch,
         }
-        for r in world.readings.values()
-    ]
+        payload = r.payload
+        match payload:
+            case LidarPayload():
+                row.update(
+                    {
+                        "inspected_mm": sum(i.end_mm - i.start_mm for i in payload.inspected),
+                        "missing_mm": sum(i.end_mm - i.start_mm for i in payload.missing),
+                        "clearance_m": None
+                        if payload.clearance_m is None
+                        else round(payload.clearance_m, 3),
+                        "clearance_uncertainty_m": round(payload.uncertainty_m, 3),
+                        "resolution_mm": payload.resolution_mm,
+                    }
+                )
+            case TdrPayload():
+                row.update(
+                    {
+                        "echoes": len(payload.echoes),
+                        "coupling": payload.coupling_quality,
+                        "usable_range_m": round(payload.usable_range_m, 1),
+                        "path_truncated": payload.path_truncated,
+                    }
+                )
+            case CurrentPayload():
+                conductor = payload.conductor
+                row.update(
+                    {
+                        "rms_a": round(payload.rms_a, 3),
+                        "uncertainty_a": round(payload.uncertainty_a, 3),
+                        "conductor": f"{conductor.circuit_id}/{conductor.phase}"
+                        f"@{conductor.point.offset_mm / 1e6:.3f}km",
+                        "integration_s": payload.integration_s,
+                    }
+                )
+        rows.append(row)
+    return rows
 
 
 def rejection_rows(world: World) -> list[dict]:
@@ -125,20 +256,20 @@ def known_switching_rows(world: World) -> list[dict]:
 
 
 def endpoint_rows(world: World) -> list[dict]:
-    """Per-circuit landing eligibility with its reasons, expiry, conflicts and occupant."""
+    """Per-circuit landing eligibility with its reasons, expiry and occupant."""
     from grid_ops import knowledge
+    from grid_ops.geometry import LandingSite, LinePoint
 
     occupant = {}
     for d in world.drones.values():
-        if isinstance(d.state, Charging | Stranded):
-            occupant[d.state.perch.circuit_id] = f"{d.id} ({d.phase})"
+        match d.state:
+            case Perched(perch) | Stranded(perch):
+                occupant[perch.circuit_id] = f"{d.id} ({d.phase})"
     rows = []
     for cid, ch in world.knowledge.chargeability.items():
         ck = world.knowledge.circuits[cid]
         if ch.state == "unknown" and ck.energization == "unknown" and cid not in occupant:
             continue
-        from grid_ops.geometry import LandingSite, LinePoint
-
         site = LandingSite(LinePoint(cid.split("/")[0], 0), cid)
         verdict = knowledge.assess_landing(world, site, world.clock_s)
         rows.append(
@@ -158,27 +289,18 @@ def endpoint_rows(world: World) -> list[dict]:
 
 
 def coverage_rows(world: World) -> list[dict]:
-    """Union coverage per segment and kind, with occluded and uninspected lengths."""
-    from grid_ops import assessment
-
-    rows = []
-    for seg, kind in sorted({(c.segment_id, c.kind) for c in world.coverage}):
-        scope = assessment.SpanRef(seg, 0, world.segment_lengths[seg])
-        rep = assessment.coverage_report(world, scope, kind)
-        rows.append(
-            {
-                "segment": seg,
-                "kind": kind,
-                "stops": rep.stop_count,
-                "inspected_km": round(rep.inspected_mm / 1e6, 3),
-                "occluded_km": round(sum(i.end_mm - i.start_mm for i in rep.occluded) / 1e6, 3),
-                "uninspected_km": round(
-                    sum(i.end_mm - i.start_mm for i in rep.uninspected) / 1e6, 3
-                ),
-                "of_km": round(rep.scope_mm / 1e6, 3),
-            }
-        )
-    return rows
+    """What each lidar reading inspected and missed over its requested target span."""
+    return [
+        {
+            "reading": c.reading_id,
+            "segment": c.segment_id,
+            "target_km": f"{c.target.start_mm / 1e6:.3f}-{c.target.end_mm / 1e6:.3f}",
+            "inspected_km": round(sum(i.end_mm - i.start_mm for i in c.inspected) / 1e6, 3),
+            "missing_km": round(sum(i.end_mm - i.start_mm for i in c.missing) / 1e6, 3),
+            "epoch": c.epoch,
+        }
+        for c in world.coverage
+    ]
 
 
 def assessment_rows(world: World) -> list[dict]:
@@ -186,9 +308,8 @@ def assessment_rows(world: World) -> list[dict]:
 
     return [
         {
-            "scope": (
-                f"{a.scope.segment_id} {a.scope.start_mm / 1e6:.3f}-{a.scope.end_mm / 1e6:.3f} km"
-            ),
+            "scope": f"{a.scope.segment_id} {a.scope.start_mm / 1e6:.3f}-"
+            f"{a.scope.end_mm / 1e6:.3f} km",
             "condition": a.condition,
             "verdict": a.verdict,
             "evidence": ", ".join(a.evidence_ids),
@@ -210,123 +331,6 @@ def hazard_rows(world: World) -> list[dict]:
             "note": "; ".join(h.assumptions),
         }
         for h in world.hazards
-    ]
-
-
-def estimate_rows(world: World) -> list[dict]:
-    est = world.estimate
-    if est is None or not hasattr(est, "flows"):
-        return []
-    return [
-        {
-            "segment": seg,
-            "p_mw": round(f.p_mw, 2),
-            "conditional_std_mw": round(f.conditional_std_mw, 2),
-            "observable": f.observable,
-            "basis": "real measurement" if f.observable else "prior-conditioned",
-        }
-        for seg, f in est.flows.items()
-    ]
-
-
-def estimate_summary(world: World) -> list[str]:
-    est = world.estimate
-    if est is None:
-        return ["No estimate yet."]
-    if not hasattr(est, "flows"):
-        return [f"EstimateUnavailable: {est.reason}", *est.diagnostics]
-    label = (
-        "PRIOR-ONLY: no accepted measurements; every value is a conditional prior estimate."
-        if est.prior_only
-        else f"{len(est.accepted_reading_ids)} accepted aggregate-P reading(s)."
-    )
-    return [
-        label,
-        f"Model {est.model_revision}, epoch {est.operating_epoch}: {est.n_unknowns} angle "
-        f"unknowns, zero-injection rank {est.zero_injection_rank}, total rank {est.total_rank}.",
-        f"Observable flows (pinned by real readings alone): {len(est.observable_segments)}.",
-        *est.assumptions,
-        *est.diagnostics,
-    ]
-
-
-def consistency_summary(world: World) -> list[str]:
-    rep = world.consistency
-    if rep is None:
-        return ["No consistency report yet."]
-    lines = [
-        f"Global test: {rep.global_status} (degrees of freedom {rep.degrees_of_freedom}"
-        + (
-            f", chi2 {rep.global_chi2:.2f}, p {rep.global_p_value:.4f})"
-            if rep.global_chi2 is not None
-            else ")"
-        ),
-        rep.suspect_meaning,
-    ]
-    if rep.component_dof:
-        lines.append(
-            "Redundancy by component: "
-            + ", ".join(f"{k}={v}" for k, v in sorted(rep.component_dof.items()))
-        )
-    for s in rep.critical_sets:
-        lines.append("Critical set (an error among these cannot be localised): " + ", ".join(s))
-    for e in rep.explanations:
-        lines.append(f"Candidate explanation [{e.label}]: {e.support}")
-    est = world.estimate
-    env = world.envelope
-    if env is not None:
-        lines.append(
-            f"Discrepancy envelope {env.version}: {len(env.calibration_seeds)} calibration + "
-            f"{len(env.validation_seeds)} held-out validation seeds; domain: {env.domain}"
-        )
-    if est is not None and hasattr(est, "radius_unavailable") and est.radius_unavailable:
-        lines.append(
-            f"95% radius unavailable for {len(est.radius_unavailable)} of {len(est.flows)} flows "
-            "(unsupported domain/topology or weak calibration); these cannot satisfy "
-            "reconstruction completion."
-        )
-    return lines
-
-
-def consistency_rows(world: World) -> list[dict]:
-    rep = world.consistency
-    if rep is None:
-        return []
-    return [
-        {
-            "reading": c.reading_id,
-            "segment": c.segment_id,
-            "status": c.testability,
-            "normalised_residual": None
-            if c.normalised_residual is None
-            else round(c.normalised_residual, 2),
-            "candidate": c.candidate,
-            "note": c.note,
-        }
-        for c in rep.checks
-    ]
-
-
-def uncertainty_rows(world: World) -> list[dict]:
-    est = world.estimate
-    if est is None or not hasattr(est, "flows"):
-        return []
-    return [
-        {
-            "segment": seg,
-            "p_mw": round(f.p_mw, 2),
-            "conditional_std_mw": round(f.conditional_std_mw, 2),
-            "discrepancy_bound_mw": None
-            if f.discrepancy_bound_mw is None
-            else round(f.discrepancy_bound_mw, 2),
-            "radius_95_mw": None
-            if f.uncertainty_radius_95_mw is None
-            else round(f.uncertainty_radius_95_mw, 2),
-            "radius_status": "published"
-            if f.uncertainty_radius_95_mw is not None
-            else "unavailable: " + (est.radius_unavailable or {}).get(seg, "unsupported"),
-        }
-        for seg, f in est.flows.items()
     ]
 
 
@@ -352,7 +356,7 @@ def proposal_rows(world: World) -> list[dict]:
             "snapshot": f"r{p.snapshot_revision}",
             "status": p.status,
             "revisions": len(p.output.revisions),
-            "recommendations": len(p.output.recommendations),
+            "requests": len(getattr(p.output, "measurement_requests", ())),
             "note": p.history[-1][1][:160] if p.history else "",
         }
         for p in world.proposals
@@ -476,28 +480,8 @@ def notice_rows(world: World) -> list[dict]:
     ]
 
 
-def need_rows(world: World) -> list[dict]:
-    return [
-        {
-            "need": n.id,
-            "status": n.status,
-            "purpose": n.purpose,
-            "kind": n.kind,
-            "scope": f"{n.scope.segment_id} {n.scope.start_mm / 1e6:.2f}-"
-            f"{n.scope.end_mm / 1e6:.2f} km",
-            "urgency": n.urgency,
-            "uncertainty": n.causal_uncertainty,
-            "distinguishes": n.alternatives_distinguished,
-            "could_change": n.result_effect,
-            "repeat_of": n.repeat_of_reading_id or "",
-            "retired": n.retired_reason,
-        }
-        for n in world.needs.values()
-    ]
-
-
 def unavailable_rows(world: World) -> list[dict]:
-    return [{"need": u.need_id, "why_no_work": u.reason} for u in world.unavailable_work]
+    return [{"request": u.request_id, "why_no_work": u.reason} for u in world.unavailable_work]
 
 
 def task_log_rows(world: World) -> list[dict]:
@@ -508,7 +492,7 @@ def score_rows(world: World) -> list[dict]:
     return [
         {
             "task": r["task"],
-            "eligible": r["eligible"],
+            "eligible": r["owner_urgency"] is not None,
             "owner_urgency": r["owner_urgency"],
             "points_by_urgency_5_to_1": " / ".join(str(v) for v in r["tier_points_5_to_1"]),
             "notes": r["notes"],
@@ -519,10 +503,10 @@ def score_rows(world: World) -> list[dict]:
 
 SCORE_ASSUMPTIONS = (
     "Synthetic units, compared lexicographically: urgency tiers 5 to 1, then risk, switching, "
-    "airtime. Coverage = 1 point per metre of undecided scope on a fixed 10 m grid; shared "
-    "evidence is counted once and owned by the highest accepted urgency; confirmation = 500 per "
-    "group; electrical = 1000 for removing all targeted conditional variance. Not a calibrated "
-    "causal entropy; a preview, not an authorisation."
+    "airtime, charge. Lidar coverage = 1 point per metre of undecided scope on a fixed 10 m "
+    "grid; contact-current and TDR requests = 500 per alternative group, earned once by any "
+    "completed valid attempt. Shared evidence is counted once and owned by the highest accepted "
+    "urgency. Not a calibrated causal entropy; a preview, not an authorisation."
 )
 
 
@@ -535,9 +519,10 @@ def plan_candidate_rows(result) -> list[dict]:
             "risk": c.score.risk,
             "switching": c.score.switching,
             "airtime_min": round(c.score.airtime_s / 60, 1),
+            "charge_min": round(c.score.charge_s / 60, 1),
             "sorties": "; ".join(
-                f"{r.drone_id}: {' > '.join(s.task_id for s in r.stops) or 'land'} -> "
-                f"{r.landing.circuit_id}@{r.landing.point.offset_km:.2f}km"
+                f"{r.drone_id}: {' > '.join(_op_label(s.operation) for s in r.steps) or 'stay'} "
+                f"-> {r.final_perch.circuit_id}"
                 for r in c.sorties
             )
             or "(no flights)",

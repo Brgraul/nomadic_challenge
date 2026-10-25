@@ -104,7 +104,6 @@ def test_overlapping_inspections_count_their_union_once():
 
 def test_missing_extent_stays_explicitly_uninspected():
     w, geo = world()
-    iv = Interval("LINE_040", 0, 110_000)
     r = reading(
         w, geo, "R0001", "LINE_040", 2.0,
         inspected=(Interval("LINE_040", 0, 40_000),),

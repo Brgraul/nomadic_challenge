@@ -1,4 +1,9 @@
-"""Streamlit operator console: live drone map plus controls for the simulation and agents."""
+"""Streamlit operator console: live drone map plus controls for the simulation and agents.
+
+Three-method console: requests, compiled tasks, payload-specific readings, itinerary routes
+and battery continuity. Electrical inference (estimates, consistency, envelopes, MW) and
+truth-level switching controls are not part of this console.
+"""
 
 from __future__ import annotations
 
@@ -8,11 +13,10 @@ import threading
 import streamlit as st
 
 from grid_ops.env import load_env
-from grid_ops.evaluation import energized_segments
-from grid_ops.geometry import MM_PER_KM, LandingSite, LinePoint
+from grid_ops.geometry import MM_PER_KM, LinePoint
 from grid_ops.grid import load_network
 from grid_ops.map_view import build_deck
-from grid_ops.routes import SortieRequest, StopRequest
+from grid_ops.proposals import ProposedStatus
 from grid_ops.scenario import ScenarioConfig, ScenarioInfeasible, ScenarioMode
 from grid_ops.sim import (
     AcceptLimits,
@@ -22,11 +26,11 @@ from grid_ops.sim import (
     ExcludeReading,
     Log,
     ReassignEpoch,
+    RecordProposal,
     RegisterSite,
     ReinstateReading,
     RejectFinding,
     ReopenInvestigation,
-    SetInService,
     SetLandingPolicy,
     Simulation,
 )
@@ -34,22 +38,17 @@ from grid_ops.views import (
     SCORE_ASSUMPTIONS,
     accepted_revision_rows,
     assessment_rows,
-    consistency_rows,
-    consistency_summary,
     coordinator_turn_rows,
     coverage_rows,
     decision_rows,
     disposition_rows,
     drone_rows,
     endpoint_rows,
-    estimate_rows,
-    estimate_summary,
     hazard_rows,
     hold_text,
     hypothesis_rows,
     investigation_lines,
     known_switching_rows,
-    need_rows,
     notice_rows,
     plan_candidate_rows,
     plan_stage_rows,
@@ -59,6 +58,7 @@ from grid_ops.views import (
     reading_rows,
     recommendation_rows,
     rejection_rows,
+    request_rows,
     resilience_lines,
     revision_rows,
     route_pass_rows,
@@ -67,9 +67,8 @@ from grid_ops.views import (
     task_log_rows,
     task_rows,
     unavailable_rows,
-    uncertainty_rows,
 )
-from grid_ops.world import Measurement, format_clock
+from grid_ops.world import format_clock
 
 REFRESH_SECONDS = 4
 load_env()
@@ -89,16 +88,48 @@ def get_sim(mode: str, seed: int) -> Simulation:
     return sim
 
 
+def record_manager_turn(sim: Simulation, result, author: str) -> str:
+    """Record a validated (or rejected) manager output as a proposal. It changes no state."""
+    status = ProposedStatus.REJECTED if result.errors else ProposedStatus.PROPOSED_NOT_ACCEPTED
+    note = "; ".join(result.errors) if result.errors else "validated against the pinned snapshot"
+    from grid_ops.coordinator import decisions_semantic_key
+
+    return sim.submit(
+        RecordProposal(
+            author,
+            sim.snapshot.revision,
+            result.output,
+            status,
+            note,
+            decisions_semantic_key(sim.snapshot, result.output),
+        )
+    ).result(timeout=15)
+
+
 def run_llm_turn_in_background(sim: Simulation) -> None:
-    from grid_ops import agents
+    from grid_ops import agents, manager_tools
 
     def work() -> None:
         try:
-            agents.run_llm_turn(sim, record=True)
+            tb = manager_tools.build_toolbox(sim.snapshot, sim.network, sim.circuits)
+            result = agents.run_llm_turn(tb)
+            record_manager_turn(sim, result, "manager-llm")
         except Exception as e:
             sim.submit(Log("manager-llm", f"Manager turn failed: {e}"))
 
     threading.Thread(target=work, name="manager-llm", daemon=True).start()
+
+
+def scripted_manager_turn(sim: Simulation, conclude: bool) -> None:
+    from grid_ops import agents, manager_tools
+
+    tb = manager_tools.build_toolbox(sim.snapshot, sim.network, sim.circuits)
+    result = agents.run_scripted_turn(tb, conclude=conclude)
+    fid = record_manager_turn(sim, result, "manager-scripted")
+    if result.errors:
+        st.toast(f"Rejected: {result.errors[0]}")
+    else:
+        st.toast(f"Proposal {fid} recorded.")
 
 
 with st.sidebar:
@@ -119,7 +150,6 @@ with st.sidebar:
     st.header("Simulation")
     sim.minutes_per_second = st.slider("Sim minutes per real second", 0.5, 30.0, 2.0, 0.5)
     sim.paused = st.toggle("Paused", value=False)
-    evaluator_overlay = st.toggle("Evaluator overlay: true energization", value=False)
     if st.button("Reset simulation"):
         sim.stop()
         st.cache_resource.clear()
@@ -128,9 +158,9 @@ with st.sidebar:
     st.header("Manual dispatch")
     drone_id = st.selectbox("Drone", sorted(sim.snapshot.drones))
     target = st.selectbox("Target segment", segment_ids)
-    if st.button("Fly"):
+    if st.button("Dispatch (landing-only sortie)"):
         try:
-            st.toast(sim.submit(Dispatch(drone_id, target, "operator")).result(timeout=5))
+            st.toast(sim.submit(Dispatch(drone_id, target, "operator")).result(timeout=10))
         except Exception as e:
             st.toast(f"Rejected: {e}")
 
@@ -153,13 +183,6 @@ with st.sidebar:
         key=f"inspect_offset_{inspect_segment}",
         format="%.3f",
     )
-    snap_to = st.selectbox("Snap to nearest point from", ["(none)", *sorted(sim.snapshot.drones)])
-    if snap_to != "(none)":
-        snapped = sim.geometry.nearest_point(inspect_segment, sim.snapshot.drones[snap_to].position)
-        st.caption(f"Nearest point to {snap_to}: {snapped.offset_km:.3f} km")
-        if st.button("Use snapped offset"):
-            st.session_state[f"inspect_offset_{inspect_segment}"] = snapped.offset_km
-            st.rerun()
     preview_point = LinePoint(inspect_segment, round(offset_km * MM_PER_KM))
     if st.button("Register site"):
         try:
@@ -171,77 +194,6 @@ with st.sidebar:
         except Exception as e:
             st.toast(f"Rejected: {e}")
 
-    st.header("Sortie builder")
-    drafts: dict = st.session_state.setdefault("drafts", {})
-    draft_drone = st.selectbox("Sortie drone", sorted(sim.snapshot.drones), key="draft_drone")
-    draft = drafts.setdefault(draft_drone, {"stops": [], "landing": None})
-    kind = st.selectbox("Measurement", [m.value for m in Measurement], key="draft_kind")
-    circuit_ids = [c.id for c in sim.circuits.by_segment[inspect_segment]]
-    circuit_id = st.selectbox("Landing circuit", circuit_ids, key="draft_circuit")
-    b1, b2 = st.columns(2)
-    if b1.button("Add stop here"):
-        draft["stops"].append((inspect_segment, preview_point.offset_mm, kind))
-    if b2.button("Land here"):
-        draft["landing"] = (inspect_segment, preview_point.offset_mm, circuit_id)
-    for drone_key, d in drafts.items():
-        if d["stops"] or d["landing"]:
-            st.caption(
-                f"{drone_key}: "
-                + " → ".join(f"{k}@{s}/{mm / MM_PER_KM:.3f}km" for s, mm, k in d["stops"])
-                + (
-                    f" ⇒ land {d['landing'][2]} {d['landing'][1] / MM_PER_KM:.3f}km"
-                    if d["landing"]
-                    else " ⇒ (no landing yet)"
-                )
-            )
-    c1, c2 = st.columns(2)
-    if c1.button("Clear drafts"):
-        drafts.clear()
-        st.rerun()
-    if c2.button("Submit sorties"):
-        requests = tuple(
-            SortieRequest(
-                drone_key,
-                tuple(StopRequest(LinePoint(s, mm), Measurement(k)) for s, mm, k in d["stops"]),
-                LandingSite(LinePoint(d["landing"][0], d["landing"][1]), d["landing"][2]),
-            )
-            for drone_key, d in drafts.items()
-            if d["landing"]
-        )
-        try:
-            st.toast(sim.submit(CommitSorties(requests, "operator")).result(timeout=5))
-            drafts.clear()
-        except Exception as e:
-            st.toast(f"Rejected: {e}")
-
-    st.header("Reading disposition")
-    reading_ids = sorted(sim.snapshot.readings)
-    if reading_ids:
-        picked = st.selectbox("Reading", reading_ids, key="disp_reading")
-        reason = st.text_input("Reason", key="disp_reason")
-        epoch_to = st.text_input("New epoch", "E1", key="disp_epoch")
-        d1, d2, d3 = st.columns(3)
-        for col, label, make in (
-            (d1, "Exclude", lambda: ExcludeReading(picked, reason, "operator")),
-            (d2, "Reinstate", lambda: ReinstateReading(picked, reason, "operator")),
-            (d3, "Reassign", lambda: ReassignEpoch(picked, epoch_to, reason, "operator")),
-        ):
-            if col.button(label, key=f"disp_{label}"):
-                try:
-                    st.toast(sim.submit(make()).result(timeout=5))
-                except Exception as e:
-                    st.toast(f"Rejected: {e}")
-    else:
-        st.caption("No readings yet.")
-
-    st.header("Scenario control (hidden)")
-    switched = st.selectbox("Segment", segment_ids, key="truth_segment")
-    in_service = st.toggle("In service", value=True)
-    if st.button("Apply switching"):
-        st.toast(sim.submit(SetInService(switched, in_service, "scenario")).result(timeout=5))
-
-    st.header("Fleet")
-    sim.auto_replan = st.toggle("Autonomous replanning on events", value=True, key="auto_replan")
     st.header("Planner")
     if st.button("Preview plan"):
         st.session_state["plan_preview"] = sim.preview_plan()
@@ -249,7 +201,7 @@ with st.sidebar:
     best = None if plan_now is None else plan_now.best
     if best is not None and best.sorties and st.button("Commit best plan"):
         try:
-            st.toast(sim.submit(CommitSorties(best.sorties, "planner")).result(timeout=10))
+            st.toast(sim.submit(CommitSorties(best.sorties, "planner")).result(timeout=15))
         except Exception as e:
             st.toast(f"Rejected: {e}")
 
@@ -265,7 +217,7 @@ with st.sidebar:
             try:
                 st.toast(
                     sim.submit(CommitDecision(did, finding, pf.semantic_key, "operator")).result(
-                        timeout=15
+                        timeout=30
                     )
                 )
             except Exception as e:
@@ -294,6 +246,29 @@ with st.sidebar:
         except Exception as e:
             st.toast(f"Rejected: {e}")
 
+    st.header("Reading disposition")
+    reading_ids = sorted(sim.snapshot.readings)
+    if reading_ids:
+        picked = st.selectbox("Reading", reading_ids, key="disp_reading")
+        reason = st.text_input("Reason", key="disp_reason")
+        epoch_to = st.text_input("New epoch", "E1", key="disp_epoch")
+        d1, d2, d3 = st.columns(3)
+        for col, label, make in (
+            (d1, "Exclude", lambda: ExcludeReading(picked, reason, "operator")),
+            (d2, "Reinstate", lambda: ReinstateReading(picked, reason, "operator")),
+            (d3, "Reassign", lambda: ReassignEpoch(picked, epoch_to, reason, "operator")),
+        ):
+            if col.button(label, key=f"disp_{label}"):
+                try:
+                    st.toast(sim.submit(make()).result(timeout=5))
+                except Exception as e:
+                    st.toast(f"Rejected: {e}")
+    else:
+        st.caption("No readings yet.")
+
+    st.header("Fleet")
+    sim.auto_replan = st.toggle("Autonomous replanning on events", value=True, key="auto_replan")
+
     st.header("Autonomous manager")
     modes = (
         ["off", "scripted", "LLM"] if os.environ.get("OPENROUTER_API_KEY") else ["off", "scripted"]
@@ -314,8 +289,8 @@ with st.sidebar:
             agents.run_scripted_turn
             if chosen == "scripted"
             else (
-                lambda s, trigger_ids=(): agents.run_llm_turn(
-                    s, trigger_ids=trigger_ids, record=True
+                lambda tb, trigger_ids=(): agents.run_llm_turn(
+                    tb, trigger_ids=trigger_ids, record=True
                 )
             )
         )
@@ -325,17 +300,11 @@ with st.sidebar:
     st.caption("Runs on pinned snapshots while the fleet keeps flying; never gates routing.")
 
     st.header("Manager")
-    st.caption("Proposes findings from a pinned read-only snapshot. Nothing is accepted here.")
+    st.caption("Proposes findings and measurement requests from a pinned read-only snapshot.")
     if st.button("Manager turn (scripted, may conclude)"):
-        from grid_ops import agents
-
-        turn = agents.run_scripted_turn(sim, conclude=True)
-        st.toast("Proposal recorded." if not turn.errors else f"Rejected: {turn.errors[0]}")
+        scripted_manager_turn(sim, conclude=True)
     if st.button("Manager turn (scripted)"):
-        from grid_ops import agents
-
-        turn = agents.run_scripted_turn(sim)
-        st.toast("Proposal recorded." if not turn.errors else f"Rejected: {turn.errors[0]}")
+        scripted_manager_turn(sim, conclude=False)
     if not os.environ.get("OPENROUTER_API_KEY"):
         st.caption("Set OPENROUTER_API_KEY in .env to enable the LLM manager.")
     elif st.button("Manager turn (LLM)"):
@@ -344,7 +313,7 @@ with st.sidebar:
 
 
 @st.fragment(run_every=REFRESH_SECONDS)
-def live_view(evaluator_overlay: bool, preview_point: LinePoint) -> None:
+def live_view(preview_point: LinePoint) -> None:
     world = sim.snapshot
     state = "paused" if sim.paused else f"{sim.minutes_per_second:g} sim min / s"
     st.subheader(f"{format_clock(world.clock)}  ·  {state}")
@@ -352,13 +321,7 @@ def live_view(evaluator_overlay: bool, preview_point: LinePoint) -> None:
     map_col, side_col = st.columns([3, 1])
     with map_col:
         st.pydeck_chart(
-            build_deck(
-                network,
-                world,
-                energized_segments(sim) if evaluator_overlay else None,
-                sim.geometry,
-                preview_point,
-            ),
+            build_deck(network, world, sim.geometry, preview_point),
             height=640,
             key="map",
         )
@@ -391,39 +354,43 @@ def live_view(evaluator_overlay: bool, preview_point: LinePoint) -> None:
 
     (
         brief_tab,
-        landing_tab,
-        coverage_tab,
-        estimates_tab,
-        consistency_tab,
-        findings_tab,
-        plan_tab,
-        fleet_tab,
-        investigation_tab,
-        coordinator_tab,
-        resilience_tab,
-        routes_tab,
+        requests_tab,
         tasks_tab,
         readings_tab,
-        rejections_tab,
+        routes_tab,
+        fleet_tab,
+        landing_tab,
+        coverage_tab,
+        findings_tab,
+        plan_tab,
+        coordinator_tab,
+        resilience_tab,
+        investigation_tab,
     ) = st.tabs(
         [
             "Brief",
-            "Landing",
-            "Coverage",
-            "Estimates",
-            "Consistency",
-            "Findings",
-            "Plan",
-            "Fleet",
-            "Investigation",
-            "Coordinator",
-            "Resilience",
-            "Routes",
+            "Requests",
             "Tasks",
             "Readings",
-            "Rejections",
+            "Routes",
+            "Fleet",
+            "Landing",
+            "Coverage",
+            "Findings",
+            "Plan",
+            "Coordinator",
+            "Resilience",
+            "Investigation",
         ]
     )
+    with requests_tab:
+        st.caption(
+            "Accepted measurement requests (lidar, TDR, contact current) with their compiled "
+            "tasks. An ACTIVE request with no completed valid attempt is explicitly unresolved."
+        )
+        st.dataframe(request_rows(world), hide_index=True)
+        st.caption("Requests that compiled to no executable work, and why")
+        st.dataframe(unavailable_rows(world), hide_index=True)
     with fleet_tab:
         st.caption(
             "Immediate route passes after relevant events. They never wait for the manager and "
@@ -484,26 +451,11 @@ def live_view(evaluator_overlay: bool, preview_point: LinePoint) -> None:
         st.dataframe(notice_rows(world), hide_index=True)
         st.caption("Scoped recommendations")
         st.dataframe(recommendation_rows(world), hide_index=True)
-    with consistency_tab:
-        for line in consistency_summary(world):
-            st.markdown(f"- {line}")
-        st.dataframe(consistency_rows(world), hide_index=True)
-        st.caption("Uncertainty: conditional std and the discrepancy envelope are separate")
-        st.dataframe(uncertainty_rows(world), hide_index=True)
-        st.caption("Reading dispositions (readings themselves are never altered)")
-        st.dataframe(disposition_rows(world), hide_index=True)
-    with estimates_tab:
-        for line in estimate_summary(world):
-            st.markdown(f"- {line}")
-        st.caption(f"Electrical solves so far: {world.estimation_solves}")
-        st.dataframe(estimate_rows(world), hide_index=True)
-        st.caption("Estimate history")
-        st.text("\n".join(world.estimation_log[-10:]))
     with coverage_tab:
         st.caption(
-            "Observed local coverage (union of inspected intervals) and scoped condition "
-            "results. A detected hazard is not shown to have caused the outage, and clean "
-            "readings do not prove mechanical integrity."
+            "What each lidar scan inspected and missed, plus scoped condition results. A "
+            "detected hazard is not shown to have caused the outage, and clean readings do not "
+            "prove mechanical integrity."
         )
         st.dataframe(coverage_rows(world), hide_index=True)
         st.dataframe(assessment_rows(world), hide_index=True)
@@ -525,22 +477,20 @@ def live_view(evaluator_overlay: bool, preview_point: LinePoint) -> None:
         st.dataframe(route_rows(world), hide_index=True)
     with tasks_tab:
         st.caption(
-            "Tasks exist only for accepted diagnostic needs (and, in healthy_benchmark, "
-            "reconstruction targets). Reservations change only through accepted decisions."
+            "Tasks exist only for accepted measurement requests. Reservations change only "
+            "through accepted sorties."
         )
-        st.dataframe(need_rows(world), hide_index=True)
         st.dataframe(task_rows(world), hide_index=True)
         st.caption("Plan scoring preview")
         st.caption(SCORE_ASSUMPTIONS)
         st.dataframe(score_rows(world), hide_index=True)
-        st.caption("Work that is unavailable, and why")
-        st.dataframe(unavailable_rows(world), hide_index=True)
         st.caption("Refresh log")
         st.dataframe(task_log_rows(world), hide_index=True)
     with readings_tab:
         st.dataframe(reading_rows(world), hide_index=True)
-    with rejections_tab:
+        st.caption("Reading dispositions (readings themselves are never altered)")
+        st.dataframe(disposition_rows(world), hide_index=True)
         st.dataframe(rejection_rows(world), hide_index=True)
 
 
-live_view(evaluator_overlay, preview_point)
+live_view(preview_point)

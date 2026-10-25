@@ -12,7 +12,7 @@ import copy
 from fixtures_three_method import tiny_network
 
 from grid_ops.assessment import ingest_lidar
-from grid_ops.grid import Network, load_network
+from grid_ops.grid import load_network
 from grid_ops.sensing import (
     AcquisitionQuality,
     Interval,

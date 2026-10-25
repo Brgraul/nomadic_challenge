@@ -128,8 +128,14 @@ def test_energy_is_recomputed_from_the_drone_battery_not_the_caller():
 def test_readings_are_immutable():
     w, geo = world()
     w.readings["R0001"] = lidar_reading(geo, "R0001", "LINE_040", 0, 110_000, 2.0)
-    with pytest.raises(Exception):
+    import dataclasses
+
+    try:
         w.readings["R0001"].payload = None  # type: ignore[misc]
+    except dataclasses.FrozenInstanceError:
+        pass
+    else:
+        raise AssertionError("readings must be immutable")
 
 
 def test_dispatch_builds_a_validated_itinerary_and_unknown_segments_are_rejected():

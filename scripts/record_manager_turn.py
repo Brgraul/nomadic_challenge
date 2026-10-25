@@ -1,36 +1,40 @@
-"""Record live manager turns (startup, then after real readings) against the real simulation."""
+"""Record live manager turns (startup, then after real readings) against the real simulation.
+
+Requires OPENROUTER_API_KEY. The startup proposal is accepted through a scripted coordinator
+turn, a route pass commits the planner's plan, the sim steps until readings publish, and the
+LLM turn revises from the new evidence.
+"""
 
 from __future__ import annotations
 
 import sys
 
-from grid_ops import agents
-from grid_ops.geometry import LinePoint
+from grid_ops import agents, manager_tools
+from grid_ops.coordinator import Coordinator
 from grid_ops.grid import load_network
 from grid_ops.knowledge import LandingPolicy
-from grid_ops.routes import SortieRequest, StopRequest
-from grid_ops.sim import CommitSorties, Simulation
-from grid_ops.world import Measurement
+from grid_ops.sim import Simulation
+from grid_ops.world import DEADLINE_S
 
 
 def main() -> int:
     sim = Simulation(load_network())
     sim._world.landing_policy = LandingPolicy(allow_uncertain=True)
-    turns = []
-    turns.append(("startup", agents.run_llm_turn(sim, record=True)))
-    perch = sim._world.drones["DRONE_2"].state.perch
-    stops = tuple(
-        StopRequest(LinePoint(seg, mm), Measurement.CLEARANCE)
-        for seg, mm in (("LINE_058", 28_000), ("LINE_064", 9_000_000))
-    )
-    sim._apply(CommitSorties((SortieRequest("DRONE_2", stops, perch),), "operator"))
-    sim.step(25)
-    turns.append(("after readings", agents.run_llm_turn(sim, record=True)))
-    for name, t in turns:
-        print(name, "valid" if not t.errors else f"INVALID: {t.errors[:4]}")
-        if t.output:
-            for r in t.output.revisions[:2]:
-                print("  ", r.hypothesis_id, "|", r.finding_summary[:140], "|", r.update_reason[:140])
+    coord = Coordinator(sim)
+    startup = coord.run_turn_now()
+    print("startup", startup.status, startup.note)
+    rp = sim.submit_route_pass("recording measurement turn")
+    print("route pass:", rp)
+    for _ in range(400):
+        if sim.snapshot.readings or sim.snapshot.clock_s >= DEADLINE_S:
+            break
+        sim.step(min(90, (DEADLINE_S - sim.snapshot.clock_s) / 60))
+    triggers = tuple(i for i, e in sim.snapshot.events if e.kind == "reading")
+    tb = manager_tools.build_toolbox(sim.snapshot, sim.network, sim.circuits)
+    turn = agents.run_llm_turn(tb, trigger_ids=triggers, record=True)
+    print("measurement", "valid" if not turn.errors else f"INVALID: {turn.errors[:4]}")
+    for r in (turn.output.revisions if turn.output else [])[:3]:
+        print(" ", r.hypothesis_id, "|", r.finding_summary[:160])
     return 0
 
 

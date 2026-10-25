@@ -5,9 +5,12 @@ from __future__ import annotations
 import pytest
 
 pytest.skip(
-    "DEFERRED to the driver slice: recordings/ and scripts/record_* still produce legacy-runtime "
-    "turns (estimate/consistency/electrical-candidate tools); re-record after the scripts "
-    "migrate to run_scripted_turn(toolbox), then re-enable this file unchanged.",
+    "DEFERRED to the recordings slice: recordings/ still hold legacy-runtime turns (old sensor "
+    "enums, estimate/consistency/electrical-candidate tools) and re-recording needs an "
+    "OPENROUTER_API_KEY, so the UI slice adapted scripts/record_* to the three-method toolbox "
+    "but could not regenerate offline. Run scripts/record_startup_turn.py and "
+    "scripts/record_manager_turn.py with credentials, then re-enable this file unchanged: the "
+    "expectations below already match the three-method tool set.",
     allow_module_level=True,
 )
 
@@ -17,6 +20,23 @@ from pathlib import Path  # noqa: E402
 RECORDINGS = sorted(
     (Path(__file__).resolve().parents[1] / "recordings").glob("manager_turn_*.json")
 )
+
+# The three-method LLM tool set (grid_ops.agents._tools): no estimate/consistency/electrical
+# tools exist any more. "ManagerOutput" is the structured-response tool call.
+ALLOWED_TOOLS = {
+    "overview",
+    "list_reports",
+    "segments_in_report",
+    "list_readings",
+    "get_reading",
+    "list_requests",
+    "scan_coverage",
+    "charge_sites",
+    "capabilities",
+    "list_events",
+    "list_hypotheses",
+    "ManagerOutput",
+}
 
 
 def load():
@@ -39,20 +59,7 @@ def test_recorded_turns_keep_inputs_outputs_and_tool_use(turn):
     assert turn["system"] and turn["prompt"] and turn["seconds"] > 0
     calls = [c for m in turn["transcript"] for c in (m.get("tool_calls") or [])]
     assert calls, "the manager must have used its read-only tools"
-    assert {c["name"] for c in calls} <= {
-        "overview",
-        "list_reports",
-        "segments_in_report",
-        "list_readings",
-        "get_reading",
-        "scope_assessment",
-        "estimate_summary",
-        "consistency_summary",
-        "list_events",
-        "list_hypotheses",
-        "test_electrical_candidate",
-        "ManagerOutput",
-    }
+    assert {c["name"] for c in calls} <= ALLOWED_TOOLS
     assert turn["output"]["revisions"]
 
 

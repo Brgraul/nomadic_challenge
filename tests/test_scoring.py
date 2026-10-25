@@ -113,7 +113,7 @@ def test_lidar_value_is_the_length_of_the_requested_span_counted_once():
 
 def test_planned_lidar_value_counts_only_still_uninspected_extent():
     """Cells already covered by a completed valid reading earn nothing again."""
-    w, geo = world()
+    w, _geo = world()
     lidar_request(w)
     lidar_task(w, "T0001", "LINE_040", 0, 110_000)
     w.readings["R0001"] = lidar_reading(
@@ -196,7 +196,7 @@ def test_explain_names_the_scale_and_the_tolerance():
 
 
 def test_unresolved_requests_are_named_until_a_valid_attempt_answers_the_group():
-    w, geo = world()
+    w, _geo = world()
     contact_request(w)
     from grid_ops.sensing import MeasurementTaskV2
 

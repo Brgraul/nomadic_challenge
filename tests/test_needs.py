@@ -172,6 +172,7 @@ def test_retired_requests_lose_unstarted_work_but_locked_attempts_finish():
     contact_task(w, "T0001", site_at(w, "LINE_040", 0), "REQ-1")
     # a second unstarted attempt of the same group, without re-accepting the request
     from fixtures_three_method import contact
+
     from grid_ops.sensing import MeasurementTaskV2
 
     w.set_task(
