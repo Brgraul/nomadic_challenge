@@ -1,0 +1,15 @@
+[project]
+name = "nomadic-jev-cli"
+version = "1.0.0"
+description = "Jev-powered crew dispatch evaluator for the Nomadic grid challenge"
+requires-python = ">=3.11"
+dependencies = [
+    "typesafe-sdk>=0.7.0",
+]
+
+[project.scripts]
+jev-eval = "src.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

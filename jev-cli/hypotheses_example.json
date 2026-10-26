@@ -1,0 +1,165 @@
+[
+  {
+    "segment_id": "LINE_026",
+    "voltage_kv": 110,
+    "length_km": 4.2,
+    "line_is_live": true,
+    "in_storm_footprint": true,
+    "notes": "Appears in two reports. Best false-positive candidate from spec.",
+    "reports": [
+      {
+        "id": "SYN_REPORT_02",
+        "type": "vegetation_and_access_report",
+        "confidence": "medium",
+        "description": "Fallen branch across rural access track; trees brushing an overhead route in the broad area. No photo, no line ID confirmed."
+      },
+      {
+        "id": "SYN_REPORT_03",
+        "type": "protection_event_summary",
+        "confidence": "high",
+        "description": "One automatic protection event in southwest sector. LINE_024 de-energized precautionarily; reason unclear."
+      }
+    ],
+    "sensor_readings": {
+      "line_live": true,
+      "vibration_anomaly": true,
+      "sag_angle_anomaly": false,
+      "pd_detected": null,
+      "baseline_comparison": "Vibration frequency 18% above pre-storm baseline; sag within normal range."
+    },
+    "vegetation": {
+      "forest_overlap_pct": 72,
+      "nearest_forest_m": 8,
+      "max_canopy_height_m": 22,
+      "mean_canopy_height_m": 16,
+      "estimated_clearance_m": 9,
+      "dominant_species": "coniferous",
+      "wind_exposure_score": 0.85
+    },
+    "impact": {
+      "downstream_households": 3200,
+      "downstream_population": 7500,
+      "downstream_power_plants_mw": 4.2,
+      "downstream_renewable_plants": 3,
+      "downstream_hospitals": 0,
+      "downstream_water_works": 1,
+      "downstream_care_homes": 1
+    }
+  },
+  {
+    "segment_id": "LINE_024",
+    "voltage_kv": 110,
+    "length_km": 3.1,
+    "line_is_live": false,
+    "in_storm_footprint": true,
+    "notes": "Precautionarily de-energized. Status known; cause of original protection event unclear.",
+    "reports": [
+      {
+        "id": "SYN_REPORT_03",
+        "type": "protection_event_summary",
+        "confidence": "high",
+        "description": "Automatic protection event in southwest sector. LINE_024 de-energized."
+      }
+    ],
+    "sensor_readings": {
+      "line_live": false,
+      "vibration_anomaly": null,
+      "sag_angle_anomaly": null,
+      "pd_detected": null,
+      "baseline_comparison": "No sensor data — drone cannot charge on dead line."
+    },
+    "vegetation": {
+      "forest_overlap_pct": 45,
+      "nearest_forest_m": 20,
+      "max_canopy_height_m": 18,
+      "mean_canopy_height_m": 13,
+      "estimated_clearance_m": 10,
+      "dominant_species": "mixed",
+      "wind_exposure_score": 0.55
+    },
+    "impact": {
+      "downstream_households": 1100,
+      "downstream_population": 2600,
+      "downstream_power_plants_mw": 0.8,
+      "downstream_renewable_plants": 1,
+      "downstream_hospitals": 0,
+      "downstream_water_works": 0,
+      "downstream_care_homes": 0
+    }
+  },
+  {
+    "segment_id": "LINE_004",
+    "voltage_kv": 380,
+    "length_km": 16.4,
+    "line_is_live": true,
+    "in_storm_footprint": true,
+    "notes": "Long 380kV backbone line. No reports. Sensors normal.",
+    "reports": [],
+    "sensor_readings": {
+      "line_live": true,
+      "vibration_anomaly": false,
+      "sag_angle_anomaly": false,
+      "pd_detected": false,
+      "baseline_comparison": "All readings within 3% of pre-storm baseline."
+    },
+    "vegetation": {
+      "forest_overlap_pct": 10,
+      "nearest_forest_m": 80,
+      "max_canopy_height_m": 14,
+      "mean_canopy_height_m": 10,
+      "estimated_clearance_m": 12,
+      "dominant_species": "deciduous",
+      "wind_exposure_score": 0.2
+    },
+    "impact": {
+      "downstream_households": 18000,
+      "downstream_population": 42000,
+      "downstream_power_plants_mw": 85.0,
+      "downstream_renewable_plants": 12,
+      "downstream_hospitals": 2,
+      "downstream_water_works": 3,
+      "downstream_care_homes": 4
+    }
+  },
+  {
+    "segment_id": "LINE_002",
+    "voltage_kv": 110,
+    "length_km": 3.8,
+    "line_is_live": true,
+    "in_storm_footprint": true,
+    "notes": "Flash report likely explained by generator test at nearby industrial site.",
+    "reports": [
+      {
+        "id": "SYN_REPORT_04",
+        "type": "visual_flash_report",
+        "confidence": "low",
+        "description": "Brief orange flash near industrial site. Site attendant mentions generator test; log not verified."
+      }
+    ],
+    "sensor_readings": {
+      "line_live": true,
+      "vibration_anomaly": false,
+      "sag_angle_anomaly": false,
+      "pd_detected": null,
+      "baseline_comparison": "Vibration within 5% of baseline. No sag anomaly."
+    },
+    "vegetation": {
+      "forest_overlap_pct": 5,
+      "nearest_forest_m": 120,
+      "max_canopy_height_m": 10,
+      "mean_canopy_height_m": 8,
+      "estimated_clearance_m": 15,
+      "dominant_species": "deciduous",
+      "wind_exposure_score": 0.15
+    },
+    "impact": {
+      "downstream_households": 420,
+      "downstream_population": 980,
+      "downstream_power_plants_mw": 0.0,
+      "downstream_renewable_plants": 0,
+      "downstream_hospitals": 0,
+      "downstream_water_works": 0,
+      "downstream_care_homes": 0
+    }
+  }
+]

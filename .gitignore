@@ -1,4 +1,6 @@
+.agents/
 .venv/
+*.pyc
 __pycache__/
 .ruff_cache/
 .env
